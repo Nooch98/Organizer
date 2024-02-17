@@ -2,8 +2,15 @@
 Organizer is an application developed in python and open source which allows you to organize all your projects in the same app, being able to create new projects in various languages, save already created projects, delete them and open them directly in visual studio code
 
 
-![Captura de pantalla 2024-02-17 053300](https://github.com/Nooch98/Organizer/assets/73700510/c4ef076e-8f7b-44e1-9263-e026dde095be)
+![Captura de pantalla 2024-02-17 055846](https://github.com/Nooch98/Organizer/assets/73700510/96493f3b-7965-41d8-beb7-70eefa635f78)
 
+# ACTUAL FUNCTIONS
+* 1- You can create a python project using venv
+* 2- You can add projects from any language you already have on your team
+* 3- You can open any of the previously added projects from the editor you select
+* 4- You can directly open a github project by giving it the github url and the app will clone it and open the project. Added to this, it will also be saved in the organizer so you can add a description to know more about the projects since the name will use the name of the repository.
+* 5- You can delete projects completely from your PC
+* 6- If the projects that have been saved have a github repository and the repository url has been added, you can access it by double clicking on the url
 
 # IN PROGRESS
 * [ ] In the function of creating a new project, i'm in the process of adding more supported languages ​​such as node js (javascript), c++, java etc.
