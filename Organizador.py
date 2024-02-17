@@ -4,6 +4,7 @@ import shutil
 import sqlite3
 import subprocess
 import tkinter as tk
+import webbrowser
 from tkinter import filedialog
 from tkinter import messagebox as ms
 from tkinter import ttk
@@ -26,17 +27,18 @@ def crear_base_datos():
         id INTEGER PRIMARY KEY,
         nombre TEXT,
         descripcion TEXT,
-        ruta TEXT
+        ruta TEXT,
+        repo TEXT
         )''')
     
     conn.close()
     
-def insertar_proyecto(nombre, descripcion, ruta):
+def insertar_proyecto(nombre, descripcion, ruta, repo):
     conn = sqlite3.connect('proyectos.db')
     cursor = conn.cursor()
     
-    cursor.execute('''INSERT INTO proyectos (nombre, descripcion, ruta)
-                   VALUES (?, ?, ?)''', (nombre, descripcion, ruta))
+    cursor.execute('''INSERT INTO proyectos (nombre, descripcion, ruta, repo)
+                   VALUES (?, ?, ?, ?)''', (nombre, descripcion, ruta, repo))
     
     conn.commit()
     conn.close()
@@ -126,11 +128,12 @@ def mostrar_proyectos():
     
 def agregar_proyecto_existente():
     descripcion = descripcion_entry.get()
+    repo = repo_entry.get()
     ruta = filedialog.askdirectory()
     
     if ruta:
         nombre = os.path.basename(ruta)
-        insertar_proyecto(nombre, descripcion, ruta)
+        insertar_proyecto(nombre, descripcion, ruta, repo)
         descripcion_entry.delete(0, tk.END)
 
 def crear_nuevo_proyecto():
@@ -208,11 +211,17 @@ def show_context_menu(event):
         context_menu.add_command(label="Show", command=show_selected_row)
         
         context_menu.post(event.x_root, event.y_root)
+
+def abrir_repositorio(event):
+    item_seleccionado = tree.item(tree.selection())
+    url_repositorio = item_seleccionado['values'][4]
+
+    webbrowser.open_new(url_repositorio)
                 
 
 root = ThemedTk(theme='aqua')
 root.title('Organizador de Proyectos')
-root.geometry("835x350")
+root.geometry("1045x380")
 root.iconbitmap(icono)
 filas_ocultas = set()
 
@@ -247,16 +256,23 @@ descripcion_label.grid(row=2, column=0, padx=5, pady=5)
 descripcion_entry = ttk.Entry(root, width=100)
 descripcion_entry.grid(row=2, column=1, pady=5, padx=5)
 
+repo_label = ttk.Label(root, text="Repository URL:")
+repo_label.grid(row=3, column=0, padx=5, pady=5)
 
-tree = ttk.Treeview(root, columns=('ID', 'Nombre', 'Descripcion', 'Ruta'), show='headings')
+repo_entry = ttk.Entry(root, width=100)
+repo_entry.grid(row=3, column=1, pady=5, padx=5)
+
+
+tree = ttk.Treeview(root, columns=('ID', 'Nombre', 'Descripcion', 'Ruta', 'Repositorio'), show='headings')
 tree.heading('ID', text='ID')
 tree.heading('Nombre', text='Name')
 tree.heading('Descripcion', text='Description')
 tree.heading('Ruta', text='Path')
-tree.grid(row=3, columnspan=2, pady=5, padx=5)
+tree.heading('Repositorio', text='Repository')
+tree.grid(row=4, columnspan=2, pady=5, padx=5)
 
 scrollbar_y = ttk.Scrollbar(root, orient='vertical', command=tree.yview)
-scrollbar_y.grid(row=3, column=2, sticky='ns')
+scrollbar_y.grid(row=4, column=2, sticky='ns')
 
 tree.configure(yscrollcommand=scrollbar_y.set)
 
@@ -274,6 +290,7 @@ editor_menu = ttk.OptionMenu(root, selected_editor, *editor_options)
 editor_menu.grid(row=8, column=0, padx=5, pady=5)
 
 tree.bind("<Button-3>", show_context_menu)
+tree.bind("<Double-1>", abrir_repositorio)
 
 btn_abrir = ttk.Button(root, text='Open Proyect', command=lambda: abrir_proyecto(tree.item(tree.selection())['values'][3], selected_editor.get()))
 btn_abrir.grid(row=8, columnspan=2, pady=5, padx=5)
