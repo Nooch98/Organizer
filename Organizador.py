@@ -46,47 +46,67 @@ def abrir_proyecto(ruta, editor):
         ruta_editor = configuracion_editores[editor]
         subprocess.run([ruta_editor, ruta], check=True)
     else:
-        # Si no hay configuración o el editor no está en la configuración, usar editor por defecto
         if editor == "Visual Studio Code":
             subprocess.run(['code', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "Sublime Text":
             subprocess.run(['subl', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "Atom":
             subprocess.run(['atom', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "Vim":
             subprocess.run(['vim', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "Emacs":
             subprocess.run(['emacs', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "Notepad++":
             subprocess.run(['notepad++', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "Brackets":
             subprocess.run(['brackets', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "TextMate":
             subprocess.run(['mate', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "Geany":
             subprocess.run(['geany', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "gedit":
             subprocess.run(['gedit', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "Nano":
             subprocess.run(['nano', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "Kate":
             subprocess.run(['kate', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "Bluefish":
             subprocess.run(['bluefish', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "Eclipse":
             subprocess.run(['eclipse', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "IntelliJ IDEA":
             subprocess.run(['idea', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "PyCharm":
             subprocess.run(['pycharm', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "Visual Studio":
             subprocess.run(['visualstudio', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "Code::Blocks":
             subprocess.run(['codeblocks', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "NetBeans":
             subprocess.run(['netbeans', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
         elif editor == "Android Studio":
             subprocess.run(['studio', ruta], check=True)
+            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+         
     
 def mostrar_proyectos():
     for row in tree.get_children():
@@ -134,9 +154,6 @@ def eliminar_proyecto(id, ruta):
     mostrar_proyectos()
     conn.close()
     
-def aviso():
-    ms.showwarning("ADVERTENCIA", "Necesitas tener los editores disponibles en el PATH para que Organizer sea capaz de ejecutarlos")
-    
 def seleccionar_rutas_editores():
     rutas_editores = {}
     for editor in editores_disponibles:
@@ -149,7 +166,6 @@ def seleccionar_rutas_editores():
         guardar_configuracion_editores(rutas_editores)
         
 def guardar_configuracion_editores(rutas_editores):
-    # Guardar las rutas de los editores en un archivo de configuración
     with open("configuracion_editores.json", "w") as archivo_configuracion:
         json.dump(rutas_editores, archivo_configuracion)
         
@@ -160,12 +176,42 @@ def cargar_configuracion_editores():
             return configuracion
     except FileNotFoundError:
         return None
+
+
+def hide_selected_row():
+    # Obtener la fila seleccionada
+    seleccion = tree.selection()
+    
+    # Ocultar la fila seleccionada y agregarla al registro de filas ocultas
+    for rowid in seleccion:
+        tree.detach(rowid)
+        filas_ocultas.add(rowid)
+
+def show_selected_row():
+    # Obtener la fila seleccionada
+    seleccion = tree.selection()
+    
+    # Mostrar la fila seleccionada y eliminarla del registro de filas ocultas
+    for rowid in seleccion:
+        tree.reattach(rowid, '', 'end')
+        filas_ocultas.remove(rowid)
+        
+def show_context_menu(event):
+    rowid = tree.identify_row(event.y)
+    
+    if rowid:
+        context_menu = tk.Menu(root, tearoff=0)
+        context_menu.add_command(label="Hide", command=hide_selected_row)
+        context_menu.add_command(label="Show", command=show_selected_row)
+        
+        context_menu.post(event.x_root, event.y_root)
                 
 
 root = ThemedTk(theme='aqua')
 root.title('Organizador de Proyectos')
 root.geometry("835x380")
 root.iconbitmap(icono)
+filas_ocultas = set()
 
 editores_disponibles = ["Visual Studio Code", "Sublime Text", "Atom", "Vim", "Emacs", 
         "Notepad++", "Brackets", "TextMate", "Geany", "gedit", 
@@ -213,7 +259,7 @@ tree.configure(yscrollcommand=scrollbar_y.set)
 
 selected_editor = tk.StringVar()
 editor_options = [
-        "Select one Editor",
+        "Select a Editor",
         "Visual Studio Code", "Sublime Text", "Atom", "Vim", "Emacs", 
         "Notepad++", "Brackets", "TextMate", "Geany", "gedit", 
         "Nano", "Kate", "Bluefish", "Eclipse", "IntelliJ IDEA", 
@@ -222,7 +268,9 @@ editor_options = [
     ]
 selected_editor.set(editor_options[0])
 editor_menu = ttk.OptionMenu(root, selected_editor, *editor_options)
-editor_menu.grid(row=0, column=0, padx=5, pady=5)
+editor_menu.grid(row=8, column=0, padx=5, pady=5)
+
+tree.bind("<Button-3>", show_context_menu)
 
 btn_abrir = ttk.Button(root, text='Open Proyect', command=lambda: abrir_proyecto(tree.item(tree.selection())['values'][3], selected_editor.get()))
 btn_abrir.grid(row=8, columnspan=2, pady=5, padx=5)
@@ -231,6 +279,5 @@ btn_abrir.grid(row=8, columnspan=2, pady=5, padx=5)
 crear_base_datos()
 
 mostrar_proyectos()
-aviso()
 
 root.mainloop()
