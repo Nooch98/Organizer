@@ -3,11 +3,12 @@ import os
 import shutil
 import sqlite3
 import subprocess
+import threading
 import tkinter as tk
 import webbrowser
 from tkinter import filedialog
 from tkinter import messagebox as ms
-from tkinter import ttk
+from tkinter import scrolledtext, ttk
 from turtle import heading
 
 from ttkthemes import ThemedTk
@@ -136,19 +137,65 @@ def agregar_proyecto_existente():
         insertar_proyecto(nombre, descripcion, ruta, repo)
         descripcion_entry.delete(0, tk.END)
 
-def crear_nuevo_proyecto():
+def crear_nuevo_proyecto():    
+    ventana_lenguaje = tk.Toplevel(root)
+    ventana_lenguaje.title("Selection lenguaje")
+    
+    label = ttk.Label(ventana_lenguaje, text="Select the project language:")
+    label.grid(row=0, columnspan=2, pady=5, padx=5)
+    
+    lenguaje_options = ["Selection lenguaje", "Python", "NodeJS", "React", "Java", "JS", "C++", "C#", "TypeScript", "Ruby", "Go"]
+    
+    seleccion = tk.StringVar()
+    seleccion.set(lenguaje_options[0])
+    
+    menu_lenguaje = ttk.OptionMenu(ventana_lenguaje, seleccion, *lenguaje_options)
+    menu_lenguaje.grid(row=1, columnspan=2, padx=5, pady=5)
+    
+    textbox = scrolledtext.ScrolledText(ventana_lenguaje)
+    textbox.grid(row=2, columnspan=2, pady=5, padx=5)
+    
+    btn_selec = ttk.Button(ventana_lenguaje, text="Select", command=lambda: ejecutar_con_threading(seleccion.get(), textbox))
+    btn_selec.grid(row=5, columnspan=2, pady=5, padx=5)
+        
+def ejecutar_con_threading(lenguaje, textbox):
+    threading.Thread(target=iniciar_new_proyect, args=(lenguaje, textbox)).start()
+        
+def iniciar_new_proyect(lenguaje, textbox):
     nombre = nombre_entry.get()
     descripcion = descripcion_entry.get()
+    repo = repo_entry.get()
     
-    ruta_proyecto = filedialog.askdirectory()
-    if ruta_proyecto:
-        ruta_completa = os.path.join(ruta_proyecto, nombre)
-        os.makedirs(ruta_completa, exist_ok=True)
-        os.system(f'python -m venv "{os.path.join(ruta_completa, "venv")}')
-        insertar_proyecto(nombre, descripcion, ruta_completa)
-        
-        nombre_entry.delete(0, tk.END)
-        descripcion_entry.delete(0, tk.END)
+    if lenguaje == "Python":
+        ruta_proyecto = filedialog.askdirectory()
+        if ruta_proyecto:
+            ruta_completa = os.path.join(ruta_proyecto, nombre)
+            os.makedirs(ruta_completa, exist_ok=True)
+            os.system(f'python -m venv "{os.path.join(ruta_completa, "venv")}')
+            insertar_proyecto(nombre, descripcion, ruta_completa, repo)
+    elif lenguaje == "NodeJS":
+        ruta_proyecto = filedialog.askdirectory()
+        if ruta_proyecto:
+            ruta_completa = os.path.join(ruta_proyecto, nombre)
+            os.makedirs(ruta_completa, exist_ok=True)
+            os.system(f'npm init -w "{os.path.join(ruta_completa)}" -y')
+            insertar_proyecto(nombre, descripcion, ruta_completa, repo)
+    elif lenguaje == "React":
+        ruta_proyecto = filedialog.askdirectory()
+        if ruta_proyecto:
+            ruta_completa = os.path.join(ruta_proyecto, nombre)
+            os.makedirs(ruta_completa, exist_ok=True)
+            comando = f'npx create-react-app "{ruta_completa}" > output.txt 2>&1'
+            os.system(comando)
+            with open('output.txt', 'r') as f:
+                output = f.read()
+                textbox.insert(tk.END, output)
+            insertar_proyecto(nombre, descripcion, ruta_completa, repo)
+            os.remove('output.txt')
+    
+    nombre_entry.delete(0, tk.END)
+    descripcion_entry.delete(0, tk.END)
+    repo_entry.delete(0, tk.END)
 
 def eliminar_proyecto(id, ruta):
     conn = sqlite3.connect('proyectos.db')
@@ -236,7 +283,7 @@ def abrir_proyecto_github():
                 
 
 root = ThemedTk(theme='aqua')
-root.title('Organizador de Proyectos')
+root.title('Proyect Organizer')
 root.geometry("1045x380")
 root.iconbitmap(icono)
 filas_ocultas = set()
@@ -311,7 +358,7 @@ tree.bind("<Double-1>", abrir_repositorio)
 btn_abrir = ttk.Button(root, text='Open Proyect', command=lambda: abrir_proyecto(tree.item(tree.selection())['values'][3], selected_editor.get()))
 btn_abrir.grid(row=8, columnspan=2, pady=5, padx=5)
 
-btn_repos = ttk.Button(root, text="Open Github Proyect", command=abrir_proyecto_github)
+btn_repos = ttk.Button(root, text="Open Github Repository", command=abrir_proyecto_github)
 btn_repos.grid(row=8, column=1, pady=5, padx=5)
 
 version_label = ttk.Label(root, text=version)
