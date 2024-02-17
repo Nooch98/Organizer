@@ -232,19 +232,17 @@ def cargar_configuracion_editores():
 
 
 def hide_selected_row():
-    # Obtener la fila seleccionada
     seleccion = tree.selection()
     
-    # Ocultar la fila seleccionada y agregarla al registro de filas ocultas
+
     for rowid in seleccion:
         tree.detach(rowid)
         filas_ocultas.add(rowid)
 
 def show_selected_row():
-    # Obtener la fila seleccionada
     seleccion = tree.selection()
     
-    # Mostrar la fila seleccionada y eliminarla del registro de filas ocultas
+    
     for rowid in seleccion:
         tree.reattach(rowid, '', 'end')
         filas_ocultas.remove(rowid)
