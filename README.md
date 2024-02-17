@@ -12,7 +12,7 @@ Organizer is an application developed in python and open source which allows you
 * 6- If the projects that have been saved have a github repository and the repository url has been added, you can access it by double clicking on the url
 
 # IN PROGRESS
-* [ ] In the function of creating a new project, i'm in the process of adding more supported languages ​​such as node js (javascript), c++, java etc.
+* [ ] In the function of creating a new project, i'm in the process of adding more supported languages ​​such as TypeScript, c++, java, C# etc.
 * [ ] Now in the application in the settings area you have to add the exes of the editors that are not in the path. I'm working on making that not necessary.
 * [ ] I am working on adding some other options such as being able to order the projects as each user sees fit.
 * [ ] I am working on adding a search function in case there are many saved projects.
