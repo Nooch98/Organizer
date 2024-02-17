@@ -11,6 +11,9 @@ from turtle import heading
 
 from ttkthemes import ThemedTk
 
+main_version = "ver.1.0"
+version = str(main_version)
+
 icono = "software.ico"
 archivo_configuracion_editores = "configuracion_editores.json"
 
@@ -209,7 +212,7 @@ def show_context_menu(event):
 
 root = ThemedTk(theme='aqua')
 root.title('Organizador de Proyectos')
-root.geometry("835x380")
+root.geometry("835x350")
 root.iconbitmap(icono)
 filas_ocultas = set()
 
@@ -274,6 +277,9 @@ tree.bind("<Button-3>", show_context_menu)
 
 btn_abrir = ttk.Button(root, text='Open Proyect', command=lambda: abrir_proyecto(tree.item(tree.selection())['values'][3], selected_editor.get()))
 btn_abrir.grid(row=8, columnspan=2, pady=5, padx=5)
+
+version_label = ttk.Label(root, text=version)
+version_label.grid(row=8, column=1, pady=5, padx=5, sticky="se")
 
 
 crear_base_datos()
