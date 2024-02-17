@@ -217,6 +217,22 @@ def abrir_repositorio(event):
     url_repositorio = item_seleccionado['values'][4]
 
     webbrowser.open_new(url_repositorio)
+    
+def abrir_proyecto_github():
+    url_repositorio = repo_entry.get()
+    
+
+    ruta_destino = filedialog.askdirectory()
+
+    if ruta_destino:
+        subprocess.run(['git', 'clone', url_repositorio], cwd=ruta_destino, check=True)
+        
+        nombre_repositorio = url_repositorio.split('/')[-1].replace('.git', '')
+        ruta_repositorio_clonado = os.path.join(ruta_destino, nombre_repositorio)
+
+        abrir_proyecto(ruta_repositorio_clonado, selected_editor.get())
+        
+        repo_entry.delete(0, tk.END)
                 
 
 root = ThemedTk(theme='aqua')
@@ -287,13 +303,16 @@ editor_options = [
     ]
 selected_editor.set(editor_options[0])
 editor_menu = ttk.OptionMenu(root, selected_editor, *editor_options)
-editor_menu.grid(row=8, column=0, padx=5, pady=5)
+editor_menu.grid(row=8, column=0, padx=5, pady=5, sticky="sw")
 
 tree.bind("<Button-3>", show_context_menu)
 tree.bind("<Double-1>", abrir_repositorio)
 
 btn_abrir = ttk.Button(root, text='Open Proyect', command=lambda: abrir_proyecto(tree.item(tree.selection())['values'][3], selected_editor.get()))
 btn_abrir.grid(row=8, columnspan=2, pady=5, padx=5)
+
+btn_repos = ttk.Button(root, text="Open Github Proyect", command=abrir_proyecto_github)
+btn_repos.grid(row=8, column=1, pady=5, padx=5)
 
 version_label = ttk.Label(root, text=version)
 version_label.grid(row=8, column=1, pady=5, padx=5, sticky="se")
