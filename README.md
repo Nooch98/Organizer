@@ -5,7 +5,7 @@ Organizer is an application developed in python and open source which allows you
 
 # ACTUAL FUNCTIONS
 * 1- You can create a python project using venv, Node JS project using 'npm init -y' and React project using 'npx create-react-app'. When you create a react project, when the creation process is finished, it will show you the output of the command in the window in case there is an error or any problem.
-* 2- You can add projects from any language you already have on your team
+* 2- You can add projects from any language you already have on your PC
 * 3- You can open any of the previously added projects from the editor you select
 * 4- You can directly open a github project by giving it the github url and the app will clone it and open the project. Added to this, it will also be saved in the organizer so you can add a description to know more about the projects since the name will use the name of the repository. Even so, it is recommended to create a folder to save this repository to avoid possible failures of the app since that function is not yet completely finished.
 * 5- You can delete projects completely from your PC
