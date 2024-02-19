@@ -13,7 +13,7 @@ from turtle import heading
 
 from ttkthemes import ThemedTk
 
-main_version = "ver.1.0"
+main_version = "ver.1.1"
 version = str(main_version)
 
 icono = "software.ico"
@@ -206,21 +206,47 @@ def eliminar_proyecto(id, ruta):
     shutil.rmtree(ruta)
     mostrar_proyectos()
     conn.close()
+
+def config_editors():
+    config_editor = tk.Toplevel(root)
+    config_editor.title("Editors Config")
     
-def seleccionar_rutas_editores():
     rutas_editores = {}
-    for editor in editores_disponibles:
-        respuesta = ms.askyesno("Agregar Ruta", f"¿Desea agregar la ruta del ejecutable de {editor}?")
-        if respuesta:
-            ruta_editor = filedialog.askopenfilename(title=f"Seleccione el ejecutable de {editor}", filetypes=[("Ejecutables", "*.exe")])
-            if ruta_editor:
-                rutas_editores[editor] = ruta_editor
-    if rutas_editores:
+
+    def guardar_y_cerrar():
         guardar_configuracion_editores(rutas_editores)
+        config_editor.destroy()
+
+    for i, programa in enumerate(editores_disponibles):
+        label = ttk.Label(config_editor, text=programa)
+        label.grid(row=i, column=0, padx=5, pady=5)
+        
+        entry = ttk.Entry(config_editor)
+        entry.grid(row=i, column=1, padx=5, pady=5)
+        
+        btn = ttk.Button(config_editor, text="Agregar", command=lambda prog=programa, ent=entry: seleccionar_ruta_editor(prog, ent))
+        btn.grid(row=i, column=2, padx=5, pady=5)
+        
+        rutas_editores[programa] = entry
+
+    aceptar_btn = ttk.Button(config_editor, text="Aceptar", command=guardar_y_cerrar)
+    aceptar_btn.grid(row=len(editores_disponibles), column=0, columnspan=3, padx=5, pady=5)
+
+    
+def seleccionar_ruta_editor(editor, entry):
+    ruta_editor = filedialog.askopenfilename(title=f"Seleccione el ejecutable de {editor}", filetypes=[("Ejecutables", "*.exe")])
+    if ruta_editor:
+        entry.delete(0, tk.END)
+        entry.insert(0, ruta_editor)
         
 def guardar_configuracion_editores(rutas_editores):
+    configuracion = {}
+    for editor, entry in rutas_editores.items():
+        ruta = entry.get()
+        if ruta:
+            configuracion[editor] = ruta
     with open("configuracion_editores.json", "w") as archivo_configuracion:
-        json.dump(rutas_editores, archivo_configuracion)
+        json.dump(configuracion, archivo_configuracion)
         
 def cargar_configuracion_editores():
     try:
@@ -232,17 +258,19 @@ def cargar_configuracion_editores():
 
 
 def hide_selected_row():
+    # Obtener la fila seleccionada
     seleccion = tree.selection()
     
-
+    # Ocultar la fila seleccionada y agregarla al registro de filas ocultas
     for rowid in seleccion:
         tree.detach(rowid)
         filas_ocultas.add(rowid)
 
 def show_selected_row():
+    # Obtener la fila seleccionada
     seleccion = tree.selection()
     
-    
+    # Mostrar la fila seleccionada y eliminarla del registro de filas ocultas
     for rowid in seleccion:
         tree.reattach(rowid, '', 'end')
         filas_ocultas.remove(rowid)
@@ -303,7 +331,7 @@ menu_archivo.add_command(label='Delete Proyect', command=lambda: eliminar_proyec
 
 menu_settings = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label="Settings", menu=menu_settings)
-menu_settings.add_command(label="Config Editor", command=seleccionar_rutas_editores)
+menu_settings.add_command(label="Config Editor", command=config_editors)
 
 nombre_label = ttk.Label(root, text="Name:")
 nombre_label.grid(row=1, column=0, pady=5, padx=5)
