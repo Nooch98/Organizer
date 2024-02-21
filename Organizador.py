@@ -3,6 +3,7 @@ import os
 import shutil
 import sqlite3
 import subprocess
+import sys
 import threading
 import tkinter as tk
 import webbrowser
@@ -16,7 +17,6 @@ from ttkthemes import ThemedTk
 main_version = "ver.1.1"
 version = str(main_version)
 
-icono = "software.ico"
 archivo_configuracion_editores = "configuracion_editores.json"
 
 def crear_base_datos():
@@ -112,7 +112,9 @@ def abrir_proyecto(ruta, editor):
         elif editor == "Android Studio":
             subprocess.run(['studio', ruta], check=True)
             subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
-         
+
+def abrir_threading(ruta, editor):
+    threading.Thread(target=abrir_proyecto, args=(ruta, editor)).start()
     
 def mostrar_proyectos():
     for row in tree.get_children():
@@ -224,12 +226,12 @@ def config_editors():
         entry = ttk.Entry(config_editor)
         entry.grid(row=i, column=1, padx=5, pady=5)
         
-        btn = ttk.Button(config_editor, text="Agregar", command=lambda prog=programa, ent=entry: seleccionar_ruta_editor(prog, ent))
+        btn = ttk.Button(config_editor, text="Agree", command=lambda prog=programa, ent=entry: seleccionar_ruta_editor(prog, ent))
         btn.grid(row=i, column=2, padx=5, pady=5)
         
         rutas_editores[programa] = entry
 
-    aceptar_btn = ttk.Button(config_editor, text="Aceptar", command=guardar_y_cerrar)
+    aceptar_btn = ttk.Button(config_editor, text="Confirm", command=guardar_y_cerrar)
     aceptar_btn.grid(row=len(editores_disponibles), column=0, columnspan=3, padx=5, pady=5)
 
     
@@ -306,12 +308,21 @@ def abrir_proyecto_github():
         abrir_proyecto(ruta_repositorio_clonado, selected_editor.get())
         
         repo_entry.delete(0, tk.END)
+        
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+        
+    return os.path.join(base_path, relative_path)
                 
 
 root = ThemedTk(theme='aqua')
 root.title('Proyect Organizer')
 root.geometry("1045x380")
-root.iconbitmap(icono)
+path = resource_path("software.ico")
+root.iconbitmap(path)
 filas_ocultas = set()
 
 editores_disponibles = ["Visual Studio Code", "Sublime Text", "Atom", "Vim", "Emacs", 
