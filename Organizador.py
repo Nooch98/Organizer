@@ -12,12 +12,15 @@ from tkinter import messagebox as ms
 from tkinter import scrolledtext, ttk
 from turtle import heading
 
+import git
+from github import Auth, Github
 from ttkthemes import ThemedTk
 
-main_version = "ver.1.1"
+main_version = "ver.1.5"
 version = str(main_version)
 
 archivo_configuracion_editores = "configuracion_editores.json"
+archivo_confgiguracion_github = "configuracion_github.json"
 
 def crear_base_datos():
     conn = sqlite3.connect('proyectos.db')
@@ -50,68 +53,50 @@ def abrir_proyecto(ruta, editor):
 
     if configuracion_editores and editor in configuracion_editores:
         ruta_editor = configuracion_editores[editor]
-        subprocess.run([ruta_editor, ruta], check=True)
+        comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
     else:
         if editor == "Visual Studio Code":
-            subprocess.run(['code', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "Sublime Text":
-            subprocess.run(['subl', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "Atom":
-            subprocess.run(['atom', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "Vim":
-            subprocess.run(['vim', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "Emacs":
-            subprocess.run(['emacs', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "Notepad++":
-            subprocess.run(['notepad++', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "Brackets":
-            subprocess.run(['brackets', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "TextMate":
-            subprocess.run(['mate', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "Geany":
-            subprocess.run(['geany', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "gedit":
-            subprocess.run(['gedit', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "Nano":
-            subprocess.run(['nano', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "Kate":
-            subprocess.run(['kate', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "Bluefish":
-            subprocess.run(['bluefish', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "Eclipse":
-            subprocess.run(['eclipse', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "IntelliJ IDEA":
-            subprocess.run(['idea', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "PyCharm":
-            subprocess.run(['pycharm', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "Visual Studio":
-            subprocess.run(['visualstudio', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "Code::Blocks":
-            subprocess.run(['codeblocks', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "NetBeans":
-            subprocess.run(['netbeans', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
         elif editor == "Android Studio":
-            subprocess.run(['studio', ruta], check=True)
-            subprocess.run(['pwsh', '-Command', f'cd "{ruta}"'])
+            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+        
+    subprocess.run(comando, shell=True)
 
 def abrir_threading(ruta, editor):
     threading.Thread(target=abrir_proyecto, args=(ruta, editor)).start()
@@ -138,15 +123,17 @@ def agregar_proyecto_existente():
         nombre = os.path.basename(ruta)
         insertar_proyecto(nombre, descripcion, ruta, repo)
         descripcion_entry.delete(0, tk.END)
+        repo_entry.delete(0, tk.END)
 
 def crear_nuevo_proyecto():    
     ventana_lenguaje = tk.Toplevel(root)
     ventana_lenguaje.title("Selection lenguaje")
+    ventana_lenguaje.iconbitmap(path)
     
     label = ttk.Label(ventana_lenguaje, text="Select the project language:")
     label.grid(row=0, columnspan=2, pady=5, padx=5)
     
-    lenguaje_options = ["Selection lenguaje", "Python", "NodeJS", "React", "Java", "JS", "C++", "C#", "TypeScript", "Ruby", "Go"]
+    lenguaje_options = ["Selection lenguaje", "Python", "NodeJS", "React", "Vue", "C++", "C#", "Rust", "Go"]
     
     seleccion = tk.StringVar()
     seleccion.set(lenguaje_options[0])
@@ -162,6 +149,30 @@ def crear_nuevo_proyecto():
         
 def ejecutar_con_threading(lenguaje, textbox):
     threading.Thread(target=iniciar_new_proyect, args=(lenguaje, textbox)).start()
+    
+def crear_repo_github(nombre_repo, descripcion_repo, ruta_local):
+    token_github = cargar_configuracion_github()
+    
+    if token_github:
+        g = Github(token_github)
+        
+        # Obtener el usuario
+        user = g.get_user()
+        
+        repo = user.create_repo(nombre_repo, description=descripcion_repo)
+        
+        repo_local = git.Repo.init(ruta_local)
+        
+        origin = repo_local.create_remote('origin', repo.clone_url)
+        
+        repo_local.index.add('*')
+        repo_local.index.commit('Initial commit')
+        
+        origin.push('master')
+        
+        ms.showinfo("COMPLETE" ,"Repository created on GitHub and locally.")
+    else:
+        ms.showerror("ERROR", "Could not retrieve the GitHub API key.")
         
 def iniciar_new_proyect(lenguaje, textbox):
     nombre = nombre_entry.get()
@@ -173,15 +184,27 @@ def iniciar_new_proyect(lenguaje, textbox):
         if ruta_proyecto:
             ruta_completa = os.path.join(ruta_proyecto, nombre)
             os.makedirs(ruta_completa, exist_ok=True)
-            os.system(f'python -m venv "{os.path.join(ruta_completa, "venv")}')
+            comando = f'python -m venv "{os.path.join(ruta_completa, "venv")}'
+            os.system(comando)
+            respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
+            if respuesta:
+                crear_repo_github(nombre, descripcion, ruta_completa)
             insertar_proyecto(nombre, descripcion, ruta_completa, repo)
     elif lenguaje == "NodeJS":
         ruta_proyecto = filedialog.askdirectory()
         if ruta_proyecto:
             ruta_completa = os.path.join(ruta_proyecto, nombre)
             os.makedirs(ruta_completa, exist_ok=True)
-            os.system(f'npm init -w "{os.path.join(ruta_completa)}" -y')
+            comando = f'npm init -w "{os.path.join(ruta_completa)}" -y > output.txt 2>&1'
+            os.system(comando)
+            respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
+            if respuesta:
+                crear_repo_github(nombre, descripcion, ruta_completa)
+            with open('output.txt', 'r') as f:
+                output = f.read()
+                textbox.insert(tk.END, output)
             insertar_proyecto(nombre, descripcion, ruta_completa, repo)
+            os.remove('output.txt')
     elif lenguaje == "React":
         ruta_proyecto = filedialog.askdirectory()
         if ruta_proyecto:
@@ -189,6 +212,54 @@ def iniciar_new_proyect(lenguaje, textbox):
             os.makedirs(ruta_completa, exist_ok=True)
             comando = f'npx create-react-app "{ruta_completa}" > output.txt 2>&1'
             os.system(comando)
+            respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
+            if respuesta:
+                crear_repo_github(nombre, descripcion, ruta_completa)
+            with open('output.txt', 'r') as f:
+                output = f.read()
+                textbox.insert(tk.END, output)
+            insertar_proyecto(nombre, descripcion, ruta_completa, repo)
+            os.remove('output.txt')         
+    elif lenguaje == "C#":
+        ruta_proyecto = filedialog.askdirectory()
+        if ruta_proyecto:
+            ruta_completa = os.path.join(ruta_proyecto, nombre)
+            os.makedirs(ruta_completa, exist_ok=True)
+            comando = f'dotnet new console -n "{ruta_completa}" > output.txt 2>&1'
+            os.system(comando)
+            respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
+            if respuesta:
+                crear_repo_github(nombre, descripcion, ruta_completa)
+            with open('output.txt', 'r') as f:
+                output = f.read()
+                textbox.insert(tk.END, output)
+            insertar_proyecto(nombre, descripcion, ruta_completa, repo)
+            os.remove('output.txt') 
+    elif lenguaje == "Rust":
+        ruta_proyecto = filedialog.askdirectory()
+        if ruta_proyecto:
+            ruta_completa = os.path.join(ruta_proyecto, nombre)
+            os.makedirs(ruta_completa, exist_ok=True)
+            comando = f'cargo new "{ruta_completa}" --bin > output.txt 2>&1'
+            os.system(comando)
+            respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
+            if respuesta:
+                crear_repo_github(nombre, descripcion, ruta_completa)
+            with open('output.txt', 'r') as f:
+                output = f.read()
+                textbox.insert(tk.END, output)
+            insertar_proyecto(nombre, descripcion, ruta_completa, repo)
+            os.remove('output.txt')
+    elif lenguaje == "go":
+        ruta_proyecto = filedialog.askdirectory()
+        if ruta_proyecto:
+            ruta_completa = os.path.join(ruta_proyecto, nombre)
+            os.makedirs(ruta_completa, exist_ok=True)
+            comando = f'go mod init "{ruta_completa}" > output.txt 2>&1'
+            os.system(comando)
+            respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
+            if respuesta:
+                crear_repo_github(nombre, descripcion, ruta_completa)
             with open('output.txt', 'r') as f:
                 output = f.read()
                 textbox.insert(tk.END, output)
@@ -212,6 +283,7 @@ def eliminar_proyecto(id, ruta):
 def config_editors():
     config_editor = tk.Toplevel(root)
     config_editor.title("Editors Config")
+    config_editor.iconbitmap(path)
     
     rutas_editores = {}
 
@@ -233,7 +305,29 @@ def config_editors():
 
     aceptar_btn = ttk.Button(config_editor, text="Confirm", command=guardar_y_cerrar)
     aceptar_btn.grid(row=len(editores_disponibles), column=0, columnspan=3, padx=5, pady=5)
-
+    
+def config_github():
+    config_github = tk.Toplevel(root)
+    config_github.title("Api Key Github")
+    config_github.iconbitmap(path)
+    
+    titulo = ttk.Label(config_github, text="Github Configuration")
+    titulo.grid(row=0, columnspan=2, pady=5, padx=5)
+    
+    label = ttk.Label(config_github, text="Github Api Key: ")
+    label.grid(row=1, column=0, pady=5, padx=5)
+    
+    api_entry = ttk.Entry(config_github, width=50)
+    api_entry.grid(row=1, column=1, pady=5, padx=5)
+    
+    def guardar():
+        api_key = api_entry.get()
+        guardar_configuracion_github(api_key)
+        config_github.destroy()
+    
+    sub_button = ttk.Button(config_github, text="Accept", command=guardar)
+    sub_button.grid(row=2, columnspan=2, pady=5, padx=5)
+    
     
 def seleccionar_ruta_editor(editor, entry):
     ruta_editor = filedialog.askopenfilename(title=f"Seleccione el ejecutable de {editor}", filetypes=[("Ejecutables", "*.exe")])
@@ -249,6 +343,20 @@ def guardar_configuracion_editores(rutas_editores):
             configuracion[editor] = ruta
     with open("configuracion_editores.json", "w") as archivo_configuracion:
         json.dump(configuracion, archivo_configuracion)
+        
+def guardar_configuracion_github(api_key):
+    configuracion = {"api_key_github": api_key}
+    
+    with open("configuracion_github.json", "w") as archivo_configuracion:
+        json.dump(configuracion, archivo_configuracion)
+        
+def cargar_configuracion_github():
+    try:
+        with open(archivo_confgiguracion_github, "r") as archivo_configuracion:
+            configuracion = json.load(archivo_configuracion)
+            return configuracion.get("api_key_github", None)
+    except FileNotFoundError:
+        return None
         
 def cargar_configuracion_editores():
     try:
@@ -316,6 +424,89 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
         
     return os.path.join(base_path, relative_path)
+
+def obtener_informacion_proyectos_desde_bd():
+    # Conectar a la base de datos
+    conn = sqlite3.connect('proyectos.db')
+    cursor = conn.cursor()
+
+    # Consultar la base de datos para obtener la información de los proyectos
+    cursor.execute('SELECT * FROM proyectos')
+    proyectos = cursor.fetchall()
+
+    # Cerrar la conexión a la base de datos
+    conn.close()
+
+    # Estructurar la información de los proyectos en un formato adecuado
+    informacion_proyectos = []
+    for proyecto in proyectos:
+        proyecto_info = {
+            'id': proyecto[0],
+            'nombre': proyecto[1],
+            'descripcion': proyecto[2],
+            'ruta': proyecto[3],
+            'repo': proyecto[4]
+        }
+        informacion_proyectos.append(proyecto_info)
+
+    return informacion_proyectos
+
+def generar_informe_html(informacion):
+    # Estructura HTML del informe
+    informe_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Informe de Proyectos</title>
+    </head>
+    <body>
+        <h1>Informe de Proyectos</h1>
+        <table>
+            <thead>
+                <tr>
+                    <th>Nombre</th>
+                    <th>Descripción</th>
+                    <th>Ruta</th>
+                    <th>Repositorio</th>
+                </tr>
+            </thead>
+            <tbody>
+    """
+
+    # Agregar información de los proyectos al informe HTML
+    for proyecto in informacion:
+        informe_html += f"""
+                <tr>
+                    <td>{proyecto['nombre']}</td>
+                    <td>{proyecto['descripcion']}</td>
+                    <td>{proyecto['ruta']}</td>
+                    <td>{proyecto['repo']}</td>
+                </tr>
+        """
+
+    # Cerrar la estructura HTML del informe
+    informe_html += """
+            </tbody>
+        </table>
+    </body>
+    </html>
+    """
+
+    # Guardar el informe HTML en un archivo
+    with open("informe.html", "w") as f:
+        f.write(informe_html)
+        
+def generar_informe():
+    # Obtener la información de los proyectos desde la base de datos
+    informacion_proyectos = obtener_informacion_proyectos_desde_bd()
+    
+    # Generar el informe HTML con la información obtenida
+    generar_informe_html(informacion_proyectos)
+    
+    # Mostrar un mensaje indicando que el informe se ha generado exitosamente
+    ms.showinfo("Report Generate", "The report has been successfully generated. You can find it in the 'informe.html' file.")
+    
+    os.system('informe.html')
                 
 
 root = ThemedTk(theme='aqua')
@@ -339,10 +530,12 @@ menu.add_cascade(label="Proyects", menu=menu_archivo)
 menu_archivo.add_command(label='Agree Proyect', command=agregar_proyecto_existente)
 menu_archivo.add_command(label='Create New', command=crear_nuevo_proyecto)
 menu_archivo.add_command(label='Delete Proyect', command=lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][3]))
+menu_archivo.add_command(label="Generate Report", command=generar_informe)
 
 menu_settings = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label="Settings", menu=menu_settings)
 menu_settings.add_command(label="Config Editor", command=config_editors)
+menu_settings.add_command(label="Github", command=config_github)
 
 nombre_label = ttk.Label(root, text="Name:")
 nombre_label.grid(row=1, column=0, pady=5, padx=5)
