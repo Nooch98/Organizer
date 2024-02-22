@@ -50,54 +50,75 @@ def insertar_proyecto(nombre, descripcion, ruta, repo):
     
 def abrir_proyecto(ruta, editor):
     configuracion_editores = cargar_configuracion_editores()
+    ruta_editor = None
 
     if configuracion_editores and editor in configuracion_editores:
         ruta_editor = configuracion_editores[editor]
-        comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+        comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+        subprocess.run(comando, shell=True)
+    
     else:
         if editor == "Visual Studio Code":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "Sublime Text":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "Atom":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "Vim":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "Emacs":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "Notepad++":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "Brackets":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "TextMate":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "Geany":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "gedit":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "Nano":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "Kate":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "Bluefish":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "Eclipse":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "IntelliJ IDEA":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "PyCharm":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "Visual Studio":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "Code::Blocks":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "NetBeans":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
         elif editor == "Android Studio":
-            comando = f'"{ruta_editor}" "{ruta}" & pwsh -Command "cd \\"{ruta}\\""'
-        
-    subprocess.run(comando, shell=True)
-
+            comando = f'"{ruta_editor}" "{ruta}" & Start cmd /c "wt -d {ruta}"'
+            subprocess.run(comando, shell=True)
+            
 def abrir_threading(ruta, editor):
     threading.Thread(target=abrir_proyecto, args=(ruta, editor)).start()
     
