@@ -32,18 +32,19 @@ def crear_base_datos():
         id INTEGER PRIMARY KEY,
         nombre TEXT,
         descripcion TEXT,
+        lenguaje TEXT,
         ruta TEXT,
         repo TEXT
         )''')
     
     conn.close()
     
-def insertar_proyecto(nombre, descripcion, ruta, repo):
+def insertar_proyecto(nombre, descripcion, lenguaje, ruta, repo):
     conn = sqlite3.connect('proyectos.db')
     cursor = conn.cursor()
     
-    cursor.execute('''INSERT INTO proyectos (nombre, descripcion, ruta, repo)
-                   VALUES (?, ?, ?, ?)''', (nombre, descripcion, ruta, repo))
+    cursor.execute('''INSERT INTO proyectos (nombre, descripcion, lenguaje, ruta, repo)
+                   VALUES (?, ?, ?, ?, ?)''', (nombre, descripcion, lenguaje, ruta, repo))
     
     conn.commit()
     conn.close()
@@ -157,6 +158,8 @@ def crear_nuevo_proyecto():
     
     lenguaje_options = ["Selection lenguaje", "Python", "NodeJS", "React", "Vue", "C++", "C#", "Rust", "Go"]
     
+    global seleccion
+    
     seleccion = tk.StringVar()
     seleccion.set(lenguaje_options[0])
     
@@ -211,7 +214,7 @@ def iniciar_new_proyect(lenguaje, textbox):
             respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
             if respuesta:
                 crear_repo_github(nombre, descripcion, ruta_completa)
-            insertar_proyecto(nombre, descripcion, ruta_completa, repo)
+            insertar_proyecto(nombre, descripcion, lenguaje, ruta_completa, repo)
     elif lenguaje == "NodeJS":
         ruta_proyecto = filedialog.askdirectory()
         if ruta_proyecto:
@@ -225,7 +228,7 @@ def iniciar_new_proyect(lenguaje, textbox):
             with open('output.txt', 'r') as f:
                 output = f.read()
                 textbox.insert(tk.END, output)
-            insertar_proyecto(nombre, descripcion, ruta_completa, repo)
+            insertar_proyecto(nombre, descripcion, lenguaje, ruta_completa, repo)
             os.remove('output.txt')
     elif lenguaje == "React":
         ruta_proyecto = filedialog.askdirectory()
@@ -240,7 +243,7 @@ def iniciar_new_proyect(lenguaje, textbox):
             with open('output.txt', 'r') as f:
                 output = f.read()
                 textbox.insert(tk.END, output)
-            insertar_proyecto(nombre, descripcion, ruta_completa, repo)
+            insertar_proyecto(nombre, descripcion, lenguaje, ruta_completa, repo)
             os.remove('output.txt')         
     elif lenguaje == "C#":
         ruta_proyecto = filedialog.askdirectory()
@@ -255,7 +258,7 @@ def iniciar_new_proyect(lenguaje, textbox):
             with open('output.txt', 'r') as f:
                 output = f.read()
                 textbox.insert(tk.END, output)
-            insertar_proyecto(nombre, descripcion, ruta_completa, repo)
+            insertar_proyecto(nombre, descripcion, lenguaje, ruta_completa, repo)
             os.remove('output.txt') 
     elif lenguaje == "Rust":
         ruta_proyecto = filedialog.askdirectory()
@@ -270,7 +273,7 @@ def iniciar_new_proyect(lenguaje, textbox):
             with open('output.txt', 'r') as f:
                 output = f.read()
                 textbox.insert(tk.END, output)
-            insertar_proyecto(nombre, descripcion, ruta_completa, repo)
+            insertar_proyecto(nombre, descripcion, lenguaje, ruta_completa, repo)
             os.remove('output.txt')
     elif lenguaje == "go":
         ruta_proyecto = filedialog.askdirectory()
@@ -285,7 +288,7 @@ def iniciar_new_proyect(lenguaje, textbox):
             with open('output.txt', 'r') as f:
                 output = f.read()
                 textbox.insert(tk.END, output)
-            insertar_proyecto(nombre, descripcion, ruta_completa, repo)
+            insertar_proyecto(nombre, descripcion, lenguaje, ruta_completa, repo)
             os.remove('output.txt')
     
     nombre_entry.delete(0, tk.END)
@@ -414,12 +417,13 @@ def show_context_menu(event):
         context_menu = tk.Menu(root, tearoff=0)
         context_menu.add_command(label="Hide", command=hide_selected_row)
         context_menu.add_command(label="Show", command=show_selected_row)
+        context_menu.add_command(label="Edit", command=modificar_proyecto)
         
         context_menu.post(event.x_root, event.y_root)
 
 def abrir_repositorio(event):
     item_seleccionado = tree.item(tree.selection())
-    url_repositorio = item_seleccionado['values'][4]
+    url_repositorio = item_seleccionado['values'][5]
 
     webbrowser.open_new(url_repositorio)
     
@@ -465,9 +469,10 @@ def obtener_informacion_proyectos_desde_bd():
         proyecto_info = {
             'id': proyecto[0],
             'nombre': proyecto[1],
-            'descripcion': proyecto[2],
-            'ruta': proyecto[3],
-            'repo': proyecto[4]
+            'lenguaje': proyecto[2],
+            'descripcion': proyecto[3],
+            'ruta': proyecto[4],
+            'repo': proyecto[5]
         }
         informacion_proyectos.append(proyecto_info)
 
@@ -488,6 +493,7 @@ def generar_informe_html(informacion):
                 <tr>
                     <th>Nombre</th>
                     <th>Descripción</th>
+                    <th>Lenguaje</th>
                     <th>Ruta</th>
                     <th>Repositorio</th>
                 </tr>
@@ -501,6 +507,7 @@ def generar_informe_html(informacion):
                 <tr>
                     <td>{proyecto['nombre']}</td>
                     <td>{proyecto['descripcion']}</td>
+                    <td>{proyecto['Lenguaje']}</td>
                     <td>{proyecto['ruta']}</td>
                     <td>{proyecto['repo']}</td>
                 </tr>
@@ -521,7 +528,7 @@ def generar_informe_html(informacion):
 def on_project_select(event):
     global selected_project_path
     item = tree.selection()[0]
-    selected_project_path = tree.item(item, "values")[3]
+    selected_project_path = tree.item(item, "values")[4]
         
 def generar_informe():
     # Obtener la información de los proyectos desde la base de datos
@@ -535,35 +542,9 @@ def generar_informe():
     
     os.system('informe.html')
     
-def install_depens():
-    depen_install = tk.Toplevel(root)
-    depen_install.title("Dependecies")
-    depen_install.iconbitmap(path)
-    
-    lenguaje_options = ["Selection lenguaje", "Python", "NodeJS", "React", "Vue", "C++", "C#", "Rust", "Go"]
-    
-    selection = tk.StringVar()
-    selection.set(lenguaje_options[0])
-    
-    selec_label = ttk.Label(depen_install, text="Select lenguaje")
-    selec_label.grid(row=0, columnspan=2, padx=5, pady=5)
-    
-    selec_box = ttk.OptionMenu(depen_install, selection, *lenguaje_options)
-    selec_box.grid(row=1, columnspan=2, padx=5, pady=5)
-    
-    depen_label = ttk.Label(depen_install, text="Dependencies:")
-    depen_label.grid(row=2, column=0, padx=5, pady=5)
-    
-    global depen_entry
-    
-    depen_entry = ttk.Entry(depen_install, width=50)
-    depen_entry.grid(row=2, column=1, pady=5, padx=5)
-    
-    install_btn = ttk.Button(depen_install, text="Install", command=lambda: install_librarys(selection.get()))
-    install_btn.grid(row=3, columnspan=2, padx=5, pady=5)
-    
 def install_librarys(lenguaje):
     global selected_project_path
+    print("Ejecutando")
     
     
     if selected_project_path is None:
@@ -571,38 +552,122 @@ def install_librarys(lenguaje):
         return
     
     libreria = depen_entry.get()
+    librerias = libreria.split()
+    print(f"{libreria}, {lenguaje}")
     
     if lenguaje == "Python":
+        print("...")
         # Verificar si existe un entorno virtual y si sí, instalar la librería en él
         env_activate_script = os.path.join(selected_project_path, "app", "Scripts", "activate")
         if os.path.exists(env_activate_script):
+            print("...")
             # Instalar la librería dentro del entorno virtual directamente
-            cmd = [env_activate_script, "&&", "python", "-m", "pip", "install", libreria]
+            cmd = [env_activate_script, "&&", "python", "-m", "pip", "install"] + librerias
             subprocess.run(cmd, shell=True)
-            ms.showinfo("Complete", f"{libreria} Has been installed.")
+            print("...")
+            ms.showinfo("Complete", f"{librerias} Has been installed.")
         else:
+            print("...")
             ms.showerror("ERROR", "No virtual environment found in the project.")
     else:
         if lenguaje.lower() == "nodejs":
-            subprocess.run(["npm", "install", libreria], cwd=selected_project_path, shell=True)
-            ms.showinfo("Complete", f"{libreria} Has been installed.")
+            subprocess.run(["npm", "install", librerias], cwd=selected_project_path, shell=True)
+            ms.showinfo("Complete", f"{librerias} Has been installed.")
         elif lenguaje.lower() == "react":
-            subprocess.run(["npm", "install", libreria], cwd=selected_project_path, shell=True)
-            ms.showinfo("Complete", f"{libreria} Has been installed.")
+            subprocess.run(["npm", "install", librerias], cwd=selected_project_path, shell=True)
+            ms.showinfo("Complete", f"{librerias} Has been installed.")
         elif lenguaje.lower() == "vue":
-            subprocess.run(["npm", "install", libreria], cwd=selected_project_path, shell=True)
-            ms.showinfo("Complete", f"{libreria} Has been installed.")
+            subprocess.run(["npm", "install", librerias], cwd=selected_project_path, shell=True)
+            ms.showinfo("Complete", f"{librerias} Has been installed.")
         elif lenguaje.lower() == "rust":
-            subprocess.run(["cargo", "install", libreria], cwd=selected_project_path, shell=True)
-            ms.showinfo("Complete", f"{libreria} Has been installed.")
+            subprocess.run(["cargo", "install", librerias], cwd=selected_project_path, shell=True)
+            ms.showinfo("Complete", f"{librerias} Has been installed.")
         elif lenguaje.lower() == "go":
-            subprocess.run(["go", "get", libreria], cwd=selected_project_path, shell=True)
+            subprocess.run(["go", "get", librerias], cwd=selected_project_path, shell=True)
             ms.showinfo("Complete", f"{libreria} Has been installed.")
+            
+def modificar_proyecto():
+    # Verificar si se ha seleccionado una fila en el TreeView
+    selected_row = tree.selection()
+    if not selected_row:
+        ms.showerror("Error", "Please select a project to modify.")
+        return
+
+    field_index = {
+    'ID': 0,
+    'Nombre': 1,
+    'Descripcion': 2,
+    'Lenguaje': 3,
+    'Ruta': 4,
+    'Repositorio': 5
+    }
+    
+    # Obtener la fila seleccionada
+    selected_row = selected_row[0]
+    current_values = tree.item(selected_row, "values")
+
+    # Crear una ventana secundaria para la modificación
+    mod_window = tk.Toplevel(root)
+    mod_window.title("Modify Project")
+
+    # Etiqueta y menú desplegable para seleccionar el campo a modificar
+    field_label = ttk.Label(mod_window, text="Select Field to Modify:")
+    field_label.grid(row=0, column=0, padx=5, pady=5)
+
+    selected_field = tk.StringVar()
+    field_menu = ttk.OptionMenu(mod_window, selected_field, "", *['ID', 'Nombre', 'Descripcion', 'Lenguaje', 'Ruta', 'Repositorio'])
+    field_menu.grid(row=0, column=1, padx=5, pady=5)
+
+    # Etiqueta y entrada para el nuevo valor
+    new_value_label = ttk.Label(mod_window, text="New Value:")
+    new_value_label.grid(row=1, column=0, padx=5, pady=5)
+
+    new_value_entry = ttk.Entry(mod_window)
+    new_value_entry.grid(row=1, column=1, padx=5, pady=5)
+
+    # Función para aplicar la modificación
+    def apply_modification():
+        new_value = new_value_entry.get()
+        field = selected_field.get()
+        
+        # Verificar si se ha seleccionado un campo y se ha ingresado un nuevo valor
+        if field and new_value:
+            # Obtener la lista de valores actuales y modificar el valor deseado
+            current_values = list(tree.item(selected_row, "values"))
+            current_values[field_index[field]] = new_value
+            
+            # Actualizar la fila en el TreeView con los nuevos valores
+            tree.item(selected_row, values=current_values)
+            
+            # Actualizar la base de datos
+            update_project(selected_row, field, new_value)
+            
+            # Cerrar la ventana secundaria
+            mod_window.destroy()
+        else:
+            ms.showerror("Error", "Please select a field and provide a new value.")
+
+    # Botón para aplicar la modificación
+    apply_button = ttk.Button(mod_window, text="Apply", command=apply_modification)
+    apply_button.grid(row=2, columnspan=2, padx=5, pady=5)
+
+def update_project(project_id, field, new_value):
+    # Conectar a la base de datos
+    conn = sqlite3.connect('proyectos.db')
+    cursor = conn.cursor()
+
+    # Crear y ejecutar la consulta SQL de actualización
+    update_query = f"UPDATE proyectos SET {field.lower()}=? WHERE id=?"
+    cursor.execute(update_query, (new_value, project_id))
+
+    # Guardar los cambios y cerrar la conexión
+    conn.commit()
+    conn.close()
         
 
 root = ThemedTk(theme='aqua')
 root.title('Proyect Organizer')
-root.geometry("1045x380")
+root.geometry("1230x420")
 path = resource_path("software.ico")
 root.iconbitmap(path)
 filas_ocultas = set()
@@ -620,8 +685,7 @@ menu_archivo = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label="Proyects", menu=menu_archivo)
 menu_archivo.add_command(label='Agree Proyect', command=agregar_proyecto_existente)
 menu_archivo.add_command(label='Create New', command=crear_nuevo_proyecto)
-menu_archivo.add_command(label="Install Dependencies", command=install_depens)
-menu_archivo.add_command(label='Delete Proyect', command=lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][3]))
+menu_archivo.add_command(label='Delete Proyect', command=lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4]))
 menu_archivo.add_command(label="Generate Report", command=generar_informe)
 
 menu_settings = tk.Menu(menu, tearoff=0)
@@ -647,11 +711,17 @@ repo_label.grid(row=3, column=0, padx=5, pady=5)
 repo_entry = ttk.Entry(root, width=100)
 repo_entry.grid(row=3, column=1, pady=5, padx=5)
 
+depen_label = ttk.Label(root, text="Dependencies:")
+depen_label.grid(row=4, column=0, pady=5, padx=5)
 
-tree = ttk.Treeview(root, columns=('ID', 'Nombre', 'Descripcion', 'Ruta', 'Repositorio'), show='headings')
+depen_entry = ttk.Entry(root, width=100)
+depen_entry.grid(row=4, column=1, pady=5, padx=5)
+
+tree = ttk.Treeview(root, columns=('ID', 'Nombre', 'Descripcion', 'Lenguaje', 'Ruta', 'Repositorio'), show='headings')
 tree.heading('ID', text='ID')
 tree.heading('Nombre', text='Name')
 tree.heading('Descripcion', text='Description')
+tree.heading('Lenguaje', text='Lenguaje')
 tree.heading('Ruta', text='Path')
 tree.heading('Repositorio', text='Repository')
 tree.grid(row=5, columnspan=2, pady=5, padx=5)
@@ -678,11 +748,14 @@ tree.bind("<Button-3>", show_context_menu)
 tree.bind("<Double-1>", abrir_repositorio)
 tree.bind("<<TreeviewSelect>>", on_project_select)
 
-btn_abrir = ttk.Button(root, text='Open Proyect', command=lambda: abrir_threading(tree.item(tree.selection())['values'][3], selected_editor.get()))
+btn_abrir = ttk.Button(root, text='Open Proyect', command=lambda: abrir_threading(tree.item(tree.selection())['values'][4], selected_editor.get()))
 btn_abrir.grid(row=9, columnspan=2, pady=5, padx=5)
 
 btn_repos = ttk.Button(root, text="Open Github Repository", command=abrir_proyecto_github)
 btn_repos.grid(row=9, column=1, pady=5, padx=5)
+
+btn_install = ttk.Button(root, text="Install dependencies", command=lambda: install_librarys(tree.item(tree.selection())['values'][3]))
+btn_install.grid(row=4, column=1, padx=5, pady=5, sticky="e")
 
 version_label = ttk.Label(root, text=version)
 version_label.grid(row=9, column=1, pady=5, padx=5, sticky="se")
