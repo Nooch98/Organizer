@@ -16,11 +16,12 @@ import git
 from github import Auth, Github
 from ttkthemes import ThemedTk
 
-main_version = "ver.1.5"
+main_version = "ver.1.6"
 version = str(main_version)
 
 archivo_configuracion_editores = "configuracion_editores.json"
 archivo_confgiguracion_github = "configuracion_github.json"
+selected_project_path = None
 
 def crear_base_datos():
     conn = sqlite3.connect('proyectos.db')
@@ -205,7 +206,7 @@ def iniciar_new_proyect(lenguaje, textbox):
         if ruta_proyecto:
             ruta_completa = os.path.join(ruta_proyecto, nombre)
             os.makedirs(ruta_completa, exist_ok=True)
-            comando = f'python -m venv "{os.path.join(ruta_completa, "venv")}'
+            comando = f'python -m venv "{os.path.join(ruta_completa, "app")}"'
             os.system(comando)
             respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
             if respuesta:
@@ -517,6 +518,11 @@ def generar_informe_html(informacion):
     with open("informe.html", "w") as f:
         f.write(informe_html)
         
+def on_project_select(event):
+    global selected_project_path
+    item = tree.selection()[0]
+    selected_project_path = tree.item(item, "values")[3]
+        
 def generar_informe():
     # Obtener la información de los proyectos desde la base de datos
     informacion_proyectos = obtener_informacion_proyectos_desde_bd()
@@ -528,7 +534,71 @@ def generar_informe():
     ms.showinfo("Report Generate", "The report has been successfully generated. You can find it in the 'informe.html' file.")
     
     os.system('informe.html')
-                
+    
+def install_depens():
+    depen_install = tk.Toplevel(root)
+    depen_install.title("Dependecies")
+    depen_install.iconbitmap(path)
+    
+    lenguaje_options = ["Selection lenguaje", "Python", "NodeJS", "React", "Vue", "C++", "C#", "Rust", "Go"]
+    
+    selection = tk.StringVar()
+    selection.set(lenguaje_options[0])
+    
+    selec_label = ttk.Label(depen_install, text="Select lenguaje")
+    selec_label.grid(row=0, columnspan=2, padx=5, pady=5)
+    
+    selec_box = ttk.OptionMenu(depen_install, selection, *lenguaje_options)
+    selec_box.grid(row=1, columnspan=2, padx=5, pady=5)
+    
+    depen_label = ttk.Label(depen_install, text="Dependencies:")
+    depen_label.grid(row=2, column=0, padx=5, pady=5)
+    
+    global depen_entry
+    
+    depen_entry = ttk.Entry(depen_install, width=50)
+    depen_entry.grid(row=2, column=1, pady=5, padx=5)
+    
+    install_btn = ttk.Button(depen_install, text="Install", command=lambda: install_librarys(selection.get()))
+    install_btn.grid(row=3, columnspan=2, padx=5, pady=5)
+    
+def install_librarys(lenguaje):
+    global selected_project_path
+    
+    
+    if selected_project_path is None:
+        ms.showerror("ERROR", "No project selected")
+        return
+    
+    libreria = depen_entry.get()
+    
+    if lenguaje == "Python":
+        # Verificar si existe un entorno virtual y si sí, instalar la librería en él
+        env_activate_script = os.path.join(selected_project_path, "app", "Scripts", "activate")
+        if os.path.exists(env_activate_script):
+            # Instalar la librería dentro del entorno virtual directamente
+            cmd = [env_activate_script, "&&", "python", "-m", "pip", "install", libreria]
+            subprocess.run(cmd, shell=True)
+            ms.showinfo("Complete", f"{libreria} Has been installed.")
+        else:
+            ms.showerror("ERROR", "No virtual environment found in the project.")
+    else:
+        if lenguaje.lower() == "nodejs":
+            subprocess.run(["npm", "install", libreria], cwd=selected_project_path, shell=True)
+            ms.showinfo("Complete", f"{libreria} Has been installed.")
+        elif lenguaje.lower() == "react":
+            subprocess.run(["npm", "install", libreria], cwd=selected_project_path, shell=True)
+            ms.showinfo("Complete", f"{libreria} Has been installed.")
+        elif lenguaje.lower() == "vue":
+            subprocess.run(["npm", "install", libreria], cwd=selected_project_path, shell=True)
+            ms.showinfo("Complete", f"{libreria} Has been installed.")
+        elif lenguaje.lower() == "rust":
+            subprocess.run(["cargo", "install", libreria], cwd=selected_project_path, shell=True)
+            ms.showinfo("Complete", f"{libreria} Has been installed.")
+        elif lenguaje.lower() == "go":
+            subprocess.run(["go", "get", libreria], cwd=selected_project_path, shell=True)
+            ms.showinfo("Complete", f"{libreria} Has been installed.")
+        
 
 root = ThemedTk(theme='aqua')
 root.title('Proyect Organizer')
@@ -550,6 +620,7 @@ menu_archivo = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label="Proyects", menu=menu_archivo)
 menu_archivo.add_command(label='Agree Proyect', command=agregar_proyecto_existente)
 menu_archivo.add_command(label='Create New', command=crear_nuevo_proyecto)
+menu_archivo.add_command(label="Install Dependencies", command=install_depens)
 menu_archivo.add_command(label='Delete Proyect', command=lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][3]))
 menu_archivo.add_command(label="Generate Report", command=generar_informe)
 
@@ -583,10 +654,10 @@ tree.heading('Nombre', text='Name')
 tree.heading('Descripcion', text='Description')
 tree.heading('Ruta', text='Path')
 tree.heading('Repositorio', text='Repository')
-tree.grid(row=4, columnspan=2, pady=5, padx=5)
+tree.grid(row=5, columnspan=2, pady=5, padx=5)
 
 scrollbar_y = ttk.Scrollbar(root, orient='vertical', command=tree.yview)
-scrollbar_y.grid(row=4, column=2, sticky='ns')
+scrollbar_y.grid(row=5, column=2, sticky='ns')
 
 tree.configure(yscrollcommand=scrollbar_y.set)
 
@@ -601,19 +672,20 @@ editor_options = [
     ]
 selected_editor.set(editor_options[0])
 editor_menu = ttk.OptionMenu(root, selected_editor, *editor_options)
-editor_menu.grid(row=8, column=0, padx=5, pady=5, sticky="sw")
+editor_menu.grid(row=9, column=0, padx=5, pady=5, sticky="sw")
 
 tree.bind("<Button-3>", show_context_menu)
 tree.bind("<Double-1>", abrir_repositorio)
+tree.bind("<<TreeviewSelect>>", on_project_select)
 
-btn_abrir = ttk.Button(root, text='Open Proyect', command=lambda: abrir_proyecto(tree.item(tree.selection())['values'][3], selected_editor.get()))
-btn_abrir.grid(row=8, columnspan=2, pady=5, padx=5)
+btn_abrir = ttk.Button(root, text='Open Proyect', command=lambda: abrir_threading(tree.item(tree.selection())['values'][3], selected_editor.get()))
+btn_abrir.grid(row=9, columnspan=2, pady=5, padx=5)
 
 btn_repos = ttk.Button(root, text="Open Github Repository", command=abrir_proyecto_github)
-btn_repos.grid(row=8, column=1, pady=5, padx=5)
+btn_repos.grid(row=9, column=1, pady=5, padx=5)
 
 version_label = ttk.Label(root, text=version)
-version_label.grid(row=8, column=1, pady=5, padx=5, sticky="se")
+version_label.grid(row=9, column=1, pady=5, padx=5, sticky="se")
 
 
 crear_base_datos()
