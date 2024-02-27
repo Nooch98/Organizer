@@ -7,7 +7,7 @@ import sys
 import threading
 import tkinter as tk
 import webbrowser
-from tkinter import filedialog
+from tkinter import OptionMenu, StringVar, filedialog
 from tkinter import messagebox as ms
 from tkinter import scrolledtext, ttk
 from turtle import heading
@@ -16,7 +16,7 @@ import git
 from github import Auth, Github
 from ttkthemes import ThemedTk
 
-main_version = "ver.1.6"
+main_version = "ver.1.7"
 version = str(main_version)
 
 archivo_configuracion_editores = "configuracion_editores.json"
@@ -39,7 +39,7 @@ def crear_base_datos():
     
     conn.close()
     
-def insertar_proyecto(nombre, descripcion, lenguaje, ruta, repo):
+def insertar_proyecto(nombre, descripcion, ruta, repo, lenguaje=None):
     conn = sqlite3.connect('proyectos.db')
     cursor = conn.cursor()
     
@@ -544,7 +544,6 @@ def generar_informe():
     
 def install_librarys(lenguaje):
     global selected_project_path
-    print("Ejecutando")
     
     
     if selected_project_path is None:
@@ -553,21 +552,14 @@ def install_librarys(lenguaje):
     
     libreria = depen_entry.get()
     librerias = libreria.split()
-    print(f"{libreria}, {lenguaje}")
     
     if lenguaje == "Python":
-        print("...")
-        # Verificar si existe un entorno virtual y si sí, instalar la librería en él
         env_activate_script = os.path.join(selected_project_path, "app", "Scripts", "activate")
         if os.path.exists(env_activate_script):
-            print("...")
-            # Instalar la librería dentro del entorno virtual directamente
             cmd = [env_activate_script, "&&", "python", "-m", "pip", "install"] + librerias
             subprocess.run(cmd, shell=True)
-            print("...")
             ms.showinfo("Complete", f"{librerias} Has been installed.")
         else:
-            print("...")
             ms.showerror("ERROR", "No virtual environment found in the project.")
     else:
         if lenguaje.lower() == "nodejs":
@@ -585,7 +577,7 @@ def install_librarys(lenguaje):
         elif lenguaje.lower() == "go":
             subprocess.run(["go", "get", librerias], cwd=selected_project_path, shell=True)
             ms.showinfo("Complete", f"{libreria} Has been installed.")
-            
+           
 def modificar_proyecto():
     # Verificar si se ha seleccionado una fila en el TreeView
     selected_row = tree.selection()
@@ -640,7 +632,7 @@ def modificar_proyecto():
             tree.item(selected_row, values=current_values)
             
             # Actualizar la base de datos
-            update_project(selected_row, field, new_value)
+            update_project(current_values[field_index['ID']], field, new_value)
             
             # Cerrar la ventana secundaria
             mod_window.destroy()
@@ -663,7 +655,33 @@ def update_project(project_id, field, new_value):
     # Guardar los cambios y cerrar la conexión
     conn.commit()
     conn.close()
-        
+  
+def config_theme():
+    def change_theme():
+        # Selecciona el tema especificado por el usuario
+        theme = selected_theme.get()
+        root.set_theme(theme)
+        root.update_idletasks()
+        root.geometry("")  # Restaurar la geometría predeterminada
+        root.geometry(f"{root.winfo_reqwidth()}x{root.winfo_reqheight()}") 
+
+    themes = tk.Toplevel(root)
+    themes.title("Change Theme")
+    
+    selected_theme = tk.StringVar(themes)
+    selected_theme.set([0])
+    
+    theme_label = ttk.Label(themes, text="Seleccionar Tema:")
+    theme_label.pack(padx=10, pady=(10, 0))
+    
+    theme_menu = tk.OptionMenu(themes, selected_theme, "Select Theme", "arc", "equilux", "radiance", "blue", "ubuntu", "aqua", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik", "plastik")
+    theme_menu.pack(padx=10, pady=(0, 10))
+    
+    label = ttk.Label(themes, text="¡Este es un ejemplo de texto con el nuevo tema!", style="TLabel")
+    label.pack(pady=10)
+    
+    apply_button = tk.Button(themes, text="Aplicar Tema", command=change_theme)
+    apply_button.pack(padx=10, pady=10)   
 
 root = ThemedTk(theme='aqua')
 root.title('Proyect Organizer')
@@ -692,6 +710,7 @@ menu_settings = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label="Settings", menu=menu_settings)
 menu_settings.add_command(label="Config Editor", command=config_editors)
 menu_settings.add_command(label="Github", command=config_github)
+menu_settings.add_command(label="Theme", command=config_theme)
 
 nombre_label = ttk.Label(root, text="Name:")
 nombre_label.grid(row=1, column=0, pady=5, padx=5)
