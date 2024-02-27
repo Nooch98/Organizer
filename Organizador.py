@@ -671,16 +671,14 @@ def config_theme():
     selected_theme = tk.StringVar(themes)
     selected_theme.set([0])
     
-    theme_label = ttk.Label(themes, text="Seleccionar Tema:")
+    theme_label = ttk.Label(themes, text="Select Theme:")
     theme_label.pack(padx=10, pady=(10, 0))
     
     theme_menu = tk.OptionMenu(themes, selected_theme, "Select Theme", "arc", "equilux", "radiance", "blue", "ubuntu", "aqua", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik", "plastik")
     theme_menu.pack(padx=10, pady=(0, 10))
     
-    label = ttk.Label(themes, text="¡Este es un ejemplo de texto con el nuevo tema!", style="TLabel")
-    label.pack(pady=10)
     
-    apply_button = tk.Button(themes, text="Aplicar Tema", command=change_theme)
+    apply_button = tk.Button(themes, text="Apply", command=change_theme)
     apply_button.pack(padx=10, pady=10)   
 
 root = ThemedTk(theme='aqua')
