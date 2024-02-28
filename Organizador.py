@@ -5,6 +5,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
 import webbrowser
 from tkinter import OptionMenu, StringVar, filedialog
@@ -49,77 +50,80 @@ def insertar_proyecto(nombre, descripcion, ruta, repo, lenguaje=None):
     conn.commit()
     conn.close()
     mostrar_proyectos()
-    
+
+def abrir_editor(ruta, ruta_editor):
+    subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+   
 def abrir_proyecto(ruta, editor):
     configuracion_editores = cargar_configuracion_editores()
     ruta_editor = None
 
     if configuracion_editores and editor in configuracion_editores:
         ruta_editor = configuracion_editores[editor]
-        comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-        subprocess.run(comando, shell=True)
+        subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+        subprocess.run(f'Start wt -d "{ruta}"', shell=True)
     
     else:
         if editor == "Visual Studio Code":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Sublime Text":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Atom":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Vim":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Emacs":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Notepad++":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Brackets":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "TextMate":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Geany":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "gedit":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Nano":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Kate":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Bluefish":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Eclipse":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "IntelliJ IDEA":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "PyCharm":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Visual Studio":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Code::Blocks":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "NetBeans":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Android Studio":
-            comando = f'"{ruta_editor}" "{ruta}" & Start wt -d "{ruta}"'
-            subprocess.run(comando, shell=True)
+            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
             
 def abrir_threading(ruta, editor):
     threading.Thread(target=abrir_proyecto, args=(ruta, editor)).start()
@@ -198,6 +202,22 @@ def crear_repo_github(nombre_repo, descripcion_repo, ruta_local):
         ms.showinfo("COMPLETE" ,"Repository created on GitHub and locally.")
     else:
         ms.showerror("ERROR", "Could not retrieve the GitHub API key.")
+        
+def push_actualizaciones_github(ruta_local):
+    # Obtener la instancia del repositorio local
+    repo_local = git.Repo(ruta_local)
+
+    # Añadir todos los cambios realizados
+    repo_local.index.add('*')
+
+    # Hacer un commit con los cambios
+    repo_local.index.commit('Updated project')
+
+    # Obtener la instancia del origen remoto
+    origin = repo_local.remote('origin')
+
+    # Realizar el push al repositorio remoto
+    origin.push('master')
         
 def iniciar_new_proyect(lenguaje, textbox):
     nombre = nombre_entry.get()
@@ -391,6 +411,13 @@ def cargar_configuracion_editores():
     except FileNotFoundError:
         return None
 
+def cargar_config_terminal():
+    try:
+        with open("terminal_config.json", "r") as config_terminal:
+            config = json.load(config_terminal)
+            return config
+    except FileNotFoundError:
+        return None
 
 def hide_selected_row():
     # Obtener la fila seleccionada
@@ -667,6 +694,7 @@ def config_theme():
 
     themes = tk.Toplevel(root)
     themes.title("Change Theme")
+    themes.iconbitmap(path)
     
     selected_theme = tk.StringVar(themes)
     selected_theme.set([0])
@@ -679,7 +707,44 @@ def config_theme():
     
     
     apply_button = tk.Button(themes, text="Apply", command=change_theme)
-    apply_button.pack(padx=10, pady=10)   
+    apply_button.pack(padx=10, pady=10)
+    
+def select_terminal():
+    setting_terminal = tk.Toplevel(root)
+    setting_terminal.title("Setting Terminal")
+    setting_terminal.iconbitmap(path)
+    
+    terminal_label = ttk.Label(setting_terminal, text="Select Terminal")
+    terminal_label.grid(row=0, columnspan=2, padx=5, pady=5)
+    
+    selected_terminal = tk.StringVar()
+    terminal_choices = ["Select Terminal", "Command Pormpt", "Windows Terminal", "PowerShell", "Git Bash"]
+    terminal_menu = ttk.OptionMenu(setting_terminal, selected_terminal, *terminal_choices)
+    terminal_menu.grid(row=1, columnspan=2, pady=5, padx=5)
+    
+    terminal_path_label = ttk.Label(setting_terminal, text="Terminal Executable Path: ")
+    terminal_path_label.grid(row=2, column=0, padx=5, pady=5)
+    
+    terminal_path_entry = ttk.Entry(setting_terminal, width=50)
+    terminal_path_entry.grid(row=2, column=1, padx=5, pady=5)
+    
+    def save_settigns():
+        selected_terminal_value = selected_terminal.get()
+        terminal_path_value = terminal_path_entry.get()
+        
+        config = {
+            "Selected_terminal": selected_terminal_value,
+            "terminal_path": terminal_path_value
+            }
+        with open("terminal_config.json", "w") as f:
+            json.dump(config, f)
+            
+        setting_terminal.destroy()
+            
+    save_button = ttk.Button(setting_terminal, text="Save", command=save_settigns)
+    save_button.grid(row=3, columnspan=2, padx=5, pady=5) 
+    
+    
 
 root = ThemedTk(theme='aqua')
 root.title('Proyect Organizer')
@@ -701,6 +766,7 @@ menu_archivo = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label="Proyects", menu=menu_archivo)
 menu_archivo.add_command(label='Agree Proyect', command=agregar_proyecto_existente)
 menu_archivo.add_command(label='Create New', command=crear_nuevo_proyecto)
+menu_archivo.add_command(label="Push Update Github", command=push_actualizaciones_github)
 menu_archivo.add_command(label='Delete Proyect', command=lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4]))
 menu_archivo.add_command(label="Generate Report", command=generar_informe)
 
@@ -708,6 +774,7 @@ menu_settings = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label="Settings", menu=menu_settings)
 menu_settings.add_command(label="Config Editor", command=config_editors)
 menu_settings.add_command(label="Github", command=config_github)
+menu_settings.add_command(label="Terminal", command=select_terminal)
 menu_settings.add_command(label="Theme", command=config_theme)
 
 nombre_label = ttk.Label(root, text="Name:")
