@@ -11,18 +11,23 @@ import webbrowser
 from tkinter import OptionMenu, StringVar, filedialog
 from tkinter import messagebox as ms
 from tkinter import scrolledtext, ttk
-from turtle import heading
+from turtle import heading, right
 
 import git
+import markdown
+import requests
+from bs4 import BeautifulSoup
 from github import Auth, Github
+from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 
-main_version = "ver.1.7"
+main_version = "ver.1.8"
 version = str(main_version)
 
 archivo_configuracion_editores = "configuracion_editores.json"
 archivo_confgiguracion_github = "configuracion_github.json"
 selected_project_path = None
+text_editor = None
 
 def crear_base_datos():
     conn = sqlite3.connect('proyectos.db')
@@ -124,7 +129,108 @@ def abrir_proyecto(ruta, editor):
         elif editor == "Android Studio":
             subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
             subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-            
+        elif editor == "Editor Integrated":
+            subprocess.Popen(f'Start wt -d "{ruta}"', shell=True)
+            abrir_editor_integrado(ruta, tree.item(tree.selection())['values'][1])
+
+def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
+    global current_file
+    editor = tk.Toplevel(root)
+    editor.title("Editor Integrated")
+    editor.iconbitmap(path)
+    
+    current_file = None
+    
+    def guardar_cambios():
+        print("saving...")
+        global current_file
+        if current_file:
+            with open(current_file, "w", encoding="utf-8") as file:
+                content = text_editor.get(1.0, tk.END)
+                file.write(content)
+    
+    def open_file(event):
+        global current_file
+        guardar_cambios()
+        
+        item = tree.focus()
+        if item:
+            file_name = tree.item(item, "text")
+            file_path = os.path.join(ruta_proyecto, file_name)
+            if os.path.isfile(file_path):
+                current_file = file_path
+                # Muestra el contenido del archivo en el scrolledtext
+                show_file_content(file_path)
+
+    def show_file_content(file_path):
+        if text_editor:
+            text_editor.delete(1.0, tk.END)
+
+        with open(file_path, "r", encoding="utf-8") as file:
+            content = file.read()
+            text_editor.insert(tk.END, content)
+
+    def expand_folder(event):
+        def open_file_from_subfolder(event):
+            item = tree.focus()
+            if item:
+                file_path = tree.item(item, "text")
+                if os.path.isfile(file_path):
+                    open_file(file_path)
+                    # Llamar a show_file_content directamente después de open_file
+                    show_file_content(file_path)
+        
+        item = tree.focus()
+        if item:
+            folder_name = tree.item(item, "text")
+            folder_path = os.path.join(ruta_proyecto, folder_name)
+            if os.path.isdir(folder_path):
+                # Eliminar los elementos previamente insertados en esta carpeta
+                tree.delete(*tree.get_children(item))
+                for sub_item in os.listdir(folder_path):
+                    sub_item_path = os.path.join(folder_path, sub_item)
+                    if os.path.isfile(sub_item_path):
+                        tree.insert(item, "end", text=sub_item)
+                    elif os.path.isdir(sub_item_path):
+                        sub_folder_id = tree.insert(item, "end", text=sub_item, open=False)
+                        # Insertar un elemento fantasma solo para que la carpeta se expanda
+                        tree.insert(sub_folder_id, "end", text="")
+        tree.bind("<Double-1>", open_file_from_subfolder)
+    
+          
+    menu_bar = tk.Menu(editor)
+    file_menu = tk.Menu(menu_bar, tearoff=0)
+    file_menu.add_command(label="Save", command=guardar_cambios)
+    menu_bar.add_cascade(label="File", menu=file_menu)
+    editor.config(menu=menu_bar)
+    
+    tree_frame = ttk.Frame(editor)
+    tree_frame.pack(side="left", fill="both")
+
+    tree_scroll = ttk.Scrollbar(tree_frame)
+    tree_scroll.pack(side="right", fill="y")
+
+    tree = ttk.Treeview(tree_frame, yscrollcommand=tree_scroll.set)
+    tree.pack(side="left", fill="both")
+    tree_scroll.config(command=tree.yview)
+    
+    tree.heading("#0", text=nombre_proyecto)
+
+    text_editor = scrolledtext.ScrolledText(editor, wrap=tk.WORD)
+    text_editor.pack(expand=True, fill="both")
+    
+    editor.after(100, lambda: tree.bind("<Double-1>", open_file))
+    tree.bind("<<TreeviewOpen>>", expand_folder)
+    
+    for item in os.listdir(ruta_proyecto):
+        item_path = os.path.join(ruta_proyecto, item)
+        if os.path.isfile(item_path):
+            tree.insert("", "end", text=item)
+        elif os.path.isdir(item_path):
+            folder_id = tree.insert("", "end", text=item, open=False)
+            tree.insert(folder_id, "end")
+
+                               
 def abrir_threading(ruta, editor):
     threading.Thread(target=abrir_proyecto, args=(ruta, editor)).start()
     
@@ -496,8 +602,8 @@ def obtener_informacion_proyectos_desde_bd():
         proyecto_info = {
             'id': proyecto[0],
             'nombre': proyecto[1],
-            'lenguaje': proyecto[2],
-            'descripcion': proyecto[3],
+            'descripcion': proyecto[2],
+            'lenguaje': proyecto[3],
             'ruta': proyecto[4],
             'repo': proyecto[5]
         }
@@ -534,7 +640,7 @@ def generar_informe_html(informacion):
                 <tr>
                     <td>{proyecto['nombre']}</td>
                     <td>{proyecto['descripcion']}</td>
-                    <td>{proyecto['Lenguaje']}</td>
+                    <td>{proyecto['lenguaje']}</td>
                     <td>{proyecto['ruta']}</td>
                     <td>{proyecto['repo']}</td>
                 </tr>
@@ -742,16 +848,58 @@ def select_terminal():
         setting_terminal.destroy()
             
     save_button = ttk.Button(setting_terminal, text="Save", command=save_settigns)
-    save_button.grid(row=3, columnspan=2, padx=5, pady=5) 
-    
-    
+    save_button.grid(row=3, columnspan=2, padx=5, pady=5)
 
+def label_hover_in(event):
+    version_label.config(background="gray", cursor='hand2')
+
+def label_hover_out(event):
+    version_label.config(background="",cursor='')
+
+def renderizar_markdown(texto):
+    html = markdown(texto)
+    return html
+  
+def ver_info(event):
+    info_window = tk.Toplevel(root)
+    info_window.title("PATCH NOTES")
+    info_window.geometry("1500x600")
+    info_window.iconbitmap(path)
+    
+    notas_markdown = """
+# RELEASE v1.8
+
+## NEW FEATURES
+* Now if you click on the version of the app it will show the notes of the latest version
+* A new editor was added, still in development since the editor works with ttk so at the moment it is very basic but it works
+
+![Captura de pantalla 2024-03-03 081502](https://github.com/Nooch98/Organizer/assets/73700510/9de212cc-673c-4cde-9870-907529377627)
+
+## ON PROGRESS
+* Working on the option of being able to create your own color configuration for the editor integrated
+
+## KNOW ISSUE
+* In the edit itself of the app there is an error where files in subfolders may not open
+* There is also a bug where files in subfolders are not able to be saved.
+""" 
+
+    html = markdown.markdown(notas_markdown)
+
+    notas_html = HTMLLabel(info_window, html=html)
+    notas_html.pack(expand=True, fill="both", side="left")
+    
+    scrollbar_vertical = ttk.Scrollbar(info_window, orient="vertical", command=notas_html.yview)
+    scrollbar_vertical.pack(side="right", fill="y")
+    notas_html.configure(yscrollcommand=scrollbar_vertical.set)
+    
 root = ThemedTk(theme='aqua')
 root.title('Proyect Organizer')
 root.geometry("1230x420")
+root.wm_resizable(False, False)
 path = resource_path("software.ico")
 root.iconbitmap(path)
 filas_ocultas = set()
+
 
 editores_disponibles = ["Visual Studio Code", "Sublime Text", "Atom", "Vim", "Emacs", 
         "Notepad++", "Brackets", "TextMate", "Geany", "gedit", 
@@ -822,7 +970,7 @@ editor_options = [
         "Notepad++", "Brackets", "TextMate", "Geany", "gedit", 
         "Nano", "Kate", "Bluefish", "Eclipse", "IntelliJ IDEA", 
         "PyCharm", "Visual Studio", "Code::Blocks", "NetBeans", 
-        "Android Studio"
+        "Android Studio", "Editor Integrated"
     ]
 selected_editor.set(editor_options[0])
 editor_menu = ttk.OptionMenu(root, selected_editor, *editor_options)
@@ -833,10 +981,10 @@ tree.bind("<Double-1>", abrir_repositorio)
 tree.bind("<<TreeviewSelect>>", on_project_select)
 
 btn_abrir = ttk.Button(root, text='Open Proyect', command=lambda: abrir_threading(tree.item(tree.selection())['values'][4], selected_editor.get()))
-btn_abrir.grid(row=9, columnspan=2, pady=5, padx=5)
+btn_abrir.grid(row=9, columnspan=2, pady=5, padx=5, sticky="s")
 
 btn_repos = ttk.Button(root, text="Open Github Repository", command=abrir_proyecto_github)
-btn_repos.grid(row=9, column=1, pady=5, padx=5)
+btn_repos.grid(row=9, column=1, pady=5, padx=5, sticky="s")
 
 btn_install = ttk.Button(root, text="Install dependencies", command=lambda: install_librarys(tree.item(tree.selection())['values'][3]))
 btn_install.grid(row=4, column=1, padx=5, pady=5, sticky="e")
@@ -844,9 +992,11 @@ btn_install.grid(row=4, column=1, padx=5, pady=5, sticky="e")
 version_label = ttk.Label(root, text=version)
 version_label.grid(row=9, column=1, pady=5, padx=5, sticky="se")
 
+version_label.bind("<Enter>", label_hover_in)
+version_label.bind("<Leave>", label_hover_out)
+version_label.bind("<Button-1>", ver_info)
+
 
 crear_base_datos()
-
 mostrar_proyectos()
-
 root.mainloop()
