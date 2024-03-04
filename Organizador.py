@@ -8,6 +8,7 @@ import threading
 import time
 import tkinter as tk
 import webbrowser
+from math import exp
 from tkinter import OptionMenu, StringVar, filedialog
 from tkinter import messagebox as ms
 from tkinter import scrolledtext, ttk
@@ -29,7 +30,6 @@ archivo_configuracion_editores = "configuracion_editores.json"
 archivo_confgiguracion_github = "configuracion_github.json"
 selected_project_path = None
 text_editor = None
-dragging_tab_index = None
 
 def crear_base_datos():
     conn = sqlite3.connect('proyectos.db')
@@ -143,36 +143,10 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     editor.iconbitmap(path)
     
     current_file = None
-    main_paned_window = ttk.PanedWindow(editor, orient=tk.HORIZONTAL)
-    main_paned_window.pack(expand=True, fill="both")
-
-    tree_frame = ttk.Frame(main_paned_window)
-    main_paned_window.add(tree_frame)
-
-    tree_scroll = ttk.Scrollbar(tree_frame)
-    tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-
-    tree = ttk.Treeview(tree_frame, yscrollcommand=tree_scroll.set)
-    tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    tree_scroll.config(command=tree.yview)
-    tree.heading("#0", text=nombre_proyecto)
-
-    for item in os.listdir(ruta_proyecto):
-        item_path = os.path.join(ruta_proyecto, item)
-        if os.path.isfile(item_path):
-            tree.insert("", "end", text=item)
-        elif os.path.isdir(item_path):
-            folder_id = tree.insert("", "end", text=item, open=False)
-            tree.insert(folder_id, "end", text="")
-
-    editor_paned_window = ttk.PanedWindow(main_paned_window, orient=tk.VERTICAL)
-    main_paned_window.add(editor_paned_window)
-
-    tabs = ttk.Notebook(editor_paned_window)
-    editor_paned_window.add(tabs, weight=1)
-
+    tabs = ttk.Notebook(editor)
+    tabs.pack(expand=True, fill="both", side="right")
     text_editors = []
-
+    
     def guardar_cambios():
         global current_file
         if current_file:
@@ -191,51 +165,30 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             if os.path.isfile(item_path):
                 current_file = item_path
                 show_file_content(item_path)
-
+                # Si el archivo ya está abierto en una pestaña, activa esa pestaña.
                 for i, editor_tab in enumerate(text_editors):
                     if tabs.tab(i, "text") == os.path.basename(item_path):
                         tabs.select(i)
                         return
-
+                # Si no, abre una nueva pestaña para el archivo.
                 text_editor = scrolledtext.ScrolledText(tabs)
-                text_editor.pack(fill="both", expand=True)
+                text_editor.pack(fill="both")
                 text_editor.insert(tk.END, show_file_content(item_path))
                 text_editors.append(text_editor)
                 tabs.add(text_editor, text=os.path.basename(item_path))
-                tabs.bind("<Button-2>", lambda event, index=len(text_editors) - 1: cerrar_pestaña(event, len(text_editors) - 1))  # Enlaza el evento de clic derecho al cierre de la pestaña
-                text_editor.bind("<Button-2>", lambda event, index=len(text_editors) - 1: cerrar_pestaña(event, len(text_editors) - 1))  # Enlaza el evento de clic derecho al cierre de la pestaña
-                text_editor.bind("<ButtonPress-1>", start_drag)
-                text_editor.bind("<B1-Motion>", on_drag)
-                text_editor.bind("<ButtonRelease-1>", end_drag)
-
-    def cerrar_pestaña(event, tab_index):
-        if hay_cambios_sin_guardar(text_editors[tab_index]):
-            guardar_antes_de_cerrar(text_editors[tab_index])
-
-        tabs.forget(tab_index)
-        del text_editors[tab_index]
-
-    def start_drag(event):
-        global dragging_tab_index
-        x, y = event.x, event.y
-        tab_id = tabs.identify(x, y)
-        if tab_id:
-            dragging_tab_index = tabs.index(tabs.select())
-        else:
-            dragging_tab_index = None
-
-    def on_drag(event):
-        global dragging_tab_index
-        if dragging_tab_index is not None:
-            tabs.insert(dragging_tab_index, dragging_tab_index, text_editors[dragging_tab_index])
-            dragging_tab_index = tabs.index("@{},{}".format(event.x_root, event.y_root))
-
-    def end_drag(event):
-        global dragging_tab_index
-        if dragging_tab_index is not None:
-            dropped_tab_index = tabs.index("@{},{}".format(event.x_root, event.y_root))
-            tabs.insert(dropped_tab_index, dragging_tab_index, text_editors[dragging_tab_index])
-            dragging_tab_index = None
+                text_editor.bind("<KeyPress>", on_key_press)
+                tabs.bind("<Button-2>", lambda event, editor=text_editor: cerrar_pestaña(editor, event))
+    
+    def cerrar_pestaña(editor, event):
+        current_tab_index = text_editors.index(editor)
+        current_editor = text_editors[current_tab_index]
+        
+        # Verificar si hay cambios sin guardar
+        if hay_cambios_sin_guardar(current_editor):
+            guardar_antes_de_cerrar(current_editor)
+        
+        tabs.forget(current_tab_index)
+        del text_editors[current_tab_index]
         
     def hay_cambios_sin_guardar(editor):
         return editor.edit_modified()
@@ -344,10 +297,29 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     file_menu.add_command(label="Save", command=guardar_cambios)
     menu_bar.add_cascade(label="File", menu=file_menu)
     editor.config(menu=menu_bar)
+    
+    tree_frame = ttk.Frame(editor)
+    tree_frame.pack(side="left", fill="both")
+
+    tree_scroll = ttk.Scrollbar(tree_frame)
+    tree_scroll.pack(side="right", fill="y")
+
+    tree = ttk.Treeview(tree_frame, yscrollcommand=tree_scroll.set)
+    tree.pack(side="left", fill="both")
+    tree_scroll.config(command=tree.yview)
     tree.bind("<<TreeviewSelect>>", open_selected_file)
+    
+    tree.heading("#0", text=nombre_proyecto)
+    
     tree.bind("<<TreeviewOpen>>", expand_folder)
     
-    root.mainloop()
+    for item in os.listdir(ruta_proyecto):
+        item_path = os.path.join(ruta_proyecto, item)
+        if os.path.isfile(item_path):
+            tree.insert("", "end", text=item)
+        elif os.path.isdir(item_path):
+            folder_id = tree.insert("", "end", text=item, open=False)
+            tree.insert(folder_id, "end", text="")
 
 def abrir_threading(ruta, editor):
     threading.Thread(target=abrir_proyecto, args=(ruta, editor)).start()
@@ -952,17 +924,16 @@ def ver_info(event):
 # RELEASE v1.8.2
 
 ## NEW FEATURES
-* Added the possibility of opening multiple files in the text editor by adding a tab system (To close a tab you just have to click on the mouse wheel on the tab like on Mac.)
+* Added the possibility of opening multiple files in the text editor by adding a tab system (I know that the close tab button is not in the best position but to be honest I haven't been able to place it correctly yet)
+* Added the automatic saving function when you have made any changes to the file and the tab is closed
 
-![Captura de pantalla 2024-03-04 170104](https://github.com/Nooch98/Organizer/assets/73700510/85b4f966-9c01-4032-a448-f6bf832aa91d)
-
-* Added the ability to resize the editor browser
+## ISSUE FIX
+* Fixed all bugs related to saving and opening files from the built-in editor
 
 ## ON PROGRESS
 * I'm still in progress to add autocompletion to other languages ​​like js, react, rust, go, c#, c++ etc etc
 * Working on adding functionality to the editor to execute code based on the extension of the file opened in the editor
 * Working on adding the possibility of creating custom themes for the editor to highlight the syntax of the code
-* Working on the possibility of dragging the tabs and dividing them into several editors such as editors like vscode etc (the code is already done but it still doesn't work)
 """ 
 
     html = markdown.markdown(notas_markdown)
