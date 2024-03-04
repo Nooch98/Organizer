@@ -22,13 +22,14 @@ from github import Auth, Github
 from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 
-main_version = "ver.1.8.1"
+main_version = "ver.1.8.2"
 version = str(main_version)
 
 archivo_configuracion_editores = "configuracion_editores.json"
 archivo_confgiguracion_github = "configuracion_github.json"
 selected_project_path = None
 text_editor = None
+dragging_tab_index = None
 
 def crear_base_datos():
     conn = sqlite3.connect('proyectos.db')
@@ -138,43 +139,124 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     global current_file
     editor = tk.Toplevel(root)
     editor.title("Editor Integrated")
+    editor.geometry("800x400")
     editor.iconbitmap(path)
     
     current_file = None
-    
+    main_paned_window = ttk.PanedWindow(editor, orient=tk.HORIZONTAL)
+    main_paned_window.pack(expand=True, fill="both")
+
+    tree_frame = ttk.Frame(main_paned_window)
+    main_paned_window.add(tree_frame)
+
+    tree_scroll = ttk.Scrollbar(tree_frame)
+    tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+    tree = ttk.Treeview(tree_frame, yscrollcommand=tree_scroll.set)
+    tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    tree_scroll.config(command=tree.yview)
+    tree.heading("#0", text=nombre_proyecto)
+
+    for item in os.listdir(ruta_proyecto):
+        item_path = os.path.join(ruta_proyecto, item)
+        if os.path.isfile(item_path):
+            tree.insert("", "end", text=item)
+        elif os.path.isdir(item_path):
+            folder_id = tree.insert("", "end", text=item, open=False)
+            tree.insert(folder_id, "end", text="")
+
+    editor_paned_window = ttk.PanedWindow(main_paned_window, orient=tk.VERTICAL)
+    main_paned_window.add(editor_paned_window)
+
+    tabs = ttk.Notebook(editor_paned_window)
+    editor_paned_window.add(tabs, weight=1)
+
+    text_editors = []
+
     def guardar_cambios():
         global current_file
         if current_file:
+            index = tabs.index(tabs.select())
             with open(current_file, "w", encoding="utf-8") as file:
-                file.write(text_editor.get(1.0, tk.END))
+                file.write(text_editors[index].get(1.0, tk.END))
         else:
-            print("Error: No hay un archivo abierto para guardar cambios.")
+            ms.showerror("ERROR", "Error: There is no open file to save changes.")
     
-    def open_file(event=None):
+    def open_selected_file(event=None):
         global current_file
         
         item = tree.focus()
         if item:
-            item_path = tree.item(item, "text")
-            parent_item = tree.parent(item)
-            while parent_item:
-                parent_name = tree.item(parent_item, "text")
-                item_path = os.path.join(parent_name, item_path)
-                parent_item = tree.parent(parent_item)
-            item_path = os.path.join(ruta_proyecto, item_path)
+            item_path = get_item_path(item)
             if os.path.isfile(item_path):
                 current_file = item_path
                 show_file_content(item_path)
-                
-    
-    def show_file_content(file_path):
-        if text_editor:
-            text_editor.delete(1.0, tk.END)
 
+                for i, editor_tab in enumerate(text_editors):
+                    if tabs.tab(i, "text") == os.path.basename(item_path):
+                        tabs.select(i)
+                        return
+
+                text_editor = scrolledtext.ScrolledText(tabs)
+                text_editor.pack(fill="both", expand=True)
+                text_editor.insert(tk.END, show_file_content(item_path))
+                text_editors.append(text_editor)
+                tabs.add(text_editor, text=os.path.basename(item_path))
+                tabs.bind("<Button-2>", lambda event, index=len(text_editors) - 1: cerrar_pestaña(event, len(text_editors) - 1))  # Enlaza el evento de clic derecho al cierre de la pestaña
+                text_editor.bind("<Button-2>", lambda event, index=len(text_editors) - 1: cerrar_pestaña(event, len(text_editors) - 1))  # Enlaza el evento de clic derecho al cierre de la pestaña
+                text_editor.bind("<ButtonPress-1>", start_drag)
+                text_editor.bind("<B1-Motion>", on_drag)
+                text_editor.bind("<ButtonRelease-1>", end_drag)
+
+    def cerrar_pestaña(event, tab_index):
+        if hay_cambios_sin_guardar(text_editors[tab_index]):
+            guardar_antes_de_cerrar(text_editors[tab_index])
+
+        tabs.forget(tab_index)
+        del text_editors[tab_index]
+
+    def start_drag(event):
+        global dragging_tab_index
+        x, y = event.x, event.y
+        tab_id = tabs.identify(x, y)
+        if tab_id:
+            dragging_tab_index = tabs.index(tabs.select())
+        else:
+            dragging_tab_index = None
+
+    def on_drag(event):
+        global dragging_tab_index
+        if dragging_tab_index is not None:
+            tabs.insert(dragging_tab_index, dragging_tab_index, text_editors[dragging_tab_index])
+            dragging_tab_index = tabs.index("@{},{}".format(event.x_root, event.y_root))
+
+    def end_drag(event):
+        global dragging_tab_index
+        if dragging_tab_index is not None:
+            dropped_tab_index = tabs.index("@{},{}".format(event.x_root, event.y_root))
+            tabs.insert(dropped_tab_index, dragging_tab_index, text_editors[dragging_tab_index])
+            dragging_tab_index = None
+        
+    def hay_cambios_sin_guardar(editor):
+        return editor.edit_modified()
+
+    def guardar_antes_de_cerrar(editor):
+        guardar_cambios()
+                
+    def get_item_path(item):
+        item_path = tree.item(item, "text")
+        parent_item = tree.parent(item)
+        while parent_item:
+            parent_name = tree.item(parent_item, "text")
+            item_path = os.path.join(parent_name, item_path)
+            parent_item = tree.parent(parent_item)
+        item_path = os.path.join(ruta_proyecto, item_path)
+        return item_path
+                
+    def show_file_content(file_path):
         with open(file_path, "r", encoding="utf-8") as file:
             content = file.read()
-            text_editor.insert(tk.END, content)
-            print(current_file)
+        return content
     
     def expand_folder(event=None):
         def open_file_from_subfolder(event):
@@ -182,7 +264,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             if item:
                 file_path = tree.item(item, "text")
                 if os.path.isfile(file_path):
-                    open_file(file_path)
+                    open_selected_file(file_path)
                     show_file_content(file_path)
         
         item = tree.focus()
@@ -198,15 +280,15 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                     elif os.path.isdir(sub_item_path):
                         sub_folder_id = tree.insert(item, "end", text=sub_item, open=False)
                         tree.insert(sub_folder_id, "end", text="")
-        tree.bind("<Double-1>", open_file_from_subfolder)
     
     def on_key_press(event):
         if event.keysym == "F1":
             activate_autocomplete()
 
     def activate_autocomplete():
+        index = tabs.index(tabs.select())
+        text_editor = text_editors[index]
         row, col = text_editor.index(tk.INSERT).split('.')
-        
         current_line = text_editor.get(f'{row}.0', f'{row}.{col}')
         
         script = jedi.Script(current_line, path=current_file)
@@ -217,6 +299,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             show_autocomplete_menu(suggestions)
     
     def show_autocomplete_menu(suggestions):
+        index = tabs.index(tabs.select())
+        text_editor = text_editors[index]
         max_items = 10
         suggestions_to_show = suggestions[:max_items]
 
@@ -236,6 +320,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             text_editor.bind('<Up>', lambda event: scroll_autocomplete_menu(-1, suggestions))
         
     def scroll_autocomplete_menu(direction, suggestions):
+        index = tabs.index(tabs.select())
+        text_editor = text_editors[index]
         current_items = text_editor._autocomplete_menu.index(tk.END)
         first_visible_item = text_editor._autocomplete_menu.index(tk.ACTIVE)
 
@@ -247,6 +333,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                 text_editor._autocomplete_menu.yview_scroll(-1, "units")
 
     def insert_autocomplete(suggestion):
+        index = tabs.index(tabs.select())
+        text_editor = text_editors[index]
         current_pos = text_editor.index(tk.INSERT)
 
         text_editor.insert(current_pos, suggestion)
@@ -256,35 +344,11 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     file_menu.add_command(label="Save", command=guardar_cambios)
     menu_bar.add_cascade(label="File", menu=file_menu)
     editor.config(menu=menu_bar)
-    
-    tree_frame = ttk.Frame(editor)
-    tree_frame.pack(side="left", fill="both")
-
-    tree_scroll = ttk.Scrollbar(tree_frame)
-    tree_scroll.pack(side="right", fill="y")
-
-    tree = ttk.Treeview(tree_frame, yscrollcommand=tree_scroll.set)
-    tree.pack(side="left", fill="both")
-    tree_scroll.config(command=tree.yview)
-    
-    tree.heading("#0", text=nombre_proyecto)
-
-    text_editor = scrolledtext.ScrolledText(editor, wrap=tk.WORD)
-    text_editor.pack(expand=True, fill="both")
-    text_editor.bind("<KeyPress>", on_key_press)
-    
-    
-    editor.after(100, lambda: tree.bind("<Double-1>", open_file))
+    tree.bind("<<TreeviewSelect>>", open_selected_file)
     tree.bind("<<TreeviewOpen>>", expand_folder)
     
-    for item in os.listdir(ruta_proyecto):
-        item_path = os.path.join(ruta_proyecto, item)
-        if os.path.isfile(item_path):
-            tree.insert("", "end", text=item)
-        elif os.path.isdir(item_path):
-            folder_id = tree.insert("", "end", text=item, open=False)
-            tree.insert(folder_id, "end")
-                               
+    root.mainloop()
+
 def abrir_threading(ruta, editor):
     threading.Thread(target=abrir_proyecto, args=(ruta, editor)).start()
     
@@ -812,11 +876,12 @@ def config_theme():
         theme = selected_theme.get()
         root.set_theme(theme)
         root.update_idletasks()
-        root.geometry("300x300")
+        root.geometry("")
         root.geometry(f"{root.winfo_reqwidth()}x{root.winfo_reqheight()}") 
 
     themes = tk.Toplevel(root)
     themes.title("Change Theme")
+    themes.geometry("300x120")
     themes.iconbitmap(path)
     
     selected_theme = tk.StringVar(themes)
@@ -884,20 +949,20 @@ def ver_info(event):
     info_window.iconbitmap(path)
     
     notas_markdown = """
-# RELEASE v1.8
+# RELEASE v1.8.2
 
 ## NEW FEATURES
-* Now if you click on the version of the app it will show the notes of the latest version
-* A new editor was added, still in development since the editor works with ttk so at the moment it is very basic but it works
+* Added the possibility of opening multiple files in the text editor by adding a tab system (To close a tab you just have to click on the mouse wheel on the tab like on Mac.)
 
-![Captura de pantalla 2024-03-03 081502](https://github.com/Nooch98/Organizer/assets/73700510/9de212cc-673c-4cde-9870-907529377627)
+![Captura de pantalla 2024-03-04 170104](https://github.com/Nooch98/Organizer/assets/73700510/85b4f966-9c01-4032-a448-f6bf832aa91d)
+
+* Added the ability to resize the editor browser
 
 ## ON PROGRESS
-* Working on the option of being able to create your own color configuration for the editor integrated
-
-## KNOW ISSUE
-* In the edit itself of the app there is an error where files in subfolders may not open
-* There is also a bug where files in subfolders are not able to be saved.
+* I'm still in progress to add autocompletion to other languages ​​like js, react, rust, go, c#, c++ etc etc
+* Working on adding functionality to the editor to execute code based on the extension of the file opened in the editor
+* Working on adding the possibility of creating custom themes for the editor to highlight the syntax of the code
+* Working on the possibility of dragging the tabs and dividing them into several editors such as editors like vscode etc (the code is already done but it still doesn't work)
 """ 
 
     html = markdown.markdown(notas_markdown)
