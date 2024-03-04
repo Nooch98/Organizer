@@ -14,6 +14,7 @@ from tkinter import scrolledtext, ttk
 from turtle import heading, right
 
 import git
+import jedi
 import markdown
 import requests
 from bs4 import BeautifulSoup
@@ -149,7 +150,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                 content = text_editor.get(1.0, tk.END)
                 file.write(content)
     
-    def open_file(event):
+    def open_file(event=None):
         global current_file
         guardar_cambios()
         
@@ -161,7 +162,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                 current_file = file_path
                 # Muestra el contenido del archivo en el scrolledtext
                 show_file_content(file_path)
-
+    
     def show_file_content(file_path):
         if text_editor:
             text_editor.delete(1.0, tk.END)
@@ -169,8 +170,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         with open(file_path, "r", encoding="utf-8") as file:
             content = file.read()
             text_editor.insert(tk.END, content)
-
-    def expand_folder(event):
+    
+    def expand_folder(event=None):
         def open_file_from_subfolder(event):
             item = tree.focus()
             if item:
@@ -197,7 +198,85 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                         tree.insert(sub_folder_id, "end", text="")
         tree.bind("<Double-1>", open_file_from_subfolder)
     
-          
+    def on_key_press(event):
+        """
+        Evento que maneja la pulsación de teclas para activar el autocompletado.
+        """
+        # Verifica si se presionó la tecla de tabulación
+        if event.keysym == "F1":
+            activate_autocomplete()
+
+    def activate_autocomplete():
+        """
+        Activa el autocompletado.
+        """
+        print("funcionando...")
+        # Obtiene la posición actual del cursor
+        row, col = text_editor.index(tk.INSERT).split('.')
+        
+        # Obtiene el texto desde el principio de la línea actual hasta la posición actual del cursor
+        current_line = text_editor.get(f'{row}.0', f'{row}.{col}')
+        
+        # Utiliza Jedi para obtener las sugerencias de autocompletado
+        script = jedi.Script(current_line, path=current_file)
+        completions = script.complete()
+        
+        # Si hay sugerencias de autocompletado, muéstralas
+        if completions:
+            suggestions = [completion.complete for completion in completions]
+            show_autocomplete_menu(suggestions)
+    
+    def show_autocomplete_menu(suggestions):
+        """
+        Muestra un menú de autocompletado con las sugerencias proporcionadas.
+        """
+        # Limita el tamaño máximo del menú de autocompletado
+        max_items = 10
+        suggestions_to_show = suggestions[:max_items]
+        
+        # Elimina cualquier menú de autocompletado existente
+        if hasattr(text_editor, '_autocomplete_menu'):
+            text_editor._autocomplete_menu.delete(0, tk.END)
+        else:
+            text_editor._autocomplete_menu = tk.Menu(text_editor, tearoff=0)
+            text_editor._autocomplete_menu.bind('<Escape>', lambda event: text_editor._autocomplete_menu.delete(0, tk.END))
+        
+        # Agrega cada sugerencia al menú de autocompletado
+        for suggestion in suggestions_to_show:
+            text_editor._autocomplete_menu.add_command(label=suggestion, command=lambda s=suggestion: insert_autocomplete(s))
+        
+        # Muestra el menú de autocompletado en la posición del cursor
+        text_editor._autocomplete_menu.post(text_editor.winfo_pointerx(), text_editor.winfo_pointery())
+        
+        # Si hay más de 10 sugerencias, permite el desplazamiento
+        if len(suggestions) > max_items:
+            text_editor.bind('<Down>', lambda event: scroll_autocomplete_menu(1, suggestions))
+            text_editor.bind('<Up>', lambda event: scroll_autocomplete_menu(-1, suggestions))
+        
+    def scroll_autocomplete_menu(direction, suggestions):
+        """
+        Desplaza el menú de autocompletado hacia arriba o hacia abajo.
+        """
+        current_items = text_editor._autocomplete_menu.index(tk.END)
+        first_visible_item = text_editor._autocomplete_menu.index(tk.ACTIVE)
+
+        if direction == 1:  # Desplazamiento hacia abajo
+            if first_visible_item < current_items - 1:
+                text_editor._autocomplete_menu.yview_scroll(1, "units")
+        elif direction == -1:  # Desplazamiento hacia arriba
+            if first_visible_item > 0:
+                text_editor._autocomplete_menu.yview_scroll(-1, "units")
+
+    def insert_autocomplete(suggestion):
+        """
+        Inserta la sugerencia de autocompletado en el lugar del cursor.
+        """
+        # Obtiene la posición actual del cursor
+        current_pos = text_editor.index(tk.INSERT)
+        
+        # Inserta la sugerencia de autocompletado en el lugar del cursor
+        text_editor.insert(current_pos, suggestion)
+    
     menu_bar = tk.Menu(editor)
     file_menu = tk.Menu(menu_bar, tearoff=0)
     file_menu.add_command(label="Save", command=guardar_cambios)
@@ -218,6 +297,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
 
     text_editor = scrolledtext.ScrolledText(editor, wrap=tk.WORD)
     text_editor.pack(expand=True, fill="both")
+    text_editor.bind("<KeyPress>", on_key_press)
+    
     
     editor.after(100, lambda: tree.bind("<Double-1>", open_file))
     tree.bind("<<TreeviewOpen>>", expand_folder)
@@ -229,7 +310,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         elif os.path.isdir(item_path):
             folder_id = tree.insert("", "end", text=item, open=False)
             tree.insert(folder_id, "end")
-
                                
 def abrir_threading(ruta, editor):
     threading.Thread(target=abrir_proyecto, args=(ruta, editor)).start()
