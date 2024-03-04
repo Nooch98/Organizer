@@ -22,7 +22,7 @@ from github import Auth, Github
 from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 
-main_version = "ver.1.8"
+main_version = "ver.1.8.1"
 version = str(main_version)
 
 archivo_configuracion_editores = "configuracion_editores.json"
@@ -143,25 +143,29 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     current_file = None
     
     def guardar_cambios():
-        print("saving...")
         global current_file
         if current_file:
             with open(current_file, "w", encoding="utf-8") as file:
-                content = text_editor.get(1.0, tk.END)
-                file.write(content)
+                file.write(text_editor.get(1.0, tk.END))
+        else:
+            print("Error: No hay un archivo abierto para guardar cambios.")
     
     def open_file(event=None):
         global current_file
-        guardar_cambios()
         
         item = tree.focus()
         if item:
-            file_name = tree.item(item, "text")
-            file_path = os.path.join(ruta_proyecto, file_name)
-            if os.path.isfile(file_path):
-                current_file = file_path
-                # Muestra el contenido del archivo en el scrolledtext
-                show_file_content(file_path)
+            item_path = tree.item(item, "text")
+            parent_item = tree.parent(item)
+            while parent_item:
+                parent_name = tree.item(parent_item, "text")
+                item_path = os.path.join(parent_name, item_path)
+                parent_item = tree.parent(parent_item)
+            item_path = os.path.join(ruta_proyecto, item_path)
+            if os.path.isfile(item_path):
+                current_file = item_path
+                show_file_content(item_path)
+                
     
     def show_file_content(file_path):
         if text_editor:
@@ -170,6 +174,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         with open(file_path, "r", encoding="utf-8") as file:
             content = file.read()
             text_editor.insert(tk.END, content)
+            print(current_file)
     
     def expand_folder(event=None):
         def open_file_from_subfolder(event):
@@ -178,7 +183,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                 file_path = tree.item(item, "text")
                 if os.path.isfile(file_path):
                     open_file(file_path)
-                    # Llamar a show_file_content directamente después de open_file
                     show_file_content(file_path)
         
         item = tree.focus()
@@ -186,7 +190,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             folder_name = tree.item(item, "text")
             folder_path = os.path.join(ruta_proyecto, folder_name)
             if os.path.isdir(folder_path):
-                # Eliminar los elementos previamente insertados en esta carpeta
                 tree.delete(*tree.get_children(item))
                 for sub_item in os.listdir(folder_path):
                     sub_item_path = os.path.join(folder_path, sub_item)
@@ -194,87 +197,58 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                         tree.insert(item, "end", text=sub_item)
                     elif os.path.isdir(sub_item_path):
                         sub_folder_id = tree.insert(item, "end", text=sub_item, open=False)
-                        # Insertar un elemento fantasma solo para que la carpeta se expanda
                         tree.insert(sub_folder_id, "end", text="")
         tree.bind("<Double-1>", open_file_from_subfolder)
     
     def on_key_press(event):
-        """
-        Evento que maneja la pulsación de teclas para activar el autocompletado.
-        """
-        # Verifica si se presionó la tecla de tabulación
         if event.keysym == "F1":
             activate_autocomplete()
 
     def activate_autocomplete():
-        """
-        Activa el autocompletado.
-        """
-        print("funcionando...")
-        # Obtiene la posición actual del cursor
         row, col = text_editor.index(tk.INSERT).split('.')
         
-        # Obtiene el texto desde el principio de la línea actual hasta la posición actual del cursor
         current_line = text_editor.get(f'{row}.0', f'{row}.{col}')
         
-        # Utiliza Jedi para obtener las sugerencias de autocompletado
         script = jedi.Script(current_line, path=current_file)
         completions = script.complete()
         
-        # Si hay sugerencias de autocompletado, muéstralas
         if completions:
             suggestions = [completion.complete for completion in completions]
             show_autocomplete_menu(suggestions)
     
     def show_autocomplete_menu(suggestions):
-        """
-        Muestra un menú de autocompletado con las sugerencias proporcionadas.
-        """
-        # Limita el tamaño máximo del menú de autocompletado
         max_items = 10
         suggestions_to_show = suggestions[:max_items]
-        
-        # Elimina cualquier menú de autocompletado existente
+
         if hasattr(text_editor, '_autocomplete_menu'):
             text_editor._autocomplete_menu.delete(0, tk.END)
         else:
             text_editor._autocomplete_menu = tk.Menu(text_editor, tearoff=0)
             text_editor._autocomplete_menu.bind('<Escape>', lambda event: text_editor._autocomplete_menu.delete(0, tk.END))
-        
-        # Agrega cada sugerencia al menú de autocompletado
+
         for suggestion in suggestions_to_show:
             text_editor._autocomplete_menu.add_command(label=suggestion, command=lambda s=suggestion: insert_autocomplete(s))
-        
-        # Muestra el menú de autocompletado en la posición del cursor
+
         text_editor._autocomplete_menu.post(text_editor.winfo_pointerx(), text_editor.winfo_pointery())
-        
-        # Si hay más de 10 sugerencias, permite el desplazamiento
+
         if len(suggestions) > max_items:
             text_editor.bind('<Down>', lambda event: scroll_autocomplete_menu(1, suggestions))
             text_editor.bind('<Up>', lambda event: scroll_autocomplete_menu(-1, suggestions))
         
     def scroll_autocomplete_menu(direction, suggestions):
-        """
-        Desplaza el menú de autocompletado hacia arriba o hacia abajo.
-        """
         current_items = text_editor._autocomplete_menu.index(tk.END)
         first_visible_item = text_editor._autocomplete_menu.index(tk.ACTIVE)
 
-        if direction == 1:  # Desplazamiento hacia abajo
+        if direction == 1:
             if first_visible_item < current_items - 1:
                 text_editor._autocomplete_menu.yview_scroll(1, "units")
-        elif direction == -1:  # Desplazamiento hacia arriba
+        elif direction == -1:
             if first_visible_item > 0:
                 text_editor._autocomplete_menu.yview_scroll(-1, "units")
 
     def insert_autocomplete(suggestion):
-        """
-        Inserta la sugerencia de autocompletado en el lugar del cursor.
-        """
-        # Obtiene la posición actual del cursor
         current_pos = text_editor.index(tk.INSERT)
-        
-        # Inserta la sugerencia de autocompletado en el lugar del cursor
+
         text_editor.insert(current_pos, suggestion)
     
     menu_bar = tk.Menu(editor)
@@ -371,7 +345,6 @@ def crear_repo_github(nombre_repo, descripcion_repo, ruta_local):
     if token_github:
         g = Github(token_github)
         
-        # Obtener el usuario
         user = g.get_user()
         
         repo = user.create_repo(nombre_repo, description=descripcion_repo)
@@ -390,19 +363,14 @@ def crear_repo_github(nombre_repo, descripcion_repo, ruta_local):
         ms.showerror("ERROR", "Could not retrieve the GitHub API key.")
         
 def push_actualizaciones_github(ruta_local):
-    # Obtener la instancia del repositorio local
     repo_local = git.Repo(ruta_local)
 
-    # Añadir todos los cambios realizados
     repo_local.index.add('*')
 
-    # Hacer un commit con los cambios
     repo_local.index.commit('Updated project')
 
-    # Obtener la instancia del origen remoto
     origin = repo_local.remote('origin')
 
-    # Realizar el push al repositorio remoto
     origin.push('master')
         
 def iniciar_new_proyect(lenguaje, textbox):
@@ -606,19 +574,15 @@ def cargar_config_terminal():
         return None
 
 def hide_selected_row():
-    # Obtener la fila seleccionada
     seleccion = tree.selection()
     
-    # Ocultar la fila seleccionada y agregarla al registro de filas ocultas
     for rowid in seleccion:
         tree.detach(rowid)
         filas_ocultas.add(rowid)
 
 def show_selected_row():
-    # Obtener la fila seleccionada
     seleccion = tree.selection()
-    
-    # Mostrar la fila seleccionada y eliminarla del registro de filas ocultas
+
     for rowid in seleccion:
         tree.reattach(rowid, '', 'end')
         filas_ocultas.remove(rowid)
@@ -665,18 +629,14 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 def obtener_informacion_proyectos_desde_bd():
-    # Conectar a la base de datos
     conn = sqlite3.connect('proyectos.db')
     cursor = conn.cursor()
 
-    # Consultar la base de datos para obtener la información de los proyectos
     cursor.execute('SELECT * FROM proyectos')
     proyectos = cursor.fetchall()
 
-    # Cerrar la conexión a la base de datos
     conn.close()
 
-    # Estructurar la información de los proyectos en un formato adecuado
     informacion_proyectos = []
     for proyecto in proyectos:
         proyecto_info = {
@@ -692,7 +652,6 @@ def obtener_informacion_proyectos_desde_bd():
     return informacion_proyectos
 
 def generar_informe_html(informacion):
-    # Estructura HTML del informe
     informe_html = f"""
     <!DOCTYPE html>
     <html>
@@ -714,7 +673,6 @@ def generar_informe_html(informacion):
             <tbody>
     """
 
-    # Agregar información de los proyectos al informe HTML
     for proyecto in informacion:
         informe_html += f"""
                 <tr>
@@ -726,7 +684,6 @@ def generar_informe_html(informacion):
                 </tr>
         """
 
-    # Cerrar la estructura HTML del informe
     informe_html += """
             </tbody>
         </table>
@@ -734,7 +691,6 @@ def generar_informe_html(informacion):
     </html>
     """
 
-    # Guardar el informe HTML en un archivo
     with open("informe.html", "w") as f:
         f.write(informe_html)
         
@@ -744,13 +700,10 @@ def on_project_select(event):
     selected_project_path = tree.item(item, "values")[4]
         
 def generar_informe():
-    # Obtener la información de los proyectos desde la base de datos
     informacion_proyectos = obtener_informacion_proyectos_desde_bd()
-    
-    # Generar el informe HTML con la información obtenida
+
     generar_informe_html(informacion_proyectos)
-    
-    # Mostrar un mensaje indicando que el informe se ha generado exitosamente
+
     ms.showinfo("Report Generate", "The report has been successfully generated. You can find it in the 'informe.html' file.")
     
     os.system('informe.html')
@@ -792,7 +745,6 @@ def install_librarys(lenguaje):
             ms.showinfo("Complete", f"{libreria} Has been installed.")
            
 def modificar_proyecto():
-    # Verificar si se ha seleccionado una fila en el TreeView
     selected_row = tree.selection()
     if not selected_row:
         ms.showerror("Error", "Please select a project to modify.")
@@ -806,16 +758,13 @@ def modificar_proyecto():
     'Ruta': 4,
     'Repositorio': 5
     }
-    
-    # Obtener la fila seleccionada
+
     selected_row = selected_row[0]
     current_values = tree.item(selected_row, "values")
 
-    # Crear una ventana secundaria para la modificación
     mod_window = tk.Toplevel(root)
     mod_window.title("Modify Project")
 
-    # Etiqueta y menú desplegable para seleccionar el campo a modificar
     field_label = ttk.Label(mod_window, text="Select Field to Modify:")
     field_label.grid(row=0, column=0, padx=5, pady=5)
 
@@ -823,59 +772,47 @@ def modificar_proyecto():
     field_menu = ttk.OptionMenu(mod_window, selected_field, "", *['ID', 'Nombre', 'Descripcion', 'Lenguaje', 'Ruta', 'Repositorio'])
     field_menu.grid(row=0, column=1, padx=5, pady=5)
 
-    # Etiqueta y entrada para el nuevo valor
     new_value_label = ttk.Label(mod_window, text="New Value:")
     new_value_label.grid(row=1, column=0, padx=5, pady=5)
 
     new_value_entry = ttk.Entry(mod_window)
     new_value_entry.grid(row=1, column=1, padx=5, pady=5)
 
-    # Función para aplicar la modificación
     def apply_modification():
         new_value = new_value_entry.get()
         field = selected_field.get()
-        
-        # Verificar si se ha seleccionado un campo y se ha ingresado un nuevo valor
+
         if field and new_value:
-            # Obtener la lista de valores actuales y modificar el valor deseado
             current_values = list(tree.item(selected_row, "values"))
             current_values[field_index[field]] = new_value
-            
-            # Actualizar la fila en el TreeView con los nuevos valores
+
             tree.item(selected_row, values=current_values)
-            
-            # Actualizar la base de datos
+
             update_project(current_values[field_index['ID']], field, new_value)
-            
-            # Cerrar la ventana secundaria
+
             mod_window.destroy()
         else:
             ms.showerror("Error", "Please select a field and provide a new value.")
 
-    # Botón para aplicar la modificación
     apply_button = ttk.Button(mod_window, text="Apply", command=apply_modification)
     apply_button.grid(row=2, columnspan=2, padx=5, pady=5)
 
 def update_project(project_id, field, new_value):
-    # Conectar a la base de datos
     conn = sqlite3.connect('proyectos.db')
     cursor = conn.cursor()
 
-    # Crear y ejecutar la consulta SQL de actualización
     update_query = f"UPDATE proyectos SET {field.lower()}=? WHERE id=?"
     cursor.execute(update_query, (new_value, project_id))
 
-    # Guardar los cambios y cerrar la conexión
     conn.commit()
     conn.close()
   
 def config_theme():
     def change_theme():
-        # Selecciona el tema especificado por el usuario
         theme = selected_theme.get()
         root.set_theme(theme)
         root.update_idletasks()
-        root.geometry("")  # Restaurar la geometría predeterminada
+        root.geometry("300x300")
         root.geometry(f"{root.winfo_reqwidth()}x{root.winfo_reqheight()}") 
 
     themes = tk.Toplevel(root)
@@ -1075,7 +1012,6 @@ version_label.grid(row=9, column=1, pady=5, padx=5, sticky="se")
 version_label.bind("<Enter>", label_hover_in)
 version_label.bind("<Leave>", label_hover_out)
 version_label.bind("<Button-1>", ver_info)
-
 
 crear_base_datos()
 mostrar_proyectos()
