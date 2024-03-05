@@ -924,16 +924,17 @@ def ver_info(event):
 # RELEASE v1.8.2
 
 ## NEW FEATURES
-* Added the possibility of opening multiple files in the text editor by adding a tab system (I know that the close tab button is not in the best position but to be honest I haven't been able to place it correctly yet)
-* Added the automatic saving function when you have made any changes to the file and the tab is closed
+* Added the possibility of opening multiple files in the text editor by adding a tab system (To close it is only necessary to click on the mouse wheel as on a Mac on the tab)
 
-## ISSUE FIX
-* Fixed all bugs related to saving and opening files from the built-in editor
+![Captura de pantalla 2024-03-04 170104](https://github.com/Nooch98/Organizer/assets/73700510/147517e4-071d-4d87-bfba-2fda9e55393c)
+
+* Added the automatic saving function when you have made any changes to the file and the tab is closed
 
 ## ON PROGRESS
 * I'm still in progress to add autocompletion to other languages ​​like js, react, rust, go, c#, c++ etc etc
 * Working on adding functionality to the editor to execute code based on the extension of the file opened in the editor
 * Working on adding the possibility of creating custom themes for the editor to highlight the syntax of the code
+* Working on adding both the ability to resize the explorer and being able to drag tabs
 """ 
 
     html = markdown.markdown(notas_markdown)
