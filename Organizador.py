@@ -687,42 +687,154 @@ def obtener_informacion_proyectos_desde_bd():
 
     return informacion_proyectos
 
+def listar_archivos(ruta):
+    try:
+        archivos = os.listdir(ruta)
+        return '\n'.join(archivos)
+    except Exception as e:
+        return str(e)
+
 def generar_informe_html(informacion):
-    informe_html = f"""
+    informe_html = """
     <!DOCTYPE html>
-    <html>
+    <html lang="es">
     <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Informe de Proyectos</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background-color: #f4f4f4;
+                margin: 0;
+                padding: 0;
+            }
+            .container {
+                width: 80%;
+                margin: 20px auto;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                box-shadow: 0px 0px 10px 0px rgba(0,0,0,0.1);
+                border-radius: 5px;
+                overflow: hidden;
+            }
+            th, td {
+                border: 1px solid #dddddd;
+                text-align: left;
+                padding: 12px;
+            }
+            th {
+                background-color: #f2f2f2;
+            }
+            tr:nth-child(even) {
+                background-color: #ffffff;
+            }
+            tr:hover {
+                background-color: #f0f0f0;
+            }
+            .project-description {
+                max-width: 400px;
+                word-wrap: break-word;
+                padding-right: 40px;
+                position: relative;
+            }
+            .project-link {
+                color: #007bff;
+                text-decoration: none;
+            }
+            .project-link:hover {
+                text-decoration: underline;
+            }
+            tbody tr:hover {
+                background-color: #e3e3e3;
+            }
+        </style>
+        <script>
+            function abrirProyectoEnEditor(ruta) {
+                var selector = document.getElementById("editores");
+                var editor = selector.value;
+                ruta = encodeURIComponent(ruta);
+                switch (editor) {
+                    case "Visual Studio Code":
+                        window.open("vscode://file/" + ruta);
+                        break;
+                    case "Sublime Text":
+                        window.open("subl://" + ruta);
+                        break;
+                    case "Atom":
+                        window.open("atom://open?url=" + ruta);
+                        break;
+                    case "Vim":
+                        window.open("vim://" + ruta);
+                        break;
+                    case "Emacs":
+                        window.open("emacs://" + ruta);
+                        break;
+                    case "Notepad++":
+                        window.open("notepad++://" + ruta);
+                        break;
+                    // Agregar casos para otros editores según sea necesario
+                }
+            }
+        </script>
     </head>
     <body>
-        <h1>Informe de Proyectos</h1>
-        <table>
-            <thead>
-                <tr>
-                    <th>Nombre</th>
-                    <th>Descripción</th>
-                    <th>Lenguaje</th>
-                    <th>Ruta</th>
-                    <th>Repositorio</th>
-                </tr>
-            </thead>
-            <tbody>
+        <div class="container">
+            <h1 style="text-align:center;">Informe de Proyectos</h1>
+            <label for="editores">Selecciona un editor:</label>
+            <select id="editores">
+                <option value="Visual Studio Code">Visual Studio Code</option>
+                <option value="Sublime Text">Sublime Text</option>
+                <option value="Atom">Atom</option>
+                <option value="Vim">Vim</option>
+                <option value="Emacs">Emacs</option>
+                <option value="Notepad++">Notepad++</option>
+                <option value="Brackets">Brackets</option>
+                <option value="TextMate">TextMate</option>
+                <option value="Geany">Geany</option>
+                <option value="gedit">gedit</option>
+                <option value="Nano">Nano</option>
+                <option value="Kate">Kate</option>
+                <option value="Bluefish">Bluefish</option>
+                <option value="Eclipse">Eclipse</option>
+                <option value="IntelliJ IDEA">IntelliJ IDEA</option>
+                <option value="PyCharm">PyCharm</option>
+                <option value="Visual Studio">Visual Studio</option>
+                <option value="Code::Blocks">Code::Blocks</option>
+                <option value="NetBeans">NetBeans</option>
+                <option value="Android Studio">Android Studio</option>
+            </select>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Descripción</th>
+                        <th>Lenguaje</th>
+                        <th>Ruta</th>
+                        <th>Repositorio</th>
+                    </tr>
+                </thead>
+                <tbody>
     """
 
     for proyecto in informacion:
+        archivos_ruta = listar_archivos(proyecto['ruta'])
         informe_html += f"""
-                <tr>
-                    <td>{proyecto['nombre']}</td>
-                    <td>{proyecto['descripcion']}</td>
-                    <td>{proyecto['lenguaje']}</td>
-                    <td>{proyecto['ruta']}</td>
-                    <td>{proyecto['repo']}</td>
-                </tr>
+            <tr>
+                <td>{proyecto['nombre']}</td>
+                <td class="project-description" title="{proyecto['descripcion']}">{proyecto['descripcion']}</td>
+                <td>{proyecto['lenguaje']}</td>
+                <td><a href="#" onclick="abrirProyectoEnEditor('{proyecto['ruta']}')" title="{archivos_ruta}">{proyecto['ruta']}</a></td>
+                <td><a href="{proyecto['repo']}" target="_blank">{proyecto['repo']}</a></td>
+            </tr>
         """
 
     informe_html += """
-            </tbody>
-        </table>
+                </tbody>
+            </table>
+        </div>
     </body>
     </html>
     """
