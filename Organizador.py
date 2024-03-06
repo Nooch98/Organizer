@@ -8,7 +8,6 @@ import threading
 import time
 import tkinter as tk
 import webbrowser
-from math import exp
 from tkinter import OptionMenu, StringVar, filedialog
 from tkinter import messagebox as ms
 from tkinter import scrolledtext, ttk
@@ -147,12 +146,15 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     tabs.pack(expand=True, fill="both", side="right")
     text_editors = []
     
-    def guardar_cambios():
+    
+    def guardar_cambios(event=None):
+        print("Guardando...")
         global current_file
         if current_file:
             index = tabs.index(tabs.select())
             with open(current_file, "w", encoding="utf-8") as file:
                 file.write(text_editors[index].get(1.0, tk.END))
+                print("Guardado")
         else:
             ms.showerror("ERROR", "Error: There is no open file to save changes.")
     
@@ -178,6 +180,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                 tabs.add(text_editor, text=os.path.basename(item_path))
                 text_editor.bind("<KeyPress>", on_key_press)
                 tabs.bind("<Button-2>", lambda event, editor=text_editor: cerrar_pestaña(editor, event))
+                editor.bind("<Control-w>", cerrar_pestaña_activa)
+                text_editor.bind("<Control-s>", lambda event: guardar_cambios())
     
     def cerrar_pestaña(editor, event):
         current_tab_index = text_editors.index(editor)
@@ -185,11 +189,30 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         
         # Verificar si hay cambios sin guardar
         if hay_cambios_sin_guardar(current_editor):
-            guardar_antes_de_cerrar(current_editor)
+            respuesta = ms.askyesno("SAVE CHANGES", "You want Save Changes")
+            if respuesta:
+                guardar_antes_de_cerrar(current_editor)
+                tabs.forget(current_tab_index)
+                del text_editors[current_tab_index]
+            else:
+                tabs.forget(current_tab_index)
+                del text_editors[current_tab_index]
+                
+    def cerrar_pestaña_activa(event=None):
+        current_tab_index = tabs.index(tabs.select())
+        current_editor = text_editors[current_tab_index]
         
-        tabs.forget(current_tab_index)
-        del text_editors[current_tab_index]
-        
+        # Verificar si hay cambios sin guardar
+        if hay_cambios_sin_guardar(current_editor):
+            respuesta = ms.askyesno("SAVE CHANGES", "You want Save Changes")
+            if respuesta:
+                guardar_antes_de_cerrar(current_editor)
+                tabs.forget(current_tab_index)
+                del text_editors[current_tab_index]
+            else:
+                tabs.forget(current_tab_index)
+                del text_editors[current_tab_index]
+   
     def hay_cambios_sin_guardar(editor):
         return editor.edit_modified()
 
@@ -291,6 +314,12 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         current_pos = text_editor.index(tk.INSERT)
 
         text_editor.insert(current_pos, suggestion)
+        
+    def toggle_tree_visibility(event=None):
+        if tree_frame.winfo_ismapped():
+            tree_frame.pack_forget()
+        else:
+            tree_frame.pack(side="left", fill="both")
     
     menu_bar = tk.Menu(editor)
     file_menu = tk.Menu(menu_bar, tearoff=0)
@@ -308,9 +337,9 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     tree.pack(side="left", fill="both")
     tree_scroll.config(command=tree.yview)
     tree.bind("<<TreeviewSelect>>", open_selected_file)
-    
     tree.heading("#0", text=nombre_proyecto)
     
+    editor.bind("<Control-b>", toggle_tree_visibility)
     tree.bind("<<TreeviewOpen>>", expand_folder)
     
     for item in os.listdir(ruta_proyecto):
@@ -775,7 +804,7 @@ def generar_informe_html(informacion):
                     case "Notepad++":
                         window.open("notepad++://" + ruta);
                         break;
-                    // Agregar casos para otros editores según sea necesario
+                    
                 }
             }
         </script>
