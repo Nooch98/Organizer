@@ -16,13 +16,12 @@ from turtle import heading, right
 import git
 import jedi
 import markdown
-import requests
 from bs4 import BeautifulSoup
 from github import Auth, Github
 from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 
-main_version = "ver.1.8.2"
+main_version = "ver.1.8.3"
 version = str(main_version)
 
 archivo_configuracion_editores = "configuracion_editores.json"
@@ -148,13 +147,11 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     
     
     def guardar_cambios(event=None):
-        print("Guardando...")
         global current_file
         if current_file:
             index = tabs.index(tabs.select())
             with open(current_file, "w", encoding="utf-8") as file:
                 file.write(text_editors[index].get(1.0, tk.END))
-                print("Guardado")
         else:
             ms.showerror("ERROR", "Error: There is no open file to save changes.")
     
@@ -340,7 +337,10 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     tree.heading("#0", text=nombre_proyecto)
     
     editor.bind("<Control-b>", toggle_tree_visibility)
+    editor.bind("<Control-Tab>", lambda event: tabs.select((tabs.index(tabs.select()) + 1) % tabs.index("end")))
+    editor.bind("<Control-Shift-Tab>", lambda event: tabs.select((tabs.index(tabs.select()) - 1) % tabs.index("end")))
     tree.bind("<<TreeviewOpen>>", expand_folder)
+    editor.bind("<Control-q>", lambda event: editor.destroy())
     
     for item in os.listdir(ruta_proyecto):
         item_path = os.path.join(ruta_proyecto, item)
@@ -1062,20 +1062,23 @@ def ver_info(event):
     info_window.iconbitmap(path)
     
     notas_markdown = """
-# RELEASE v1.8.2
+# RELEASE v1.8.3
 
 ## NEW FEATURES
-* Added the possibility of opening multiple files in the text editor by adding a tab system (To close it is only necessary to click on the mouse wheel as on a Mac on the tab)
-
-![Captura de pantalla 2024-03-04 170104](https://github.com/Nooch98/Organizer/assets/73700510/147517e4-071d-4d87-bfba-2fda9e55393c)
-
-* Added the automatic saving function when you have made any changes to the file and the tab is closed
+- Some shortcuts have been added:
+    - Save changes: Ctrl + S
+    - Close tab: Ctrl + W
+    - Next tab: Ctrl + Tab
+    - Prev Tab: Ctrl + Shift + Tab
+    - Hide Explorer: Ctrl + B
+    - Close Editor: Ctrl + Q
 
 ## ON PROGRESS
 * I'm still in progress to add autocompletion to other languages ​​like js, react, rust, go, c#, c++ etc etc
 * Working on adding functionality to the editor to execute code based on the extension of the file opened in the editor
 * Working on adding the possibility of creating custom themes for the editor to highlight the syntax of the code
 * Working on adding both the ability to resize the explorer and being able to drag tabs
+* With the addition of the shortcuts we are working on making them customizable
 """ 
 
     html = markdown.markdown(notas_markdown)
