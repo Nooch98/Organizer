@@ -21,7 +21,7 @@ from github import Auth, Github
 from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 
-main_version = "ver.1.8.3"
+main_version = "ver.1.8.4"
 version = str(main_version)
 
 archivo_configuracion_editores = "configuracion_editores.json"
@@ -135,7 +135,7 @@ def abrir_proyecto(ruta, editor):
 
 def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     global current_file
-    editor = tk.Toplevel(root)
+    editor = ThemedTk(theme="breeze")
     editor.title("Editor Integrated")
     editor.geometry("800x400")
     editor.iconbitmap(path)
@@ -152,6 +152,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             index = tabs.index(tabs.select())
             with open(current_file, "w", encoding="utf-8") as file:
                 file.write(text_editors[index].get(1.0, tk.END))
+            
+            text_editors[index].edit_modified(False)
         else:
             ms.showerror("ERROR", "Error: There is no open file to save changes.")
     
@@ -176,24 +178,27 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                 text_editors.append(text_editor)
                 tabs.add(text_editor, text=os.path.basename(item_path))
                 text_editor.bind("<KeyPress>", on_key_press)
-                tabs.bind("<Button-2>", lambda event, editor=text_editor: cerrar_pestaña(editor, event))
+                tabs.bind("<Button-2>", cerrar_pestaña)
                 editor.bind("<Control-w>", cerrar_pestaña_activa)
                 text_editor.bind("<Control-s>", lambda event: guardar_cambios())
     
-    def cerrar_pestaña(editor, event):
-        current_tab_index = text_editors.index(editor)
-        current_editor = text_editors[current_tab_index]
+    def cerrar_pestaña(event):
+        widget = event.widget
+        tab_index = widget.index("@%s,%s" % (event.x, event.y))
         
-        # Verificar si hay cambios sin guardar
-        if hay_cambios_sin_guardar(current_editor):
-            respuesta = ms.askyesno("SAVE CHANGES", "You want Save Changes")
-            if respuesta:
-                guardar_antes_de_cerrar(current_editor)
-                tabs.forget(current_tab_index)
-                del text_editors[current_tab_index]
-            else:
-                tabs.forget(current_tab_index)
-                del text_editors[current_tab_index]
+        if tab_index is not None:
+            current_editor = text_editors[tab_index]
+            
+            # Verificar si hay cambios sin guardar
+            if hay_cambios_sin_guardar(current_editor):
+                respuesta = ms.askyesno("SAVE CHANGES", "¿Deseas guardar los cambios?")
+                if respuesta:
+                    guardar_antes_de_cerrar(current_editor)
+                    widget.forget(tab_index)
+                    del text_editors[tab_index]
+                else:
+                    widget.forget(tab_index)
+                    del text_editors[tab_index]
                 
     def cerrar_pestaña_activa(event=None):
         current_tab_index = tabs.index(tabs.select())
@@ -317,11 +322,28 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             tree_frame.pack_forget()
         else:
             tree_frame.pack(side="left", fill="both")
+            
+    def change_theme(theme_name):
+        editor.set_theme(theme_name)
+        
+    def create_theme():
+        comando = "python -m ttkbootstrap"
+        
+        subprocess.run(f'{comando}', shell=True)
     
     menu_bar = tk.Menu(editor)
     file_menu = tk.Menu(menu_bar, tearoff=0)
     file_menu.add_command(label="Save", command=guardar_cambios)
     menu_bar.add_cascade(label="File", menu=file_menu)
+    
+    settings_menu = tk.Menu(menu_bar, tearoff=0)
+    menu_bar.add_cascade(label='Settings', menu=settings_menu)
+    themes_menu = tk.Menu(settings_menu, tearoff=0)
+    settings_menu.add_cascade(label='Theme', menu=themes_menu)
+    temas = ["arc", "equilux", "radiance", "blue", "ubuntu", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik"]
+    for tema in temas:
+        themes_menu.add_command(label=tema, command=lambda tema=tema: change_theme(tema))
+    themes_menu.add_command(label='Create Theme', command=create_theme)
     editor.config(menu=menu_bar)
     
     tree_frame = ttk.Frame(editor)
@@ -349,6 +371,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         elif os.path.isdir(item_path):
             folder_id = tree.insert("", "end", text=item, open=False)
             tree.insert(folder_id, "end", text="")
+            
+    editor.mainloop()
 
 def abrir_threading(ruta, editor):
     threading.Thread(target=abrir_proyecto, args=(ruta, editor)).start()
@@ -984,31 +1008,12 @@ def update_project(project_id, field, new_value):
     conn.commit()
     conn.close()
   
-def config_theme():
-    def change_theme():
-        theme = selected_theme.get()
-        root.set_theme(theme)
-        root.update_idletasks()
-        root.geometry("")
-        root.geometry(f"{root.winfo_reqwidth()}x{root.winfo_reqheight()}") 
 
-    themes = tk.Toplevel(root)
-    themes.title("Change Theme")
-    themes.geometry("300x120")
-    themes.iconbitmap(path)
-    
-    selected_theme = tk.StringVar(themes)
-    selected_theme.set([0])
-    
-    theme_label = ttk.Label(themes, text="Select Theme:")
-    theme_label.pack(padx=10, pady=(10, 0))
-    
-    theme_menu = tk.OptionMenu(themes, selected_theme, "Select Theme", "arc", "equilux", "radiance", "blue", "ubuntu", "aqua", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik", "plastik")
-    theme_menu.pack(padx=10, pady=(0, 10))
-    
-    
-    apply_button = tk.Button(themes, text="Apply", command=change_theme)
-    apply_button.pack(padx=10, pady=10)
+def change_theme(theme_name):
+    root.set_theme(theme_name)
+    root.update_idletasks()
+    root.geometry("")
+    root.geometry(f"{root.winfo_reqwidth()}x{root.winfo_reqheight()}")
     
 def select_terminal():
     setting_terminal = tk.Toplevel(root)
@@ -1062,23 +1067,76 @@ def ver_info(event):
     info_window.iconbitmap(path)
     
     notas_markdown = """
-# RELEASE v1.8.3
+# RELEASE v1.8.4
 
-## NEW FEATURES
-- Some shortcuts have been added:
-    - Save changes: Ctrl + S
-    - Close tab: Ctrl + W
-    - Next tab: Ctrl + Tab
-    - Prev Tab: Ctrl + Shift + Tab
-    - Hide Explorer: Ctrl + B
-    - Close Editor: Ctrl + Q
+## FEATURES FIX
+* The way closing tabs works with the click of the mouse wheel is corrected now if the tab on which the cursor is located is closed
+* An error was corrected that caused that if there were several tabs open and the content of one of them was saved, the same content was saved in all the files
+* Before, the integrated editor was a process that was linked to the main app. This has been changed, now the editor will be a separate process from the main app.
+* This is what the editor looks like now with a clear default theme called breeze and giving the possibility to switch between several different themes
 
-## ON PROGRESS
-* I'm still in progress to add autocompletion to other languages ​​like js, react, rust, go, c#, c++ etc etc
-* Working on adding functionality to the editor to execute code based on the extension of the file opened in the editor
-* Working on adding the possibility of creating custom themes for the editor to highlight the syntax of the code
-* Working on adding both the ability to resize the explorer and being able to drag tabs
-* With the addition of the shortcuts we are working on making them customizable
+![Captura de pantalla 2024-03-10 214746](https://github.com/Nooch98/Organizer/assets/73700510/5d34cc94-7d65-4d3c-b872-4e81448c5b22)
+
+## THEMES AVAILABLES
+* Breeze
+
+![Captura de pantalla 2024-03-10 215251](https://github.com/Nooch98/Organizer/assets/73700510/4a449098-f8b0-4073-b21f-2507307113a3)
+
+* Arc
+
+![Captura de pantalla 2024-03-10 215325](https://github.com/Nooch98/Organizer/assets/73700510/4490a727-14e1-4d2a-9737-95ecbaa41b39)
+
+* Equilux
+
+![Captura de pantalla 2024-03-10 215439](https://github.com/Nooch98/Organizer/assets/73700510/6f94dc89-9196-46f6-94a6-0a5047dcab12)
+
+* Radiance
+
+![Captura de pantalla 2024-03-10 215509](https://github.com/Nooch98/Organizer/assets/73700510/9073855b-f088-4295-b55f-2869a3bc036a)
+
+* Blue
+
+![Captura de pantalla 2024-03-10 215534](https://github.com/Nooch98/Organizer/assets/73700510/5c7b9533-67b3-4093-8150-97ccc622e373)
+
+* Ubuntu
+
+![Captura de pantalla 2024-03-10 215559](https://github.com/Nooch98/Organizer/assets/73700510/ef2250a3-da5d-43e1-8081-179aba75ab93)
+
+* Plastick
+
+![Captura de pantalla 2024-03-10 215630](https://github.com/Nooch98/Organizer/assets/73700510/89d0ddfe-1f4b-49c9-b114-37b81d61f899)
+
+* Smog
+
+![Captura de pantalla 2024-03-10 215824](https://github.com/Nooch98/Organizer/assets/73700510/59caa687-eda9-4c5f-8e74-24573b831b9c)
+
+* Adapta
+
+![Captura de pantalla 2024-03-10 215849](https://github.com/Nooch98/Organizer/assets/73700510/7d35a50a-6e9c-44f4-8896-2718edc65c53)
+
+* Aquativo
+
+![Captura de pantalla 2024-03-10 215909](https://github.com/Nooch98/Organizer/assets/73700510/84a4d8f0-b0a2-4735-b2ac-0ddeaec654b0)
+
+* Black
+
+![Captura de pantalla 2024-03-10 215933](https://github.com/Nooch98/Organizer/assets/73700510/fa35e428-d183-49a3-8cba-b32abf4794a1)
+
+* Clearlooks
+
+![Captura de pantalla 2024-03-10 215951](https://github.com/Nooch98/Organizer/assets/73700510/342838e7-db8c-4d2d-96d6-182b123fc98f)
+
+* Elegance
+
+![Captura de pantalla 2024-03-10 220012](https://github.com/Nooch98/Organizer/assets/73700510/fddfab83-a7b5-4b45-9bd4-0575f733d717)
+
+* ITTF1
+
+![Captura de pantalla 2024-03-10 220131](https://github.com/Nooch98/Organizer/assets/73700510/8ad90e06-c6fe-46b6-9e34-f8e35f26d924)
+
+* Keramik
+
+![Captura de pantalla 2024-03-10 220033](https://github.com/Nooch98/Organizer/assets/73700510/d0dcdb65-6853-4ee6-9ff4-9c26ea1c3595)
 """ 
 
     html = markdown.markdown(notas_markdown)
@@ -1090,14 +1148,12 @@ def ver_info(event):
     scrollbar_vertical.pack(side="right", fill="y")
     notas_html.configure(yscrollcommand=scrollbar_vertical.set)
     
-root = ThemedTk(theme='aqua')
+root = ThemedTk(theme='breeze')
 root.title('Proyect Organizer')
 root.geometry("1230x420")
-root.wm_resizable(False, False)
 path = resource_path("software.ico")
 root.iconbitmap(path)
 filas_ocultas = set()
-
 
 editores_disponibles = ["Visual Studio Code", "Sublime Text", "Atom", "Vim", "Emacs", 
         "Notepad++", "Brackets", "TextMate", "Geany", "gedit", 
@@ -1121,7 +1177,11 @@ menu.add_cascade(label="Settings", menu=menu_settings)
 menu_settings.add_command(label="Config Editor", command=config_editors)
 menu_settings.add_command(label="Github", command=config_github)
 menu_settings.add_command(label="Terminal", command=select_terminal)
-menu_settings.add_command(label="Theme", command=config_theme)
+theme_menu = tk.Menu(menu_settings, tearoff=0)
+menu_settings.add_cascade(label="Theme", menu=theme_menu)
+temas = ["arc", "equilux", "radiance", "blue", "ubuntu", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik"]
+for tema in temas:
+    theme_menu.add_command(label=tema, command=lambda tema=tema: change_theme(tema))
 
 nombre_label = ttk.Label(root, text="Name:")
 nombre_label.grid(row=1, column=0, pady=5, padx=5)
