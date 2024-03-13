@@ -16,14 +16,16 @@ from turtle import heading, right
 import git
 import jedi
 import markdown
+import openai
 from bs4 import BeautifulSoup
 from github import Auth, Github
 from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 
-main_version = "ver.1.8.4"
+main_version = "ver.1.8.5"
 version = str(main_version)
 
+temas = ["arc", "equilux", "radiance", "blue", "ubuntu", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik", "winxpblue", "yaru"]
 archivo_configuracion_editores = "configuracion_editores.json"
 archivo_confgiguracion_github = "configuracion_github.json"
 selected_project_path = None
@@ -135,7 +137,7 @@ def abrir_proyecto(ruta, editor):
 
 def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     global current_file
-    editor = ThemedTk(theme="breeze")
+    editor = ThemedTk(theme='')
     editor.title("Editor Integrated")
     editor.geometry("800x400")
     editor.iconbitmap(path)
@@ -330,17 +332,52 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         comando = "python -m ttkbootstrap"
         
         subprocess.run(f'{comando}', shell=True)
-    
+        
+    def chat_gpt():
+        gpt = tk.Toplevel(editor)
+        gpt.title("Chat GPT")
+        gpt.iconbitmap(path)
+        
+        titulo = ttk.Label(gpt, text="Chat GPT")
+        titulo.grid(row=0, columnspan=2, pady=5, padx=5)
+        
+        quest = ttk.Label(gpt, text="Your Question: ")
+        quest.grid(row=1, column=0, pady=5, padx=5)
+        
+        quest_entry = ttk.Entry(gpt, width=100)
+        quest_entry.grid(row=1, column=1, padx=5, pady=5)
+        
+        txt_respuesta = scrolledtext.ScrolledText(gpt, width=60, height=10, wrap=tk.WORD)
+        txt_respuesta.grid(row=2, columnspan=2, padx=5, pady=5)
+        
+        def answer_question():
+            openai.api_key = load_config_gpt()
+            pregunta_usuario = quest_entry.get()
+
+            respuesta = openai.Completion.create(
+                engine="davinci", 
+                prompt=pregunta_usuario, 
+                max_tokens=50
+            )
+
+            respuesta_texto = respuesta.choices[0].text.strip()
+
+            txt_respuesta.delete(1.0, tk.END)
+            txt_respuesta.insert(tk.END, respuesta_texto)
+
+        btn_consultar = tk.Button(gpt, text="Submit", command=answer_question)
+        btn_consultar.grid(row=6, columnspan=2, padx=5, pady=5)
+            
     menu_bar = tk.Menu(editor)
     file_menu = tk.Menu(menu_bar, tearoff=0)
     file_menu.add_command(label="Save", command=guardar_cambios)
+    file_menu.add_command(label="Chat GPT", command=chat_gpt)
     menu_bar.add_cascade(label="File", menu=file_menu)
     
     settings_menu = tk.Menu(menu_bar, tearoff=0)
     menu_bar.add_cascade(label='Settings', menu=settings_menu)
     themes_menu = tk.Menu(settings_menu, tearoff=0)
     settings_menu.add_cascade(label='Theme', menu=themes_menu)
-    temas = ["arc", "equilux", "radiance", "blue", "ubuntu", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik"]
     for tema in temas:
         themes_menu.add_command(label=tema, command=lambda tema=tema: change_theme(tema))
     themes_menu.add_command(label='Create Theme', command=create_theme)
@@ -616,6 +653,27 @@ def config_github():
     sub_button = ttk.Button(config_github, text="Accept", command=guardar)
     sub_button.grid(row=2, columnspan=2, pady=5, padx=5)
     
+def config_openai():
+    config_openai = tk.Toplevel(root)
+    config_openai.title("Api Key OpenAI")
+    config_openai.iconbitmap(path)
+    
+    titulo = ttk.Label(config_openai, text="OpenAI Configuration")
+    titulo.grid(row=0, columnspan=2, pady=5, padx=5)
+    
+    label = ttk.Label(config_openai, text="OpenAI Api Key: ")
+    label.grid(row=1, column=0, pady=5, padx=5)
+    
+    api_gpt_entry = ttk.Entry(config_openai, width=50)
+    api_gpt_entry.grid(row=1, column=1, pady=5, padx=5)
+    
+    def guardar():
+        api_key = api_gpt_entry.get()
+        save_config_gpt(api_key)
+        config_openai.destroy()
+    
+    sub_button = ttk.Button(config_openai, text="Accept", command=guardar)
+    sub_button.grid(row=2, columnspan=2, pady=5, padx=5)
     
 def seleccionar_ruta_editor(editor, entry):
     ruta_editor = filedialog.askopenfilename(title=f"Seleccione el ejecutable de {editor}", filetypes=[("Ejecutables", "*.exe")])
@@ -631,6 +689,12 @@ def guardar_configuracion_editores(rutas_editores):
             configuracion[editor] = ruta
     with open("configuracion_editores.json", "w") as archivo_configuracion:
         json.dump(configuracion, archivo_configuracion)
+
+def save_config_gpt(api_key):
+    configuration = {"api_key_openai": api_key}
+    
+    with open("configuration_gpt.json", "w") as config_archive:
+        json.dump(configuration, config_archive)
         
 def guardar_configuracion_github(api_key):
     configuracion = {"api_key_github": api_key}
@@ -645,7 +709,15 @@ def cargar_configuracion_github():
             return configuracion.get("api_key_github", None)
     except FileNotFoundError:
         return None
-        
+    
+def load_config_gpt():
+    try:
+        with open("configuration_gpt.json", "r") as config_archive:
+            config = json.load(config_archive)
+            return config.get("api_key_openai", None)
+    except FileNotFoundError:
+        return None
+       
 def cargar_configuracion_editores():
     try:
         with open(archivo_configuracion_editores, "r") as archivo_configuracion:
@@ -1067,76 +1139,36 @@ def ver_info(event):
     info_window.iconbitmap(path)
     
     notas_markdown = """
-# RELEASE v1.8.4
+# RELEASE v1.8.5
 
-## FEATURES FIX
-* The way closing tabs works with the click of the mouse wheel is corrected now if the tab on which the cursor is located is closed
-* An error was corrected that caused that if there were several tabs open and the content of one of them was saved, the same content was saved in all the files
-* Before, the integrated editor was a process that was linked to the main app. This has been changed, now the editor will be a separate process from the main app.
-* This is what the editor looks like now with a clear default theme called breeze and giving the possibility to switch between several different themes
+## NEW FEATURE
+* The possibility of asking gpt chat was added to the integrated editor
+    - Warning: The openai api has a free use limit, I recommend reading and seeing usage prices and all the terms in OpenAI (The engine it uses is davinci)
+    
+    - First you must configure the openai API which there is a section in the settings section of the main app
+    
+    ![Captura de pantalla 2024-03-13 071112](https://github.com/Nooch98/Organizer/assets/73700510/ac801f22-5654-49c2-b495-cfd92bbaee4f)
+    
+    - Once configured in the text editor by accessing Chat GPT you can ask it (right now it is configured for a maximum response length of 50tk) 
 
-![Captura de pantalla 2024-03-10 214746](https://github.com/Nooch98/Organizer/assets/73700510/5d34cc94-7d65-4d3c-b872-4e81448c5b22)
+    ![Captura de pantalla 2024-03-13 071140](https://github.com/Nooch98/Organizer/assets/73700510/836d974c-98bf-4c3a-ab2a-cc2547209bc1)
 
-## THEMES AVAILABLES
-* Breeze
+## CHANGES
+* Two new themes have been added: Yaru and winxpblue
+* Now the app will open with the default theme of your system
 
-![Captura de pantalla 2024-03-10 215251](https://github.com/Nooch98/Organizer/assets/73700510/4a449098-f8b0-4073-b21f-2507307113a3)
+## NEW THEMES
+* YARU:
 
-* Arc
+![Captura de pantalla 2024-03-13 063446](https://github.com/Nooch98/Organizer/assets/73700510/1fdfd990-3a5c-4fd2-9a50-83b266756b3c)
 
-![Captura de pantalla 2024-03-10 215325](https://github.com/Nooch98/Organizer/assets/73700510/4490a727-14e1-4d2a-9737-95ecbaa41b39)
+* WINXPBLUE:
 
-* Equilux
+![Captura de pantalla 2024-03-13 063433](https://github.com/Nooch98/Organizer/assets/73700510/f2a11cd6-8d5b-4691-9937-d51580b9e0a5)
 
-![Captura de pantalla 2024-03-10 215439](https://github.com/Nooch98/Organizer/assets/73700510/6f94dc89-9196-46f6-94a6-0a5047dcab12)
 
-* Radiance
-
-![Captura de pantalla 2024-03-10 215509](https://github.com/Nooch98/Organizer/assets/73700510/9073855b-f088-4295-b55f-2869a3bc036a)
-
-* Blue
-
-![Captura de pantalla 2024-03-10 215534](https://github.com/Nooch98/Organizer/assets/73700510/5c7b9533-67b3-4093-8150-97ccc622e373)
-
-* Ubuntu
-
-![Captura de pantalla 2024-03-10 215559](https://github.com/Nooch98/Organizer/assets/73700510/ef2250a3-da5d-43e1-8081-179aba75ab93)
-
-* Plastick
-
-![Captura de pantalla 2024-03-10 215630](https://github.com/Nooch98/Organizer/assets/73700510/89d0ddfe-1f4b-49c9-b114-37b81d61f899)
-
-* Smog
-
-![Captura de pantalla 2024-03-10 215824](https://github.com/Nooch98/Organizer/assets/73700510/59caa687-eda9-4c5f-8e74-24573b831b9c)
-
-* Adapta
-
-![Captura de pantalla 2024-03-10 215849](https://github.com/Nooch98/Organizer/assets/73700510/7d35a50a-6e9c-44f4-8896-2718edc65c53)
-
-* Aquativo
-
-![Captura de pantalla 2024-03-10 215909](https://github.com/Nooch98/Organizer/assets/73700510/84a4d8f0-b0a2-4735-b2ac-0ddeaec654b0)
-
-* Black
-
-![Captura de pantalla 2024-03-10 215933](https://github.com/Nooch98/Organizer/assets/73700510/fa35e428-d183-49a3-8cba-b32abf4794a1)
-
-* Clearlooks
-
-![Captura de pantalla 2024-03-10 215951](https://github.com/Nooch98/Organizer/assets/73700510/342838e7-db8c-4d2d-96d6-182b123fc98f)
-
-* Elegance
-
-![Captura de pantalla 2024-03-10 220012](https://github.com/Nooch98/Organizer/assets/73700510/fddfab83-a7b5-4b45-9bd4-0575f733d717)
-
-* ITTF1
-
-![Captura de pantalla 2024-03-10 220131](https://github.com/Nooch98/Organizer/assets/73700510/8ad90e06-c6fe-46b6-9e34-f8e35f26d924)
-
-* Keramik
-
-![Captura de pantalla 2024-03-10 220033](https://github.com/Nooch98/Organizer/assets/73700510/d0dcdb65-6853-4ee6-9ff4-9c26ea1c3595)
+## ISSUE
+* The app sometimes slows down, I'm working on fixing it (this happens especially if you use custom themes on Windows)
 """ 
 
     html = markdown.markdown(notas_markdown)
@@ -1148,7 +1180,7 @@ def ver_info(event):
     scrollbar_vertical.pack(side="right", fill="y")
     notas_html.configure(yscrollcommand=scrollbar_vertical.set)
     
-root = ThemedTk(theme='breeze')
+root = ThemedTk(theme='')
 root.title('Proyect Organizer')
 root.geometry("1230x420")
 path = resource_path("software.ico")
@@ -1176,10 +1208,10 @@ menu_settings = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label="Settings", menu=menu_settings)
 menu_settings.add_command(label="Config Editor", command=config_editors)
 menu_settings.add_command(label="Github", command=config_github)
+menu_settings.add_command(label="OpenAI", command=config_openai)
 menu_settings.add_command(label="Terminal", command=select_terminal)
 theme_menu = tk.Menu(menu_settings, tearoff=0)
 menu_settings.add_cascade(label="Theme", menu=theme_menu)
-temas = ["arc", "equilux", "radiance", "blue", "ubuntu", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik"]
 for tema in temas:
     theme_menu.add_command(label=tema, command=lambda tema=tema: change_theme(tema))
 
