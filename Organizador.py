@@ -16,9 +16,9 @@ from turtle import heading, right
 import git
 import jedi
 import markdown
-import openai
 from bs4 import BeautifulSoup
 from github import Auth, Github
+from openai import OpenAI
 from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 
@@ -272,6 +272,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         row, col = text_editor.index(tk.INSERT).split('.')
         current_line = text_editor.get(f'{row}.0', f'{row}.{col}')
         
+        # Utilizar Jedi para obtener completaciones
         script = jedi.Script(current_line, path=current_file)
         completions = script.complete()
         
@@ -292,11 +293,13 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             text_editor._autocomplete_menu.bind('<Escape>', lambda event: text_editor._autocomplete_menu.delete(0, tk.END))
 
         for suggestion in suggestions_to_show:
+            # Agregar cada sugerencia al menú de autocompletado
             text_editor._autocomplete_menu.add_command(label=suggestion, command=lambda s=suggestion: insert_autocomplete(s))
 
         text_editor._autocomplete_menu.post(text_editor.winfo_pointerx(), text_editor.winfo_pointery())
 
         if len(suggestions) > max_items:
+            # Permitir al usuario navegar por las sugerencias con las teclas de flecha
             text_editor.bind('<Down>', lambda event: scroll_autocomplete_menu(1, suggestions))
             text_editor.bind('<Up>', lambda event: scroll_autocomplete_menu(-1, suggestions))
         
@@ -320,6 +323,12 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
 
         text_editor.insert(current_pos, suggestion)
         
+    def toggle_gpt_visibility(event=None):
+        if gpt_frame.winfo_ismapped():
+            gpt_frame.pack_forget()
+        else:
+            gpt_frame.pack(side="right", fill="both")
+            
     def toggle_tree_visibility(event=None):
         if tree_frame.winfo_ismapped():
             tree_frame.pack_forget()
@@ -334,45 +343,32 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         
         subprocess.run(f'{comando}', shell=True)
         
-    def chat_gpt():
-        gpt = tk.Toplevel(editor)
-        gpt.title("Chat GPT")
-        gpt.iconbitmap(path)
         
-        titulo = ttk.Label(gpt, text="Chat GPT")
-        titulo.grid(row=0, columnspan=2, pady=5, padx=5)
-        
-        quest = ttk.Label(gpt, text="Your Question: ")
-        quest.grid(row=1, column=0, pady=5, padx=5)
-        
-        quest_entry = ttk.Entry(gpt, width=100)
-        quest_entry.grid(row=1, column=1, padx=5, pady=5)
-        
-        txt_respuesta = scrolledtext.ScrolledText(gpt, width=60, height=10, wrap=tk.WORD)
-        txt_respuesta.grid(row=2, columnspan=2, padx=5, pady=5)
-        
-        def answer_question():
-            openai.api_key = load_config_gpt()
-            pregunta_usuario = quest_entry.get()
-
-            respuesta = openai.Completion.create(
-                engine="davinci", 
-                prompt=pregunta_usuario, 
-                max_tokens=50
+    def answer_question():
+        quest = user_quest.get()
+        client = OpenAI(
+            api_key=load_config_gpt()
             )
+        
+        respuesta = client.chat.completions.create(
+            message =[
+                {
+                "role": "user",
+                "content": f"{quest}"    
+                }
+            ],
+            model = "gpt-3.5-turbo",
+            )
+        
+        respuesta_texto = respuesta.choices[0].text.strip()
 
-            respuesta_texto = respuesta.choices[0].text.strip()
+        gpt_response.delete(1.0, tk.END)
+        gpt_response.insert(tk.END, respuesta_texto)
 
-            txt_respuesta.delete(1.0, tk.END)
-            txt_respuesta.insert(tk.END, respuesta_texto)
-
-        btn_consultar = tk.Button(gpt, text="Submit", command=answer_question)
-        btn_consultar.grid(row=6, columnspan=2, padx=5, pady=5)
             
     menu_bar = tk.Menu(editor)
     file_menu = tk.Menu(menu_bar, tearoff=0)
     file_menu.add_command(label="Save", command=guardar_cambios)
-    file_menu.add_command(label="Chat GPT", command=chat_gpt)
     menu_bar.add_cascade(label="File", menu=file_menu)
     
     settings_menu = tk.Menu(menu_bar, tearoff=0)
@@ -383,6 +379,19 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         themes_menu.add_command(label=tema, command=lambda tema=tema: change_theme(tema))
     themes_menu.add_command(label='Create Theme', command=create_theme)
     editor.config(menu=menu_bar)
+    
+    gpt_frame = ttk.Frame(editor)
+    gpt_frame.pack(fill='both', side='right')
+    
+    gpt_response = scrolledtext.ScrolledText(gpt_frame)
+    gpt_response.pack(fill='both')
+    
+    send_quest = ttk.Button(gpt_frame, text="Submit", command=answer_question)
+    send_quest.pack(side='bottom')
+    
+    user_quest = ttk.Entry(gpt_frame, width=50)
+    user_quest.pack(fill='x', side='bottom')
+    
     
     tree_frame = ttk.Frame(editor)
     tree_frame.pack(side="left", fill="both")
@@ -401,6 +410,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     editor.bind("<Control-Shift-Tab>", lambda event: tabs.select((tabs.index(tabs.select()) - 1) % tabs.index("end")))
     tree.bind("<<TreeviewOpen>>", expand_folder)
     editor.bind("<Control-q>", lambda event: editor.destroy())
+    editor.bind("<Control-g>", toggle_gpt_visibility)
     
     for item in os.listdir(ruta_proyecto):
         item_path = os.path.join(ruta_proyecto, item)
@@ -409,7 +419,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         elif os.path.isdir(item_path):
             folder_id = tree.insert("", "end", text=item, open=False)
             tree.insert(folder_id, "end", text="")
-            
+     
     editor.mainloop()
 
 def abrir_threading(ruta, editor):
