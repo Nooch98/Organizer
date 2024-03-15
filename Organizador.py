@@ -28,6 +28,7 @@ version = str(main_version)
 temas = ["arc", "equilux", "radiance", "blue", "ubuntu", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik", "winxpblue", "yaru"]
 archivo_configuracion_editores = "configuracion_editores.json"
 archivo_confgiguracion_github = "configuracion_github.json"
+archivo_configuracion_gpt = "configuration_gpt.json"
 selected_project_path = None
 text_editor = None
 
@@ -693,8 +694,8 @@ def guardar_configuracion_editores(rutas_editores):
 def save_config_gpt(api_key):
     configuration = {"api_key_openai": api_key}
     
-    with open("configuration_gpt.json", "w") as config_archive:
-        json.dump(configuration, config_archive)
+    with open(archivo_configuracion_gpt, "w") as archivo_configuracion:
+        json.dump(configuration, archivo_configuracion)
         
 def guardar_configuracion_github(api_key):
     configuracion = {"api_key_github": api_key}
