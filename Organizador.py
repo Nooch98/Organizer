@@ -8,6 +8,8 @@ import threading
 import time
 import tkinter as tk
 import webbrowser
+from doctest import OutputChecker
+from multiprocessing import context
 from tkinter import OptionMenu, StringVar, filedialog
 from tkinter import messagebox as ms
 from tkinter import scrolledtext, ttk
@@ -22,7 +24,7 @@ from openai import OpenAI
 from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 
-main_version = "ver.1.8.5"
+main_version = "ver.1.8.6"
 version = str(main_version)
 
 temas = ["arc", "equilux", "radiance", "blue", "ubuntu", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik", "winxpblue", "yaru"]
@@ -764,11 +766,110 @@ def show_context_menu(event):
     
     if rowid:
         context_menu = tk.Menu(root, tearoff=0)
-        context_menu.add_command(label="Hide", command=hide_selected_row)
-        context_menu.add_command(label="Show", command=show_selected_row)
         context_menu.add_command(label="Edit", command=modificar_proyecto)
+        context_menu.add_command(label="Git Init", command=lambda: git_init(selected_project_path))
+        context_menu.add_command(label="Git Add", command=lambda: git_add(selected_project_path))
+        context_menu.add_command(label="Git Commit", command=lambda: git_commit(selected_project_path))
+        context_menu.add_command(label="Git Status", command=lambda: git_status(selected_project_path))
+        context_menu.add_command(label="Git Log", command=lambda: git_log(selected_project_path))
+        context_menu.add_command(label="Git Diff")
+        context_menu.add_command(label="Git Pull", command=lambda: git_pull(selected_project_path))
+        context_menu.add_command(label="Git Push")
+        context_menu.add_command(label="Git Branch")
+        context_menu.add_command(label="Git Checkout")
+        context_menu.add_command(label="Git Merge")
+        context_menu.add_command(label="Git Clone")
+        context_menu.add_command(label="Git Remote")
+        context_menu.add_command(label="Git Fetch")
+        context_menu.add_command(label="Git Reset")
+        context_menu.add_command(label="Git Revert")
         
         context_menu.post(event.x_root, event.y_root)
+
+def git_add(project_path):
+    output_window = tk.Toplevel(root)
+    output_window.title("Salida de Git Add")
+
+    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text.pack()
+
+    try:
+        output = run_git_command(["git", "add", "."], cwd=project_path)
+        output_text.insert(tk.END, output)
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+
+def git_commit(project_path):
+    output_window = tk.Toplevel(root)
+    output_window.title("Salida de Git Commit")
+
+    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text.pack()
+
+    try:
+        output = run_git_command(["git", "commit", "-m", "'Commit desde GUI'"], cwd=project_path)
+        output_text.insert(tk.END, output)
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+
+def git_status(project_path):
+    output_window = tk.Toplevel(root)
+    output_window.title("Salida de Git Status")
+
+    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text.pack()
+
+    try:
+        output = run_git_command(["git", "status"], cwd=project_path)
+        output_text.insert(tk.END, output)
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+
+def git_pull(project_path):
+    output_window = tk.Toplevel(root)
+    output_window.title("Salida de Git Pull")
+
+    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text.pack()
+
+    try:
+        output = run_git_command(["git", "pull"], cwd=project_path)
+        output_text.insert(tk.END, output)
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+
+def git_init(project_path):
+    output_window = tk.Toplevel(root)
+    output_window.title("Salida de Git Init")
+
+    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text.pack()
+
+    try:
+        output = run_git_command(["git", "init"], cwd=project_path)
+        output_text.insert(tk.END, output)
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+
+def git_log(project_path):
+    output_window = tk.Toplevel(root)
+    output_window.title("Salida de Git")
+
+    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text.pack()
+
+    try:
+        output = run_git_command(["git", "log"], cwd=project_path)
+        output_text.insert(tk.END, output)
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+
+def run_git_command(command, cwd=None):
+    try:
+        output = subprocess.check_output(command, stderr=subprocess.STDOUT, cwd=cwd).decode()
+        return output
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
 
 def abrir_repositorio(event):
     item_seleccionado = tree.item(tree.selection())
