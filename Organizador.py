@@ -460,7 +460,6 @@ def crear_nuevo_proyecto():
     lenguaje_options = ["Selection lenguaje", "Python", "NodeJS", "React", "Vue", "C++", "C#", "Rust", "Go"]
     
     global seleccion
-    global rules_ignore
     
     seleccion = tk.StringVar()
     seleccion.set(lenguaje_options[0])
@@ -468,8 +467,8 @@ def crear_nuevo_proyecto():
     menu_lenguaje = ttk.OptionMenu(ventana_lenguaje, seleccion, *lenguaje_options)
     menu_lenguaje.grid(row=1, columnspan=2, padx=5, pady=5)
     
-    rules_ignore = ttk.Entry(ventana_lenguaje, width=50)
-    rules_ignore.grid(row=2, column=0, padx=5, pady=5)
+    rules_label = ttk.Label(ventana_lenguaje, text="If you create git repo insert in textbox your rules for the .gitignore")
+    rules_label.grid(row=2, columnspan=2, padx=5, pady=5)
     
     textbox = scrolledtext.ScrolledText(ventana_lenguaje)
     textbox.grid(row=3, columnspan=2, pady=5, padx=5)
@@ -519,7 +518,7 @@ def iniciar_new_proyect(lenguaje, textbox):
     descripcion = descripcion_entry.get()
     ruta_proyecto = filedialog.askdirectory()
     repo = repo_entry.get()
-    rules = rules_ignore.get()
+    rules = textbox.get("1.0", "end")
     if ruta_proyecto:
         if lenguaje == "Python":
                 ruta_completa = os.path.join(ruta_proyecto, nombre)
@@ -642,6 +641,7 @@ def iniciar_new_proyect(lenguaje, textbox):
     nombre_entry.delete(0, tk.END)
     descripcion_entry.delete(0, tk.END)
     repo_entry.delete(0, tk.END)
+    textbox.delete(0, tk.END)
 
 def eliminar_proyecto(id, ruta):
     shutil.rmtree(ruta)
