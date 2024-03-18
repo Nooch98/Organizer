@@ -8,8 +8,6 @@ import threading
 import time
 import tkinter as tk
 import webbrowser
-from doctest import OutputChecker
-from multiprocessing import context
 from tkinter import OptionMenu, StringVar, filedialog
 from tkinter import messagebox as ms
 from tkinter import scrolledtext, ttk
