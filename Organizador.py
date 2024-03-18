@@ -460,6 +460,7 @@ def crear_nuevo_proyecto():
     lenguaje_options = ["Selection lenguaje", "Python", "NodeJS", "React", "Vue", "C++", "C#", "Rust", "Go"]
     
     global seleccion
+    global rules_ignore
     
     seleccion = tk.StringVar()
     seleccion.set(lenguaje_options[0])
@@ -467,8 +468,11 @@ def crear_nuevo_proyecto():
     menu_lenguaje = ttk.OptionMenu(ventana_lenguaje, seleccion, *lenguaje_options)
     menu_lenguaje.grid(row=1, columnspan=2, padx=5, pady=5)
     
+    rules_ignore = ttk.Entry(ventana_lenguaje, width=50)
+    rules_ignore.grid(row=2, column=0, padx=5, pady=5)
+    
     textbox = scrolledtext.ScrolledText(ventana_lenguaje)
-    textbox.grid(row=2, columnspan=2, pady=5, padx=5)
+    textbox.grid(row=3, columnspan=2, pady=5, padx=5)
     
     btn_selec = ttk.Button(ventana_lenguaje, text="Select", command=lambda: ejecutar_con_threading(seleccion.get(), textbox))
     btn_selec.grid(row=5, columnspan=2, pady=5, padx=5)
@@ -513,108 +517,141 @@ def push_actualizaciones_github(ruta_local):
 def iniciar_new_proyect(lenguaje, textbox):
     nombre = nombre_entry.get()
     descripcion = descripcion_entry.get()
+    ruta_proyecto = filedialog.askdirectory()
     repo = repo_entry.get()
-    
-    if lenguaje == "Python":
-        ruta_proyecto = filedialog.askdirectory()
-        if ruta_proyecto:
-            ruta_completa = os.path.join(ruta_proyecto, nombre)
-            os.makedirs(ruta_completa, exist_ok=True)
-            comando = f'python -m venv "{os.path.join(ruta_completa, "app")}"'
-            os.system(comando)
-            respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
-            if respuesta:
-                crear_repo_github(nombre, descripcion, ruta_completa)
-            insertar_proyecto(nombre, descripcion, lenguaje, ruta_completa, repo)
-    elif lenguaje == "NodeJS":
-        ruta_proyecto = filedialog.askdirectory()
-        if ruta_proyecto:
-            ruta_completa = os.path.join(ruta_proyecto, nombre)
-            os.makedirs(ruta_completa, exist_ok=True)
-            comando = f'npm init -w "{os.path.join(ruta_completa)}" -y > output.txt 2>&1'
-            os.system(comando)
-            respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
-            if respuesta:
-                crear_repo_github(nombre, descripcion, ruta_completa)
-            with open('output.txt', 'r') as f:
-                output = f.read()
-                textbox.insert(tk.END, output)
-            insertar_proyecto(nombre, descripcion, lenguaje, ruta_completa, repo)
-            os.remove('output.txt')
-    elif lenguaje == "React":
-        ruta_proyecto = filedialog.askdirectory()
-        if ruta_proyecto:
-            ruta_completa = os.path.join(ruta_proyecto, nombre)
-            os.makedirs(ruta_completa, exist_ok=True)
-            comando = f'npx create-react-app "{ruta_completa}" > output.txt 2>&1'
-            os.system(comando)
-            respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
-            if respuesta:
-                crear_repo_github(nombre, descripcion, ruta_completa)
-            with open('output.txt', 'r') as f:
-                output = f.read()
-                textbox.insert(tk.END, output)
-            insertar_proyecto(nombre, descripcion, lenguaje, ruta_completa, repo)
-            os.remove('output.txt')         
-    elif lenguaje == "C#":
-        ruta_proyecto = filedialog.askdirectory()
-        if ruta_proyecto:
-            ruta_completa = os.path.join(ruta_proyecto, nombre)
-            os.makedirs(ruta_completa, exist_ok=True)
-            comando = f'dotnet new console -n "{ruta_completa}" > output.txt 2>&1'
-            os.system(comando)
-            respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
-            if respuesta:
-                crear_repo_github(nombre, descripcion, ruta_completa)
-            with open('output.txt', 'r') as f:
-                output = f.read()
-                textbox.insert(tk.END, output)
-            insertar_proyecto(nombre, descripcion, lenguaje, ruta_completa, repo)
-            os.remove('output.txt') 
-    elif lenguaje == "Rust":
-        ruta_proyecto = filedialog.askdirectory()
-        if ruta_proyecto:
-            ruta_completa = os.path.join(ruta_proyecto, nombre)
-            os.makedirs(ruta_completa, exist_ok=True)
-            comando = f'cargo new "{ruta_completa}" --bin > output.txt 2>&1'
-            os.system(comando)
-            respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
-            if respuesta:
-                crear_repo_github(nombre, descripcion, ruta_completa)
-            with open('output.txt', 'r') as f:
-                output = f.read()
-                textbox.insert(tk.END, output)
-            insertar_proyecto(nombre, descripcion, lenguaje, ruta_completa, repo)
-            os.remove('output.txt')
-    elif lenguaje == "go":
-        ruta_proyecto = filedialog.askdirectory()
-        if ruta_proyecto:
-            ruta_completa = os.path.join(ruta_proyecto, nombre)
-            os.makedirs(ruta_completa, exist_ok=True)
-            comando = f'go mod init "{ruta_completa}" > output.txt 2>&1'
-            os.system(comando)
-            respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
-            if respuesta:
-                crear_repo_github(nombre, descripcion, ruta_completa)
-            with open('output.txt', 'r') as f:
-                output = f.read()
-                textbox.insert(tk.END, output)
-            insertar_proyecto(nombre, descripcion, lenguaje, ruta_completa, repo)
-            os.remove('output.txt')
+    rules = rules_ignore.get()
+    if ruta_proyecto:
+        if lenguaje == "Python":
+                ruta_completa = os.path.join(ruta_proyecto, nombre)
+                ruta_completa = os.path.normpath(ruta_completa)
+                os.makedirs(ruta_completa, exist_ok=True)
+                comando = f'python -m venv "{os.path.join(ruta_completa, "app")}"'
+                os.system(comando)
+                respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
+                if respuesta:
+                    crear_repo_github(nombre, descripcion, ruta_completa)
+                print(f"Este es el lenguaje:{lenguaje}")
+                insertar_proyecto(nombre, descripcion, ruta_completa, repo, lenguaje)
+                git = ms.askyesno("Create Git", "Do you want create Git Repo")
+                if git:
+                    with open(os.path.join(ruta_completa, '.gitignore'), 'w') as f:
+                        f.write(rules)
+                        git_init(ruta_completa)
+                        git_add(ruta_completa)
+        elif lenguaje == "NodeJS":
+                ruta_completa = os.path.join(ruta_proyecto, nombre)
+                ruta_completa = os.path.normpath(ruta_completa)
+                os.makedirs(ruta_completa, exist_ok=True)
+                comando = f'npm init -w "{os.path.join(ruta_completa)}" -y > output.txt 2>&1'
+                os.system(comando)
+                respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
+                if respuesta:
+                    crear_repo_github(nombre, descripcion, ruta_completa)
+                with open('output.txt', 'r') as f:
+                    output = f.read()
+                    textbox.insert(tk.END, output)
+                insertar_proyecto(nombre, descripcion, ruta_completa, repo, lenguaje)
+                os.remove('output.txt')
+                git = ms.askyesno("Create Git", "Do you want create Git Repo")
+                if git:
+                    with open(os.path.join(ruta_completa, '.gitignore'), 'w') as f:
+                        f.write(rules)
+                        git_init(ruta_completa)
+                        git_add(ruta_completa)
+        elif lenguaje == "React":
+                ruta_completa = os.path.join(ruta_proyecto, nombre)
+                ruta_completa = os.path.normpath(ruta_completa)
+                os.makedirs(ruta_completa, exist_ok=True)
+                comando = f'npx create-react-app "{ruta_completa}" > output.txt 2>&1'
+                os.system(comando)
+                respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
+                if respuesta:
+                    crear_repo_github(nombre, descripcion, ruta_completa)
+                with open('output.txt', 'r') as f:
+                    output = f.read()
+                    textbox.insert(tk.END, output)
+                insertar_proyecto(nombre, descripcion, ruta_completa, repo, lenguaje)
+                os.remove('output.txt')
+                git = ms.askyesno("Create Git", "Do you want create Git Repo")
+                if git:
+                    with open(os.path.join(ruta_completa, '.gitignore'), 'w') as f:
+                        f.write(rules)
+                        git_init(ruta_completa)
+                        git_add(ruta_completa)         
+        elif lenguaje == "C#":
+                ruta_completa = os.path.join(ruta_proyecto, nombre)
+                ruta_completa = os.path.normpath(ruta_completa)
+                os.makedirs(ruta_completa, exist_ok=True)
+                comando = f'dotnet new console -n "{ruta_completa}" > output.txt 2>&1'
+                os.system(comando)
+                respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
+                if respuesta:
+                    crear_repo_github(nombre, descripcion, ruta_completa)
+                with open('output.txt', 'r') as f:
+                    output = f.read()
+                    textbox.insert(tk.END, output)
+                insertar_proyecto(nombre, descripcion, ruta_completa, repo, lenguaje)
+                os.remove('output.txt')
+                git = ms.askyesno("Create Git", "Do you want create Git Repo")
+                if git:
+                    with open(os.path.join(ruta_completa, '.gitignore'), 'w') as f:
+                        f.write(rules)
+                        git_init(ruta_completa)
+                        git_add(ruta_completa)
+        elif lenguaje == "Rust":
+                ruta_completa = os.path.join(ruta_proyecto, nombre)
+                ruta_completa = os.path.normpath(ruta_completa)
+                os.makedirs(ruta_completa, exist_ok=True)
+                comando = f'cargo new "{ruta_completa}" --bin > output.txt 2>&1'
+                os.system(comando)
+                respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
+                if respuesta:
+                    crear_repo_github(nombre, descripcion, ruta_completa)
+                with open('output.txt', 'r') as f:
+                    output = f.read()
+                    textbox.insert(tk.END, output)
+                insertar_proyecto(nombre, descripcion, ruta_completa, repo, lenguaje)
+                os.remove('output.txt')
+                git = ms.askyesno("Create Git", "Do you want create Git Repo")
+                if git:
+                    with open(os.path.join(ruta_completa, '.gitignore'), 'w') as f:
+                        f.write(rules)
+                        git_init(ruta_completa)
+                        git_add(ruta_completa)
+        elif lenguaje == "go":
+                ruta_completa = os.path.join(ruta_proyecto, nombre)
+                ruta_completa = os.path.normpath(ruta_completa)
+                os.makedirs(ruta_completa, exist_ok=True)
+                comando = f'go mod init "{ruta_completa}" > output.txt 2>&1'
+                os.system(comando)
+                respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
+                if respuesta:
+                    crear_repo_github(nombre, descripcion, ruta_completa)
+                with open('output.txt', 'r') as f:
+                    output = f.read()
+                    textbox.insert(tk.END, output)
+                insertar_proyecto(nombre, descripcion, ruta_completa, repo, lenguaje)
+                os.remove('output.txt')
+                git = ms.askyesno("Create Git", "Do you want create Git Repo")
+                if git:
+                    with open(os.path.join(ruta_completa, '.gitignore'), 'w') as f:
+                        f.write(rules)
+                        git_init(ruta_completa)
+                        git_add(ruta_completa)
     
     nombre_entry.delete(0, tk.END)
     descripcion_entry.delete(0, tk.END)
     repo_entry.delete(0, tk.END)
 
 def eliminar_proyecto(id, ruta):
+    shutil.rmtree(ruta)
     conn = sqlite3.connect('proyectos.db')
     cursor = conn.cursor()
     
     cursor.execute('DELETE FROM proyectos WHERE id = ?', (id,))
     conn.commit()
-    shutil.rmtree(ruta)
-    mostrar_proyectos()
     conn.close()
+    mostrar_proyectos()
 
 def config_editors():
     config_editor = tk.Toplevel(root)
@@ -1079,8 +1116,10 @@ def generar_informe_html(informacion):
         
 def on_project_select(event):
     global selected_project_path
-    item = tree.selection()[0]
-    selected_project_path = tree.item(item, "values")[4]
+    selected_item = tree.selection()
+    if selected_item:
+        item = tree.item(selected_item[0], 'values')[0]
+        selected_project_path = tree.item(selected_item, "values")[4]
         
 def generar_informe():
     informacion_proyectos = obtener_informacion_proyectos_desde_bd()
