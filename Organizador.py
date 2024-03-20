@@ -384,7 +384,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     gpt_frame.pack(fill='both', side='right')
     
     gpt_response = scrolledtext.ScrolledText(gpt_frame)
-    gpt_response.pack(fill='both')
+    gpt_response.pack(fill='both', expand=True)
     
     send_quest = ttk.Button(gpt_frame, text="Submit", command=answer_question)
     send_quest.pack(side='bottom')
@@ -1288,36 +1288,28 @@ def ver_info(event):
     info_window.iconbitmap(path)
     
     notas_markdown = """
-# RELEASE v1.8.5
+# RELEASE v1.8.6
 
 ## NEW FEATURE
-* The possibility of asking gpt chat was added to the integrated editor
-    - Warning: The openai api has a free use limit, I recommend reading and seeing usage prices and all the terms in OpenAI (The engine it uses is davinci)
-    
-    - First you must configure the openai API which there is a section in the settings section of the main app
-    
-    ![Captura de pantalla 2024-03-13 071112](https://github.com/Nooch98/Organizer/assets/73700510/ac801f22-5654-49c2-b495-cfd92bbaee4f)
-    
-    - Once configured in the text editor by accessing Chat GPT you can ask it (right now it is configured for a maximum response length of 50tk) 
+* Now when you create a project, apart from asking if you want to create the repo on github, you can also now create a git repository
+* If you want the git repo to be created in the project language selection menu in the text box enter the rules to create the .gitignore
+* If you right click on the box where all your projects are located, it will show you the context menu with the git options and to edit information about your selected project (Not all git options are available yet)
 
-    ![Captura de pantalla 2024-03-13 071140](https://github.com/Nooch98/Organizer/assets/73700510/836d974c-98bf-4c3a-ab2a-cc2547209bc1)
+## CHAT GPT FEATURE CHANGE
+* Now to use chta gpt it will not be necessary to open it from the menu since with the shortcut control + g the chat will be shown and hidden next to the editor
 
-## CHANGES
-* Two new themes have been added: Yaru and winxpblue
-* Now the app will open with the default theme of your system
+## CHAT GPT CLOSE
 
-## NEW THEMES
-* YARU:
+![Captura de pantalla 2024-03-20 011133](https://github.com/Nooch98/Organizer/assets/73700510/c233b9ef-b2e4-4402-a833-b8b554126f65)
 
-![Captura de pantalla 2024-03-13 063446](https://github.com/Nooch98/Organizer/assets/73700510/1fdfd990-3a5c-4fd2-9a50-83b266756b3c)
+## CHAT GPT OPEN
 
-* WINXPBLUE:
+![Captura de pantalla 2024-03-20 011120](https://github.com/Nooch98/Organizer/assets/73700510/4cdfd342-4632-4f84-bdfc-68e420df908c)
 
-![Captura de pantalla 2024-03-13 063433](https://github.com/Nooch98/Organizer/assets/73700510/f2a11cd6-8d5b-4691-9937-d51580b9e0a5)
+## ISSUES
+* If you create a git repo and create the gitignore for some reason that I am trying to figure out, it does not apply the gitignore rules and adds everything to the git
 
-
-## ISSUE
-* The app sometimes slows down, I'm working on fixing it (this happens especially if you use custom themes on Windows)
+* ❗ I recommend simply not creating the git repo when creating the project and then from the context menu in the organizer and having created the gitignore use git init and git add so that if the git ignore is applied
 """ 
 
     html = markdown.markdown(notas_markdown)
@@ -1328,6 +1320,7 @@ def ver_info(event):
     scrollbar_vertical = ttk.Scrollbar(info_window, orient="vertical", command=notas_html.yview)
     scrollbar_vertical.pack(side="right", fill="y")
     notas_html.configure(yscrollcommand=scrollbar_vertical.set)
+
     
 root = ThemedTk(theme='')
 root.title('Proyect Organizer')
@@ -1396,6 +1389,7 @@ tree.heading('Lenguaje', text='Lenguaje')
 tree.heading('Ruta', text='Path')
 tree.heading('Repositorio', text='Repository')
 tree.grid(row=5, columnspan=2, pady=5, padx=5)
+
 
 scrollbar_y = ttk.Scrollbar(root, orient='vertical', command=tree.yview)
 scrollbar_y.grid(row=5, column=2, sticky='ns')
