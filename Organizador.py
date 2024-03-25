@@ -5,7 +5,6 @@ import sqlite3
 import subprocess
 import sys
 import threading
-import time
 import tkinter as tk
 import webbrowser
 from tkinter import OptionMenu, StringVar, filedialog
@@ -797,27 +796,31 @@ def show_selected_row():
         filas_ocultas.remove(rowid)
         
 def show_context_menu(event):
+    menu_items = [
+        ("Edit", modificar_proyecto),
+        ("Git Init", lambda: git_init(selected_project_path)),
+        ("Git Add", lambda: git_add(selected_project_path)),
+        ("Git Commit", lambda: git_commit(selected_project_path)),
+        ("Git Status", lambda: git_status(selected_project_path)),
+        ("Git Log", lambda: git_log(selected_project_path)),
+        ("Git Diff", None),
+        ("Git Pull", lambda: git_pull(selected_project_path)),
+        ("Git Push", None),
+        ("Git Branch", None),
+        ("Git Checkout", None),
+        ("Git Merge", None),
+        ("Git Clone", None),
+        ("Git Remote", None),
+        ("Git Fetch", None),
+        ("Git Reset", None),
+        ("Git Revert", None)
+    ]
     rowid = tree.identify_row(event.y)
     
     if rowid:
         context_menu = tk.Menu(root, tearoff=0)
-        context_menu.add_command(label="Edit", command=modificar_proyecto)
-        context_menu.add_command(label="Git Init", command=lambda: git_init(selected_project_path))
-        context_menu.add_command(label="Git Add", command=lambda: git_add(selected_project_path))
-        context_menu.add_command(label="Git Commit", command=lambda: git_commit(selected_project_path))
-        context_menu.add_command(label="Git Status", command=lambda: git_status(selected_project_path))
-        context_menu.add_command(label="Git Log", command=lambda: git_log(selected_project_path))
-        context_menu.add_command(label="Git Diff")
-        context_menu.add_command(label="Git Pull", command=lambda: git_pull(selected_project_path))
-        context_menu.add_command(label="Git Push")
-        context_menu.add_command(label="Git Branch")
-        context_menu.add_command(label="Git Checkout")
-        context_menu.add_command(label="Git Merge")
-        context_menu.add_command(label="Git Clone")
-        context_menu.add_command(label="Git Remote")
-        context_menu.add_command(label="Git Fetch")
-        context_menu.add_command(label="Git Reset")
-        context_menu.add_command(label="Git Revert")
+        for label, command in menu_items:
+            context_menu.add_command(label=label, command=command)
         
         context_menu.post(event.x_root, event.y_root)
 
@@ -1428,6 +1431,7 @@ version_label.grid(row=9, column=1, pady=5, padx=5, sticky="se")
 version_label.bind("<Enter>", label_hover_in)
 version_label.bind("<Leave>", label_hover_out)
 version_label.bind("<Button-1>", ver_info)
+
 
 crear_base_datos()
 mostrar_proyectos()
