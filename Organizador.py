@@ -5,16 +5,15 @@ import sqlite3
 import subprocess
 import sys
 import threading
-import tkinter as tk
+import git
 import webbrowser
+import tkinter as tk
+import jedi
+import markdown
+#--------------------------------------------------------#
 from tkinter import OptionMenu, StringVar, filedialog
 from tkinter import messagebox as ms
 from tkinter import scrolledtext, ttk
-from turtle import heading, right
-
-import git
-import jedi
-import markdown
 from bs4 import BeautifulSoup
 from github import Auth, Github
 from openai import OpenAI
@@ -133,7 +132,10 @@ def abrir_proyecto(ruta, editor):
             subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Editor Integrated":
             subprocess.Popen(f'Start wt -d "{ruta}"', shell=True)
-            abrir_editor_integrado(ruta, tree.item(tree.selection())['values'][1])
+            abrir_editor_thread(ruta, tree.item(tree.selection())['values'][1])
+
+def abrir_editor_thread(ruta, name):
+    threading.Thread(target=abrir_editor_integrado, args=(ruta, name)).start()
 
 def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     global current_file
@@ -168,12 +170,12 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             if os.path.isfile(item_path):
                 current_file = item_path
                 show_file_content(item_path)
-                # Si el archivo ya está abierto en una pestaña, activa esa pestaña.
+
                 for i, editor_tab in enumerate(text_editors):
                     if tabs.tab(i, "text") == os.path.basename(item_path):
                         tabs.select(i)
                         return
-                # Si no, abre una nueva pestaña para el archivo.
+
                 text_editor = scrolledtext.ScrolledText(tabs)
                 text_editor.pack(fill="both")
                 text_editor.insert(tk.END, show_file_content(item_path))
@@ -184,6 +186,101 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                 editor.bind("<Control-w>", cerrar_pestaña_activa)
                 text_editor.bind("<Control-s>", lambda event: guardar_cambios())
     
+    def get_item_path(item):
+        item_path = tree.item(item, "text")
+        parent_item = tree.parent(item)
+        while parent_item:
+            parent_name = tree.item(parent_item, "text")
+            item_path = os.path.join(parent_name, item_path)
+            parent_item = tree.parent(parent_item)
+        return item_path
+    
+    def name_new_file():
+        global filename
+        global name
+        
+        name = tk.Toplevel(editor)
+        name.iconbitmap(path)
+        name.title('New File')
+        
+        label = ttk.Label(name, text='Name of your new file: ')
+        label.grid(row=0, column=0, padx=5, pady=5)
+        
+        filename = ttk.Entry(name, width=50)
+        filename.grid(row=0, column=1, padx=5, pady=5)
+        
+        subbmit = ttk.Button(name, text='Acept', command=create_new_file)
+        subbmit.grid(row=1, columnspan=2, padx=5, pady=5)
+    
+    def name_new_folder():
+        global foldere
+        global foldername
+        
+        foldername = tk.Toplevel(editor)
+        foldername.iconbitmap(path)
+        foldername.title('New Folder')
+        
+        label = ttk.Label(foldername, text='Name of your new folder: ')
+        label.grid(row=0, column=0, padx=5, pady=5)
+        
+        foldere = ttk.Entry(foldername, width=50)
+        foldere.grid(row=0, column=1, padx=5, pady=5)
+        
+        subbmit = ttk.Button(foldername, text='Acept', command=create_new_folder)
+        subbmit.grid(row=1, columnspan=2, padx=5, pady=5)         
+        
+    def create_new_file():
+        folder = tree.focus()
+        if folder:
+            folder_path = get_item_path(folder)
+            file = filename.get()
+            if file:
+                file_path = os.path.join(folder_path, file)
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                with open(file_path, 'w') as file:
+                    file.write("Este es el contenido predeterminado del archivo.")
+                tree.insert(folder, 'end', text=file)
+        name.destroy()
+    
+    def create_new_folder():
+        folder = tree.focus()
+        if folder:
+            parent_folder_path = get_item_path(folder)
+        else:
+            parent_folder_path = ruta_proyecto
+            
+        folder_name = foldere.get()
+        if folder_name:
+            folder_path = os.path.join(parent_folder_path, folder_name)
+            try:
+                os.makedirs(folder_path, exist_ok=True)
+                tree.insert(folder, 'end', text=folder_name)
+                ms.showinfo("Folder Created", f'Folder created successfully: {folder_path}')
+            except OSError as e:
+                ms.showerror('ERROR', f'Error creating folder: {e}')
+        foldername.destroy()
+    
+    def delete_file():
+        selected_item = tree.focus()
+        if selected_item:
+            file_path = get_item_path(selected_item)
+            if os.path.isfile(file_path):
+                try:
+                    os.remove(file_path)
+                    tree.delete(selected_item)
+                    ms.showinfo("File Deleted", f'{file_path}')
+                except OSError as e:
+                    ms.showerror('ERROR', f'Error deleting file: {e}')
+            elif os.path.isdir(file_path):
+                try:
+                    shutil.rmtree(file_path)
+                    tree.delete(selected_item)
+                    ms.showinfo("Folder Deleted", f'{file_path}')
+                except OSError as e:
+                    ms.showerror('ERROR', f'Error deleting folder: {e}')
+            else:
+                ms.showwarning('Warning', f'Selected item is neither a file nor a folder: {file_path}')
+    
     def cerrar_pestaña(event):
         widget = event.widget
         tab_index = widget.index("@%s,%s" % (event.x, event.y))
@@ -191,7 +288,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         if tab_index is not None:
             current_editor = text_editors[tab_index]
             
-            # Verificar si hay cambios sin guardar
             if hay_cambios_sin_guardar(current_editor):
                 respuesta = ms.askyesno("SAVE CHANGES", "¿Deseas guardar los cambios?")
                 if respuesta:
@@ -205,8 +301,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     def cerrar_pestaña_activa(event=None):
         current_tab_index = tabs.index(tabs.select())
         current_editor = text_editors[current_tab_index]
-        
-        # Verificar si hay cambios sin guardar
+
         if hay_cambios_sin_guardar(current_editor):
             respuesta = ms.askyesno("SAVE CHANGES", "You want Save Changes")
             if respuesta:
@@ -271,7 +366,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         row, col = text_editor.index(tk.INSERT).split('.')
         current_line = text_editor.get(f'{row}.0', f'{row}.{col}')
         
-        # Utilizar Jedi para obtener completaciones
         script = jedi.Script(current_line, path=current_file)
         completions = script.complete()
         
@@ -292,13 +386,11 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             text_editor._autocomplete_menu.bind('<Escape>', lambda event: text_editor._autocomplete_menu.delete(0, tk.END))
 
         for suggestion in suggestions_to_show:
-            # Agregar cada sugerencia al menú de autocompletado
             text_editor._autocomplete_menu.add_command(label=suggestion, command=lambda s=suggestion: insert_autocomplete(s))
 
         text_editor._autocomplete_menu.post(text_editor.winfo_pointerx(), text_editor.winfo_pointery())
 
         if len(suggestions) > max_items:
-            # Permitir al usuario navegar por las sugerencias con las teclas de flecha
             text_editor.bind('<Down>', lambda event: scroll_autocomplete_menu(1, suggestions))
             text_editor.bind('<Up>', lambda event: scroll_autocomplete_menu(-1, suggestions))
         
@@ -364,7 +456,9 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         gpt_response.delete(1.0, tk.END)
         gpt_response.insert(tk.END, respuesta_texto)
 
-            
+    def tree_popup(event):
+        tree_menu.post(event.x_root, event.y_root)
+         
     menu_bar = tk.Menu(editor)
     file_menu = tk.Menu(menu_bar, tearoff=0)
     file_menu.add_command(label="Save", command=guardar_cambios)
@@ -398,6 +492,11 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     tree_scroll = ttk.Scrollbar(tree_frame)
     tree_scroll.pack(side="right", fill="y")
 
+    tree_menu = tk.Menu(editor, tearoff=0)
+    tree_menu.add_command(label="New File", command=name_new_file)
+    tree_menu.add_command(label='New Folder', command=name_new_folder)
+    tree_menu.add_command(label='Delete', command=delete_file)
+    
     tree = ttk.Treeview(tree_frame, yscrollcommand=tree_scroll.set)
     tree.pack(side="left", fill="both")
     tree_scroll.config(command=tree.yview)
@@ -410,6 +509,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     tree.bind("<<TreeviewOpen>>", expand_folder)
     editor.bind("<Control-q>", lambda event: editor.destroy())
     editor.bind("<Control-g>", toggle_gpt_visibility)
+    tree.bind("<Button-3>", tree_popup)
     
     for item in os.listdir(ruta_proyecto):
         item_path = os.path.join(ruta_proyecto, item)
@@ -816,7 +916,6 @@ def show_context_menu(event):
         ("Git Revert", None)
     ]
     rowid = tree.identify_row(event.y)
-    
     if rowid:
         context_menu = tk.Menu(root, tearoff=0)
         for label, command in menu_items:
@@ -1431,7 +1530,6 @@ version_label.grid(row=9, column=1, pady=5, padx=5, sticky="se")
 version_label.bind("<Enter>", label_hover_in)
 version_label.bind("<Leave>", label_hover_out)
 version_label.bind("<Button-1>", ver_info)
-
 
 crear_base_datos()
 mostrar_proyectos()
