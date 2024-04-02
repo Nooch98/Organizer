@@ -227,7 +227,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         foldere.grid(row=0, column=1, padx=5, pady=5)
         
         subbmit = ttk.Button(foldername, text='Acept', command=create_new_folder)
-        subbmit.grid(row=1, columnspan=2, padx=5, pady=5)         
+        subbmit.grid(row=1, columnspan=2, padx=5, pady=5)        
         
     def create_new_file():
         folder = tree.focus()
@@ -238,8 +238,9 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                 file_path = os.path.join(folder_path, file)
                 os.makedirs(os.path.dirname(file_path), exist_ok=True)
                 with open(file_path, 'w') as file:
-                    file.write("Este es el contenido predeterminado del archivo.")
+                    file.write("File create with Python Editor.")
                 tree.insert(folder, 'end', text=file)
+                editor.update()
         name.destroy()
     
     def create_new_folder():
@@ -255,6 +256,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             try:
                 os.makedirs(folder_path, exist_ok=True)
                 tree.insert(folder, 'end', text=folder_name)
+                editor.update()
                 ms.showinfo("Folder Created", f'Folder created successfully: {folder_path}')
             except OSError as e:
                 ms.showerror('ERROR', f'Error creating folder: {e}')
@@ -484,7 +486,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     
     user_quest = ttk.Entry(gpt_frame, width=50)
     user_quest.pack(fill='x', side='bottom')
-    
     
     tree_frame = ttk.Frame(editor)
     tree_frame.pack(side="left", fill="both")
@@ -903,17 +904,16 @@ def show_context_menu(event):
         ("Git Commit", lambda: git_commit(selected_project_path)),
         ("Git Status", lambda: git_status(selected_project_path)),
         ("Git Log", lambda: git_log(selected_project_path)),
-        ("Git Diff", None),
+        ("Git Diff", lambda: git_diff(selected_project_path)),
         ("Git Pull", lambda: git_pull(selected_project_path)),
-        ("Git Push", None),
-        ("Git Branch", None),
-        ("Git Checkout", None),
-        ("Git Merge", None),
-        ("Git Clone", None),
-        ("Git Remote", None),
-        ("Git Fetch", None),
-        ("Git Reset", None),
-        ("Git Revert", None)
+        ("Git Push", lambda: git_push(selected_project_path)),
+        ("Git Branch", lambda: git_branch(selected_project_path)),
+        ("Git Checkout", lambda: git_checkout(selected_project_path)),
+        ("Git Merge", lambda: git_merge(selected_project_path)),
+        ("Git Remote", lambda: git_remote(selected_project_path)),
+        ("Git Fetch", lambda: git_fetch(selected_project_path)),
+        ("Git Reset", lambda: git_reset(selected_project_path)),
+        ("Git Revert", lambda: git_revert(selected_project_path))
     ]
     rowid = tree.identify_row(event.y)
     if rowid:
@@ -997,6 +997,123 @@ def git_log(project_path):
 
     try:
         output = run_git_command(["git", "log"], cwd=project_path)
+        output_text.insert(tk.END, output)
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+
+def git_diff(project_path):
+    output_window = tk.Toplevel(root)
+    output_window.title("Git Diff Output")
+
+    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text.pack()
+
+    try:
+        output = run_git_command(["git", "diff"], cwd=project_path)
+        output_text.insert(tk.END, output)
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+
+def git_push(project_path):
+    output_window = tk.Toplevel(root)
+    output_window.title("Git Push Output")
+
+    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text.pack()
+
+    try:
+        output = run_git_command(["git", "push"], cwd=project_path)
+        output_text.insert(tk.END, output)
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+
+def git_branch(project_path):
+    output_window = tk.Toplevel(root)
+    output_window.title("Git Branch Output")
+
+    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text.pack()
+
+    try:
+        output = run_git_command(["git", "branch"], cwd=project_path)
+        output_text.insert(tk.END, output)
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+
+def git_checkout(project_path):
+    output_window = tk.Toplevel(root)
+    output_window.title("Git Checkout Output")
+
+    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text.pack()
+
+    try:
+        output = run_git_command(["git", "checkout"], cwd=project_path)
+        output_text.insert(tk.END, output)
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+
+def git_merge(project_path):
+    output_window = tk.Toplevel(root)
+    output_window.title("Git Merge Output")
+
+    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text.pack()
+
+    try:
+        output = run_git_command(["git", "merge"], cwd=project_path)
+        output_text.insert(tk.END, output)
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+
+def git_remote(project_path):
+    output_window = tk.Toplevel(root)
+    output_window.title("Git Remote Output")
+
+    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text.pack()
+
+    try:
+        output = run_git_command(["git", "remote", "-v"], cwd=project_path)
+        output_text.insert(tk.END, output)
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+
+def git_fetch(project_path):
+    output_window = tk.Toplevel(root)
+    output_window.title("Git Fetch Output")
+
+    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text.pack()
+
+    try:
+        output = run_git_command(["git", "fetch"], cwd=project_path)
+        output_text.insert(tk.END, output)
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+
+def git_reset(project_path):
+    output_window = tk.Toplevel(root)
+    output_window.title("Git Reset Output")
+
+    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text.pack()
+
+    try:
+        output = run_git_command(["git", "reset"], cwd=project_path)
+        output_text.insert(tk.END, output)
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+
+def git_revert(project_path):
+    output_window = tk.Toplevel(root)
+    output_window.title("Git Revert Output")
+
+    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text.pack()
+
+    try:
+        output = run_git_command(["git", "revert"], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
         ms.showerror("ERROR", f"Error: {e.output.decode()}")
@@ -1390,28 +1507,11 @@ def ver_info(event):
     info_window.iconbitmap(path)
     
     notas_markdown = """
-# RELEASE v1.8.6
+# RELEASE v1.8.7
 
-## NEW FEATURE
-* Now when you create a project, apart from asking if you want to create the repo on github, you can also now create a git repository
-* If you want the git repo to be created in the project language selection menu in the text box enter the rules to create the .gitignore
-* If you right click on the box where all your projects are located, it will show you the context menu with the git options and to edit information about your selected project (Not all git options are available yet)
+## BASIC FUNCTIONS AGREE TO INTEGRATED EDITOR
+* If you rigth click on the explore now you can create new file, new folder or delete
 
-## CHAT GPT FEATURE CHANGE
-* Now to use chta gpt it will not be necessary to open it from the menu since with the shortcut control + g the chat will be shown and hidden next to the editor
-
-## CHAT GPT CLOSE
-
-![Captura de pantalla 2024-03-20 011133](https://github.com/Nooch98/Organizer/assets/73700510/c233b9ef-b2e4-4402-a833-b8b554126f65)
-
-## CHAT GPT OPEN
-
-![Captura de pantalla 2024-03-20 011120](https://github.com/Nooch98/Organizer/assets/73700510/4cdfd342-4632-4f84-bdfc-68e420df908c)
-
-## ISSUES
-* If you create a git repo and create the gitignore for some reason that I am trying to figure out, it does not apply the gitignore rules and adds everything to the git
-
-* ❗ I recommend simply not creating the git repo when creating the project and then from the context menu in the organizer and having created the gitignore use git init and git add so that if the git ignore is applied
 """ 
 
     html = markdown.markdown(notas_markdown)
