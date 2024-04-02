@@ -8,8 +8,10 @@ import threading
 import git
 import webbrowser
 import tkinter as tk
+from httpx import request
 import jedi
 import markdown
+import requests
 #--------------------------------------------------------#
 from tkinter import OptionMenu, StringVar, filedialog
 from tkinter import messagebox as ms
@@ -20,7 +22,7 @@ from openai import OpenAI
 from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 
-main_version = "ver.1.8.6"
+main_version = "ver.1.8.7"
 version = str(main_version)
 
 temas = ["arc", "equilux", "radiance", "blue", "ubuntu", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik", "winxpblue", "yaru"]
@@ -59,7 +61,7 @@ def insertar_proyecto(nombre, descripcion, ruta, repo, lenguaje=None):
 
 def abrir_editor(ruta, ruta_editor):
     subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-   
+
 def abrir_proyecto(ruta, editor):
     configuracion_editores = cargar_configuracion_editores()
     ruta_editor = None
@@ -557,7 +559,7 @@ def crear_nuevo_proyecto():
     label = ttk.Label(ventana_lenguaje, text="Select the project language:")
     label.grid(row=0, columnspan=2, pady=5, padx=5)
     
-    lenguaje_options = ["Selection lenguaje", "Python", "NodeJS", "React", "Vue", "C++", "C#", "Rust", "Go"]
+    lenguaje_options = ["Selection lenguaje", "Python", "NodeJS", "bun", "React", "Vue", "C++", "C#", "Rust", "Go"]
     
     global seleccion
     
@@ -726,6 +728,26 @@ def iniciar_new_proyect(lenguaje, textbox):
                 respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
                 if respuesta:
                     crear_repo_github(nombre, descripcion, ruta_completa)
+                with open('output.txt', 'r') as f:
+                    output = f.read()
+                    textbox.insert(tk.END, output)
+                insertar_proyecto(nombre, descripcion, ruta_completa, repo, lenguaje)
+                os.remove('output.txt')
+                git = ms.askyesno("Create Git", "Do you want create Git Repo")
+                if git:
+                    with open(os.path.join(ruta_completa, '.gitignore'), 'w') as f:
+                        f.write(rules)
+                        git_init(ruta_completa)
+                        git_add(ruta_completa)
+        elif lenguaje == "bun":
+            ruta_completa = os.path.join(ruta_proyecto, nombre)
+            ruta_completa = os.path.normpath(ruta_completa)
+            os.makedirs(ruta_completa, exist_ok=True)
+            comando = f'bun init "{ruta_completa}" > output.txt 2>&1'
+            os.system(comando)
+            respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
+            if respuesta:
+                crear_repo_github(nombre, descripcion, ruta_completa)
                 with open('output.txt', 'r') as f:
                     output = f.read()
                     textbox.insert(tk.END, output)
@@ -1454,7 +1476,36 @@ def change_theme(theme_name):
     root.update_idletasks()
     root.geometry("")
     root.geometry(f"{root.winfo_reqwidth()}x{root.winfo_reqheight()}")
-    
+
+def install_choco():
+    subprocess.run("Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))")
+    ms.showinfo("INSTALL COMPLETE", "Choco has install correctly")
+
+def install_lenguaje(lenguaje_selected):
+    if lenguaje_selected == "Python":
+        subprocess.run('choco install python3 -y')
+        ms.showinfo("INSTALL COMPLETE", f"{lenguaje_selected} Has been installed")
+    elif lenguaje_selected == "NodeJS" or lenguaje_selected == "React":
+        subprocess.run('choco install nodejs -y')
+        ms.showinfo("INSTALL COMPLETE", f"{lenguaje_selected} Has been installed")
+    elif lenguaje_selected == "bun":
+        subprocess.run('powershell -c "irm bun.sh/install.ps1|iex"')
+        ms.showinfo("INSTALL COMPLETE", f"{lenguaje_selected} Has been installed")
+    elif lenguaje_selected == "Rust":
+        url = "https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe"
+        response = requests.get(url)
+        file = url.split('/')[-1]
+        with open(file, 'wb') as f:
+            f.write(response.content)
+        ms.showinfo(f"{lenguaje_selected} IS DOWNLOAD", f'{lenguaje_selected} has been downloaded and saved in the same folder as this app')
+    elif lenguaje_selected == "Go":
+        url = "https://go.dev/dl/go1.22.1.windows-amd64.msi"
+        response = requests.get(url)
+        file = url.split('/')[-1]
+        with open(file, 'wb') as f:
+            f.write(response.content)
+        subprocess.Popen([file], shell=True)
+         
 def select_terminal():
     setting_terminal = tk.Toplevel(root)
     setting_terminal.title("Setting Terminal")
@@ -1511,7 +1562,16 @@ def ver_info(event):
 
 ## BASIC FUNCTIONS AGREE TO INTEGRATED EDITOR
 * If you rigth click on the explore now you can create new file, new folder or delete
+* In principle, all git functions are already available
 
+## NEW FEATURES
+* Now you can install directly from the node react python app and bun is also available in the app (For certain apps to be installed first you have to install chocolate and also available from the app).
+
+![Captura de pantalla 2024-04-02 185428](https://github.com/Nooch98/Organizer/assets/73700510/38c8c854-2ceb-49ab-bd88-249104e745a7)
+
+![Captura de pantalla 2024-04-02 185442](https://github.com/Nooch98/Organizer/assets/73700510/7f2c3669-ffef-482e-b403-7ff24e12e39e)
+
+* c++ and c# not available yet
 """ 
 
     html = markdown.markdown(notas_markdown)
@@ -1537,6 +1597,8 @@ editores_disponibles = ["Visual Studio Code", "Sublime Text", "Atom", "Vim", "Em
         "PyCharm", "Visual Studio", "Code::Blocks", "NetBeans", 
         "Android Studio"]
 
+lenguajes = ["Python", "NodeJS", "bun", "React", "Vue", "C++", "C#", "Rust", "Go"]
+
 menu = tk.Menu(root)
 root.config(menu=menu)
 
@@ -1553,6 +1615,11 @@ menu.add_cascade(label="Settings", menu=menu_settings)
 menu_settings.add_command(label="Config Editor", command=config_editors)
 menu_settings.add_command(label="Github", command=config_github)
 menu_settings.add_command(label="OpenAI", command=config_openai)
+lenguajes_menu = tk.Menu(menu_settings, tearoff=0)
+menu_settings.add_cascade(label='Install Lenguajes', menu=lenguajes_menu)
+for lenguaje in lenguajes:
+    lenguajes_menu.add_command(label=lenguaje, command=lambda lenguaje=lenguaje: install_lenguaje(lenguaje))
+menu_settings.add_command(label='Install Choco', command=lambda: install_choco)
 menu_settings.add_command(label="Terminal", command=select_terminal)
 theme_menu = tk.Menu(menu_settings, tearoff=0)
 menu_settings.add_cascade(label="Theme", menu=theme_menu)
