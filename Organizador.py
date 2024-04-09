@@ -12,6 +12,7 @@ from httpx import request
 import jedi
 import markdown
 import requests
+import importlib.util
 #--------------------------------------------------------#
 from tkinter import OptionMenu, StringVar, filedialog
 from tkinter import messagebox as ms
@@ -22,7 +23,7 @@ from openai import OpenAI
 from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 
-main_version = "ver.1.8.7"
+main_version = "ver.1.8.8"
 version = str(main_version)
 
 temas = ["arc", "equilux", "radiance", "blue", "ubuntu", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik", "winxpblue", "yaru"]
@@ -151,6 +152,24 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     tabs.pack(expand=True, fill="both", side="right")
     text_editors = []
     
+    
+    def execute_plugin(plugin_function):
+        plugin_function()
+        
+    def load_plugins():
+        plugins = []
+        plugins_dir = os.path.join(os.path.dirname(__file__), 'plugins')
+        for plugin_file in os.listdir(plugins_dir):
+            if plugin_file.endswith('.py'):
+                plugin_name = os.path.splitext(plugin_file)[0]
+                spec = importlib.util.spec_from_file_location(plugin_name, os.path.join(plugins_dir, plugin_file))
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                for member_name in dir(module):
+                    member = getattr(module, member_name)
+                    if callable(member) and member_name.startswith("plugin_"):
+                        execute_plugin(member)
+        return plugins
     
     def guardar_cambios(event=None):
         global current_file
@@ -521,7 +540,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         elif os.path.isdir(item_path):
             folder_id = tree.insert("", "end", text=item, open=False)
             tree.insert(folder_id, "end", text="")
-     
+    
+    load_plugins()
     editor.mainloop()
 
 def abrir_threading(ruta, editor):
@@ -1558,20 +1578,13 @@ def ver_info(event):
     info_window.iconbitmap(path)
     
     notas_markdown = """
-# RELEASE v1.8.7
+# RELEASE v1.8.8
 
-## BASIC FUNCTIONS AGREE TO INTEGRATED EDITOR
-* If you rigth click on the explore now you can create new file, new folder or delete
-* In principle, all git functions are already available
+The packaging method of the application was changed since now, having added the option to create plugins for the app, a folder called plugins has been created with a plugins.py file inside where you can create the plugins for the app.
+The plugins.py file is located in the _internals/plugins folder
 
-## NEW FEATURES
-* Now you can install directly from the node react python app and bun is also available in the app (For certain apps to be installed first you have to install chocolate and also available from the app).
-
-![Captura de pantalla 2024-04-02 185428](https://github.com/Nooch98/Organizer/assets/73700510/38c8c854-2ceb-49ab-bd88-249104e745a7)
-
-![Captura de pantalla 2024-04-02 185442](https://github.com/Nooch98/Organizer/assets/73700510/7f2c3669-ffef-482e-b403-7ff24e12e39e)
-
-* c++ and c# not available yet
+## NEW FEATURE
+* Added the possibility of creating plugins for the integrated editor
 """ 
 
     html = markdown.markdown(notas_markdown)
