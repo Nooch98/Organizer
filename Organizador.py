@@ -8,7 +8,6 @@ import threading
 import git
 import webbrowser
 import tkinter as tk
-from httpx import request
 import jedi
 import markdown
 import requests
@@ -23,7 +22,7 @@ from openai import OpenAI
 from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 
-main_version = "ver.1.8.8"
+main_version = "ver.1.8.9"
 version = str(main_version)
 
 temas = ["arc", "equilux", "radiance", "blue", "ubuntu", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik", "winxpblue", "yaru"]
@@ -151,13 +150,10 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     tabs = ttk.Notebook(editor)
     tabs.pack(expand=True, fill="both", side="right")
     text_editors = []
-    
-    
-    def execute_plugin(plugin_function):
-        plugin_function()
-        
+    global_plugins = []
+ 
     def load_plugins():
-        plugins = []
+        nonlocal  global_plugins
         plugins_dir = os.path.join(os.path.dirname(__file__), 'plugins')
         for plugin_file in os.listdir(plugins_dir):
             if plugin_file.endswith('.py'):
@@ -168,8 +164,30 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                 for member_name in dir(module):
                     member = getattr(module, member_name)
                     if callable(member) and member_name.startswith("plugin_"):
-                        execute_plugin(member)
-        return plugins
+                        global_plugins.append(member)
+    
+    load_plugins()
+    
+    def show_plugin_selector(plugins_list):
+        plugin_selector = tk.Toplevel()
+        plugin_selector.title("Plugin Selector")
+        plugin_selector.iconbitmap(path)
+        
+        selected_plugins = []
+
+        for plugin in plugins_list:
+            var = tk.BooleanVar()
+            cb = ttk.Checkbutton(plugin_selector, text=plugin.__name__, variable=var)
+            cb.pack(anchor=tk.W)
+            selected_plugins.append((plugin, var))
+
+        def execute_selected_plugins():
+            for plugin, var in selected_plugins:
+                if var.get():
+                    plugin()
+
+        execute_button = ttk.Button(plugin_selector, text="Execute Selected Plugins", command=execute_selected_plugins)
+        execute_button.pack()
     
     def guardar_cambios(event=None):
         global current_file
@@ -478,7 +496,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
 
         gpt_response.delete(1.0, tk.END)
         gpt_response.insert(tk.END, respuesta_texto)
-
+    
     def tree_popup(event):
         tree_menu.post(event.x_root, event.y_root)
          
@@ -490,6 +508,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     settings_menu = tk.Menu(menu_bar, tearoff=0)
     menu_bar.add_cascade(label='Settings', menu=settings_menu)
     themes_menu = tk.Menu(settings_menu, tearoff=0)
+    settings_menu.add_command(label='Plugins', command=lambda: show_plugin_selector(global_plugins))
     settings_menu.add_cascade(label='Theme', menu=themes_menu)
     for tema in temas:
         themes_menu.add_command(label=tema, command=lambda tema=tema: change_theme(tema))
@@ -541,7 +560,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             folder_id = tree.insert("", "end", text=item, open=False)
             tree.insert(folder_id, "end", text="")
     
-    load_plugins()
     editor.mainloop()
 
 def abrir_threading(ruta, editor):
@@ -1578,13 +1596,15 @@ def ver_info(event):
     info_window.iconbitmap(path)
     
     notas_markdown = """
-# RELEASE v1.8.8
+# RELEASE v1.8.9
 
-The packaging method of the application was changed since now, having added the option to create plugins for the app, a folder called plugins has been created with a plugins.py file inside where you can create the plugins for the app.
-The plugins.py file is located in the _internals/plugins folder
+## CHANGE IN PLUGINS FEATURE
+* Now the plugins will not be executed directly, they will only be loaded
+* Now in the editor settings there is an option called plugins, this is where you activate the plugins you want to use.
 
-## NEW FEATURE
-* Added the possibility of creating plugins for the integrated editor
+![Captura de pantalla 2024-04-09 165732](https://github.com/Nooch98/Organizer/assets/73700510/98c50d7f-2567-495b-a2e3-c76c04a5a46f)
+
+![Captura de pantalla 2024-04-09 165754](https://github.com/Nooch98/Organizer/assets/73700510/5b3bd580-7ea7-448f-960e-de95d028e42f)
 """ 
 
     html = markdown.markdown(notas_markdown)
