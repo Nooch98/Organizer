@@ -3,6 +3,23 @@ Organizer is an application developed in python and open source which allows you
 
 ![Captura de pantalla 2024-03-13 074437](https://github.com/Nooch98/Organizer/assets/73700510/43e9f104-9704-448c-8873-57a98ae77789)
 
+
+# SOURCE CODE FEATURE AGREE
+* Now if you use Organizer with the Source code and not use the release the editor have syntaxis of code
+
+![Captura de pantalla 2024-04-10 195357](https://github.com/Nooch98/Organizer/assets/73700510/7195aaee-515e-44e5-a439-8b5375791a36)
+
+* You can change the theme only change this line on code
+
+![Captura de pantalla 2024-04-10 195600](https://github.com/Nooch98/Organizer/assets/73700510/910582e5-9b3e-43c1-8c82-65247ff692be)
+
+* Themes avalaibles right now:
+  * ayu-dark
+  * ayu-light
+  * dracula
+  * mariana
+  * monokai
+
 # LAST UPDATES
 To see the latest updates to the app, look in [Releases](https://github.com/Nooch98/Organizer/releases)
 
