@@ -142,18 +142,22 @@ def abrir_editor_thread(ruta, name):
     threading.Thread(target=abrir_editor_integrado, args=(ruta, name)).start()
 
 def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
+    import time
     global current_file
-    root = ThemedTk(theme='')
-    root.title("Editor Integrated")
-    root.geometry("800x400")
-    root.iconbitmap(path)
+
+    editor = tk.Toplevel(root)
+    editor.title("Editor Integrated")
+    editor.geometry("800x400")
+    editor.iconbitmap(path)
     
     current_file = None
-    tabs = ttk.Notebook(root)
+    tabs = ttk.Notebook(editor)
     tabs.pack(expand=True, fill="both", side="right")
     text_editors = []
     global_plugins = []
- 
+    code_themes = ["ayu-dark", "ayu-light", "dracula", "mariana", "monokai", "macos", "atom", "electron", "materialtheme", "nightowl", "synthwave", "nord", "solarized"]
+    selected_theme = "synthwave"
+    
     def load_plugins():
         nonlocal  global_plugins
         plugins_dir = os.path.join(os.path.dirname(__file__), 'plugins')
@@ -169,6 +173,16 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                         global_plugins.append(member)
     
     load_plugins()
+    
+    def current_theme_get():
+        return selected_theme
+    
+    def change_code_theme(theme_name):
+        global selected_theme
+        selected_theme = theme_name
+        for text_editor in text_editors:
+            text_editor.config(color_scheme=theme_name)
+            gpt_response.config(color_scheme=theme_name)
     
     def show_plugin_selector(plugins_list):
         plugin_selector = tk.Toplevel()
@@ -209,7 +223,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     
     def open_selected_file(event=None):
         global current_file
-        
         item = tree.focus()
         if item:
             item_path = get_item_path(item)
@@ -229,13 +242,13 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                     
                     lexer = pygments.lexers.get_lexer_for_filename(item_path)
                     
-                    text_editor = CodeView(new_tab_frame, lexer=lexer, color_scheme="monokai")
+                    text_editor = CodeView(new_tab_frame, lexer=lexer, color_scheme=current_theme_get())
                     text_editor.pack(fill="both", expand=True)
-                    text_editor.insert(tk.END, content)
+                    text_editor.insert("1.0", content)
                     text_editors.append(text_editor)
                     text_editor.bind("<KeyPress>", on_key_press)
                     tabs.bind("<Button-2>", cerrar_pestaña)
-                    root.bind("<Control-w>", cerrar_pestaña_activa)
+                    editor.bind("<Control-w>", cerrar_pestaña_activa)
                     text_editor.bind("<Control-s>", lambda event: guardar_cambios())
     
     def get_item_path(item):
@@ -251,7 +264,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         global filename
         global name
         
-        name = tk.Toplevel(root)
+        name = tk.Toplevel(editor)
         name.iconbitmap(path)
         name.title('New File')
         
@@ -268,7 +281,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         global foldere
         global foldername
         
-        foldername = tk.Toplevel(root)
+        foldername = tk.Toplevel(editor)
         foldername.iconbitmap(path)
         foldername.title('New Folder')
         
@@ -292,7 +305,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                 with open(file_path, 'w') as file:
                     file.write("File create with Python Editor.")
                 tree.insert(folder, 'end', text=file)
-                root.update()
+                editor.update()
         name.destroy()
     
     def create_new_folder():
@@ -308,7 +321,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             try:
                 os.makedirs(folder_path, exist_ok=True)
                 tree.insert(folder, 'end', text=folder_name)
-                root.update()
+                editor.update()
                 ms.showinfo("Folder Created", f'Folder created successfully: {folder_path}')
             except OSError as e:
                 ms.showerror('ERROR', f'Error creating folder: {e}')
@@ -476,7 +489,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             tree_frame.pack(side="left", fill="both")
             
     def change_theme(theme_name):
-        root.set_theme(theme_name)
+        editor.set_theme(theme_name)
         
     def create_theme():
         comando = "python -m ttkbootstrap"
@@ -507,8 +520,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     
     def tree_popup(event):
         tree_menu.post(event.x_root, event.y_root)
-         
-    menu_bar = tk.Menu(root)
+        
+    menu_bar = tk.Menu(editor)
     file_menu = tk.Menu(menu_bar, tearoff=0)
     file_menu.add_command(label="Save", command=guardar_cambios)
     menu_bar.add_cascade(label="File", menu=file_menu)
@@ -521,12 +534,16 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     for tema in temas:
         themes_menu.add_command(label=tema, command=lambda tema=tema: change_theme(tema))
     themes_menu.add_command(label='Create Theme', command=create_theme)
-    root.config(menu=menu_bar)
-    
-    gpt_frame = ttk.Frame(root)
+    theme_code_menu = tk.Menu(settings_menu, tearoff=0)
+    settings_menu.add_cascade(label='Code Theme', menu=theme_code_menu)
+    for code_theme in code_themes:
+        theme_code_menu.add_command(label=code_theme, command=lambda theme=code_theme: change_code_theme(theme))
+    editor.config(menu=menu_bar)
+
+    gpt_frame = ttk.Frame(editor)
     gpt_frame.pack(fill='both', side='right')
     
-    gpt_response = CodeView(gpt_frame)
+    gpt_response = CodeView(gpt_frame, color_scheme=current_theme_get())
     gpt_response.pack(fill='both', expand=True)
     
     send_quest = ttk.Button(gpt_frame, text="Submit", command=answer_question)
@@ -535,13 +552,13 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     user_quest = ttk.Entry(gpt_frame, width=50)
     user_quest.pack(fill='x', side='bottom')
     
-    tree_frame = ttk.Frame(root)
+    tree_frame = ttk.Frame(editor)
     tree_frame.pack(side="left", fill="both")
 
     tree_scroll = ttk.Scrollbar(tree_frame)
     tree_scroll.pack(side="right", fill="y")
 
-    tree_menu = tk.Menu(root, tearoff=0)
+    tree_menu = tk.Menu(editor, tearoff=0)
     tree_menu.add_command(label="New File", command=name_new_file)
     tree_menu.add_command(label='New Folder', command=name_new_folder)
     tree_menu.add_command(label='Delete', command=delete_file)
@@ -552,12 +569,13 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     tree.bind("<<TreeviewSelect>>", open_selected_file)
     tree.heading("#0", text=nombre_proyecto)
     
-    root.bind("<Control-b>", toggle_tree_visibility)
-    root.bind("<Control-Tab>", lambda event: tabs.select((tabs.index(tabs.select()) + 1) % tabs.index("end")))
-    root.bind("<Control-Shift-Tab>", lambda event: tabs.select((tabs.index(tabs.select()) - 1) % tabs.index("end")))
+    
+    editor.bind("<Control-b>", toggle_tree_visibility)
+    editor.bind("<Control-Tab>", lambda event: tabs.select((tabs.index(tabs.select()) + 1) % tabs.index("end")))
+    editor.bind("<Control-Shift-Tab>", lambda event: tabs.select((tabs.index(tabs.select()) - 1) % tabs.index("end")))
     tree.bind("<<TreeviewOpen>>", expand_folder)
-    root.bind("<Control-q>", lambda event: editor.destroy())
-    root.bind("<Control-g>", toggle_gpt_visibility)
+    editor.bind("<Control-q>", lambda event: editor.destroy())
+    editor.bind("<Control-g>", toggle_gpt_visibility)
     tree.bind("<Button-3>", tree_popup)
     
     for item in os.listdir(ruta_proyecto):
@@ -567,8 +585,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         elif os.path.isdir(item_path):
             folder_id = tree.insert("", "end", text=item, open=False)
             tree.insert(folder_id, "end", text="")
-    
-    root.mainloop()
+
+
 
 def abrir_threading(ruta, editor):
     threading.Thread(target=abrir_proyecto, args=(ruta, editor)).start()
