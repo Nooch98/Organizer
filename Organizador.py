@@ -145,7 +145,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     import time
     global current_file
 
-    editor = tk.Toplevel(root)
+    editor = ThemedTk(theme='')
     editor.title("Editor Integrated")
     editor.geometry("800x400")
     editor.iconbitmap(path)
@@ -156,7 +156,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     text_editors = []
     global_plugins = []
     code_themes = ["ayu-dark", "ayu-light", "dracula", "mariana", "monokai", "macos", "atom", "electron", "materialtheme", "nightowl", "synthwave", "nord", "solarized"]
-    selected_theme = "ayu-dark"
+    selected_theme = "synthwave"
     
     def load_plugins():
         nonlocal  global_plugins
@@ -586,7 +586,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             folder_id = tree.insert("", "end", text=item, open=False)
             tree.insert(folder_id, "end", text="")
 
-
+    load_plugins()
+    editor.mainloop()
 
 def abrir_threading(ruta, editor):
     threading.Thread(target=abrir_proyecto, args=(ruta, editor)).start()
@@ -1219,18 +1220,14 @@ def abrir_repositorio(event):
     
 def abrir_proyecto_github():
     url_repositorio = repo_entry.get()
-    
-
+    descripcion = descripcion_entry.get()
     ruta_destino = filedialog.askdirectory()
-
     if ruta_destino:
         subprocess.run(['git', 'clone', url_repositorio], cwd=ruta_destino, check=True)
-        
         nombre_repositorio = url_repositorio.split('/')[-1].replace('.git', '')
         ruta_repositorio_clonado = os.path.join(ruta_destino, nombre_repositorio)
-
+        insertar_proyecto(nombre_repositorio, descripcion, ruta_repositorio_clonado, url_repositorio)
         abrir_proyecto(ruta_repositorio_clonado, selected_editor.get())
-        
         repo_entry.delete(0, tk.END)
         
 def resource_path(relative_path):
@@ -1756,6 +1753,7 @@ version_label.grid(row=9, column=1, pady=5, padx=5, sticky="se")
 version_label.bind("<Enter>", label_hover_in)
 version_label.bind("<Leave>", label_hover_out)
 version_label.bind("<Button-1>", ver_info)
+root.bind("<Control-q", root.quit())
 
 crear_base_datos()
 mostrar_proyectos()
