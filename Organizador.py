@@ -156,7 +156,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     text_editors = []
     global_plugins = []
     code_themes = ["ayu-dark", "ayu-light", "dracula", "mariana", "monokai", "macos", "atom", "electron", "materialtheme", "nightowl", "synthwave", "nord", "solarized"]
-    selected_theme = "synthwave"
+    selected_theme = "ayu-dark"
     
     def load_plugins():
         nonlocal  global_plugins
