@@ -52,7 +52,7 @@ soupsieve==2.5
 tkhtmlview==0.3.0
 tklinenums==1.7.1
 toml==0.10.2
-tqdm==4.66.2
+tqdm>=4.66.3
 ttkthemes==3.2.2
 typing_extensions==4.11.0
 urllib3==2.2.1
