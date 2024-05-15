@@ -24,7 +24,7 @@ from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 from chlorophyll import CodeView
 
-main_version = "ver.1."
+main_version = "ver.1.9.1"
 version = str(main_version)
 
 temas = ["arc", "equilux", "radiance", "blue", "ubuntu", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik", "winxpblue", "yaru"]
