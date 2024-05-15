@@ -14,7 +14,7 @@ import requests
 import importlib.util
 import pygments.lexers
 #--------------------------------------------------------#
-from tkinter import OptionMenu, StringVar, filedialog
+from tkinter import OptionMenu, StringVar, filedialog, simpledialog
 from tkinter import messagebox as ms
 from tkinter import scrolledtext, ttk
 from bs4 import BeautifulSoup
@@ -24,7 +24,7 @@ from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 from chlorophyll import CodeView
 
-main_version = "ver.1.8.9"
+main_version = "ver.1."
 version = str(main_version)
 
 temas = ["arc", "equilux", "radiance", "blue", "ubuntu", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik", "winxpblue", "yaru"]
@@ -84,8 +84,8 @@ def abrir_proyecto(ruta, editor):
             subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
             subprocess.run(f'Start wt -d "{ruta}"', shell=True)
         elif editor == "Vim":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
+            comando_ps = f"Start-Process vim '{ruta}' -WorkingDirectory '{ruta}'"
+            subprocess.Popen(["powershell", "-Command", comando_ps])
         elif editor == "Emacs":
             subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
             subprocess.run(f'Start wt -d "{ruta}"', shell=True)
@@ -134,6 +134,9 @@ def abrir_proyecto(ruta, editor):
         elif editor == "Android Studio":
             subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
             subprocess.run(f'Start wt -d "{ruta}"', shell=True)
+        elif editor == "neovim":
+            comando_ps = f"Start-Process nvim '{ruta}' -WorkingDirectory '{ruta}'"
+            subprocess.Popen(["powershell", "-Command", comando_ps])
         elif editor == "Editor Integrated":
             subprocess.Popen(f'Start wt -d "{ruta}"', shell=True)
             abrir_editor_thread(ruta, tree.item(tree.selection())['values'][1])
@@ -831,14 +834,24 @@ def iniciar_new_proyect(lenguaje, textbox):
     textbox.delete(0, tk.END)
 
 def eliminar_proyecto(id, ruta):
-    shutil.rmtree(ruta)
-    conn = sqlite3.connect('proyectos.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('DELETE FROM proyectos WHERE id = ?', (id,))
-    conn.commit()
-    conn.close()
-    mostrar_proyectos()
+    try:
+        shutil.rmtree(ruta)
+        conn = sqlite3.connect('proyectos.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('DELETE FROM proyectos WHERE id = ?', (id,))
+        conn.commit()
+        conn.close()
+        mostrar_proyectos()
+    except shutil.Error as e:
+        ms.showerror("ERROR", f"Error deleting project: {e}")
+        conn = sqlite3.connect('proyectos.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('DELETE FROM proyectos WHERE id = ?', (id,))
+        conn.commit()
+        conn.close()
+        mostrar_proyectos()
 
 def config_editors():
     config_editor = tk.Toplevel(root)
@@ -1217,17 +1230,28 @@ def abrir_repositorio(event):
     url_repositorio = item_seleccionado['values'][5]
 
     webbrowser.open_new(url_repositorio)
+
+def abrir_explorador(event):
+    item_seleccionado = tree.item(tree.selection())
+    ruta = item_seleccionado['values'][4]
+    ruta_formateada = ruta.replace("/", "\\")
+    subprocess.Popen(['explorer', ruta_formateada])
     
 def abrir_proyecto_github():
-    url_repositorio = repo_entry.get()
-    descripcion = descripcion_entry.get()
+    url_repositorio = simpledialog.askstring("GITHUB REPO", "Insert the url of the github repository you want to add")
+    description = descripcion_entry.get()
+
     ruta_destino = filedialog.askdirectory()
+
     if ruta_destino:
         subprocess.run(['git', 'clone', url_repositorio], cwd=ruta_destino, check=True)
+        
         nombre_repositorio = url_repositorio.split('/')[-1].replace('.git', '')
         ruta_repositorio_clonado = os.path.join(ruta_destino, nombre_repositorio)
-        insertar_proyecto(nombre_repositorio, descripcion, ruta_repositorio_clonado, url_repositorio)
+
+        insertar_proyecto(nombre_repositorio, description, ruta_repositorio_clonado, url_repositorio)
         abrir_proyecto(ruta_repositorio_clonado, selected_editor.get())
+        
         repo_entry.delete(0, tk.END)
         
 def resource_path(relative_path):
@@ -1475,12 +1499,12 @@ def modificar_proyecto():
         return
 
     field_index = {
-    'ID': 0,
-    'Nombre': 1,
-    'Descripcion': 2,
-    'Lenguaje': 3,
-    'Ruta': 4,
-    'Repositorio': 5
+        'ID': 0,
+        'Nombre': 1,
+        'Descripcion': 2,
+        'Lenguaje': 3,
+        'Ruta': 4,
+        'repo': 5
     }
 
     selected_row = selected_row[0]
@@ -1488,48 +1512,46 @@ def modificar_proyecto():
 
     mod_window = tk.Toplevel(root)
     mod_window.title("Modify Project")
+    mod_window.iconbitmap(path)
 
-    field_label = ttk.Label(mod_window, text="Select Field to Modify:")
-    field_label.grid(row=0, column=0, padx=5, pady=5)
+    for field, index in field_index.items():
+        field_label = ttk.Label(mod_window, text=f"{field}:")
+        field_label.grid(row=index, column=0, padx=5, pady=5)
 
-    selected_field = tk.StringVar()
-    field_menu = ttk.OptionMenu(mod_window, selected_field, "", *['ID', 'Nombre', 'Descripcion', 'Lenguaje', 'Ruta', 'Repositorio'])
-    field_menu.grid(row=0, column=1, padx=5, pady=5)
-
-    new_value_label = ttk.Label(mod_window, text="New Value:")
-    new_value_label.grid(row=1, column=0, padx=5, pady=5)
-
-    new_value_entry = ttk.Entry(mod_window)
-    new_value_entry.grid(row=1, column=1, padx=5, pady=5)
+        new_value_entry = ttk.Entry(mod_window, width=50)
+        new_value_entry.insert(0, current_values[index])
+        new_value_entry.grid(row=index, column=1, padx=5, pady=5)
 
     def apply_modification():
-        new_value = new_value_entry.get()
-        field = selected_field.get()
-
-        if field and new_value:
-            current_values = list(tree.item(selected_row, "values"))
-            current_values[field_index[field]] = new_value
-
-            tree.item(selected_row, values=current_values)
-
-            update_project(current_values[field_index['ID']], field, new_value)
-
-            mod_window.destroy()
-        else:
-            ms.showerror("Error", "Please select a field and provide a new value.")
+        new_values = []
+        for field, index in field_index.items():
+            entry = mod_window.grid_slaves(row=index, column=1)[0]
+            value = entry.get()
+            new_values.append(value if value.strip() else None)
+        project_id = current_values[field_index['ID']]
+        update_project(project_id, field_index, new_values)
+        mod_window.destroy()
 
     apply_button = ttk.Button(mod_window, text="Apply", command=apply_modification)
-    apply_button.grid(row=2, columnspan=2, padx=5, pady=5)
+    apply_button.grid(row=9, columnspan=2, padx=5, pady=5)
 
-def update_project(project_id, field, new_value):
+def update_project(project_id, field_index, new_values):
     conn = sqlite3.connect('proyectos.db')
     cursor = conn.cursor()
 
-    update_query = f"UPDATE proyectos SET {field.lower()}=? WHERE id=?"
-    cursor.execute(update_query, (new_value, project_id))
+    set_fields = [f"{field.lower()}=?" for field, value in zip(field_index.keys(), new_values) if value is not None]
+    update_query = "UPDATE proyectos SET " + ", ".join(set_fields)
+
+    update_query += " WHERE id=?"
+
+    filtered_values = [value for value in new_values if value is not None]
+    filtered_values.append(project_id)
+
+    cursor.execute(update_query, filtered_values)
 
     conn.commit()
     conn.close()
+    mostrar_proyectos()
   
 
 def change_theme(theme_name):
@@ -1541,16 +1563,23 @@ def change_theme(theme_name):
 def install_choco():
     subprocess.run("Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))")
     ms.showinfo("INSTALL COMPLETE", "Choco has install correctly")
-
+    
+def install_scoop():
+    subprocess.run("Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser; Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression").wait()
+    ms.showinfo("INSTALL COMPLETE", "Scoop has install correctly")
+    
 def install_lenguaje(lenguaje_selected):
     if lenguaje_selected == "Python":
-        subprocess.run('choco install python3 -y')
+        comando_python = 'choco install python3 -y'
+        subprocess.Popen(["powershell", "-c", comando_python], shell=True).wait()
         ms.showinfo("INSTALL COMPLETE", f"{lenguaje_selected} Has been installed")
     elif lenguaje_selected == "NodeJS" or lenguaje_selected == "React":
-        subprocess.run('choco install nodejs -y')
+        comando_node = 'choco install nodejs -y'
+        subprocess.Popen(["powershell", "-c", comando_node], shell=True).wait()
         ms.showinfo("INSTALL COMPLETE", f"{lenguaje_selected} Has been installed")
     elif lenguaje_selected == "bun":
-        subprocess.run('powershell -c "irm bun.sh/install.ps1|iex"')
+        comando_bun = 'irm bun.sh/install.ps1|iex'
+        subprocess.Popen(["powershell", "-c", comando_bun], shell=True).wait()
         ms.showinfo("INSTALL COMPLETE", f"{lenguaje_selected} Has been installed")
     elif lenguaje_selected == "Rust":
         url = "https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe"
@@ -1559,13 +1588,25 @@ def install_lenguaje(lenguaje_selected):
         with open(file, 'wb') as f:
             f.write(response.content)
         ms.showinfo(f"{lenguaje_selected} IS DOWNLOAD", f'{lenguaje_selected} has been downloaded and saved in the same folder as this app')
+        quest = ms.askyesno("INSTALL", f"Do you want to install {lenguaje_selected} now?")
+        if quest:
+            subprocess.Popen([file], shell=True).wait()
+            os.remove(file)
+        else:
+            ms.showinfo("INSTALL LATER", f"You can install {lenguaje_selected} later, the installer is saved in the same folder as this app")
+            
     elif lenguaje_selected == "Go":
         url = "https://go.dev/dl/go1.22.1.windows-amd64.msi"
         response = requests.get(url)
         file = url.split('/')[-1]
         with open(file, 'wb') as f:
             f.write(response.content)
-        subprocess.Popen([file], shell=True)
+        quest = ms.askyesno("INSTALL", f"Do you want to install {lenguaje_selected} now?")
+        if quest:
+            subprocess.Popen([file], shell=True).wait()
+            os.remove(file)
+        else:
+            ms.showinfo("INSTALL LATER", f"You can install {lenguaje_selected} later, the installer is saved in the same folder as this app")
          
 def select_terminal():
     setting_terminal = tk.Toplevel(root)
@@ -1619,15 +1660,18 @@ def ver_info(event):
     info_window.iconbitmap(path)
     
     notas_markdown = """
-# RELEASE v1.8.9
+# RELEASE v1.9.1
 
-## CHANGE IN PLUGINS FEATURE
-* Now the plugins will not be executed directly, they will only be loaded
-* Now in the editor settings there is an option called plugins, this is where you activate the plugins you want to use.
+## CHANGES
+* The UI was changed in the editing function
+* The Open github repository button was removed and now appears in the projects option in the top toolbar and its operation was modified
+* Now the general UI is adaptive in size (I know it is not the best thing to do)
+* The Neovim editor was added to the list of editors
 
-![Captura de pantalla 2024-04-09 165732](https://github.com/Nooch98/Organizer/assets/73700510/98c50d7f-2567-495b-a2e3-c76c04a5a46f)
 
-![Captura de pantalla 2024-04-09 165754](https://github.com/Nooch98/Organizer/assets/73700510/5b3bd580-7ea7-448f-960e-de95d028e42f)
+## IN PROGRESS
+* The menu is already there although it is not functional but I am adding an editor installer
+* I am creating a function so that from time to time it creates a backup of all the projects that have been added to the app
 """ 
 
     html = markdown.markdown(notas_markdown)
@@ -1643,15 +1687,154 @@ def ver_info(event):
 root = ThemedTk(theme='')
 root.title('Proyect Organizer')
 root.geometry("1230x420")
+root.minsize(1230, 420)
 path = resource_path("software.ico")
 root.iconbitmap(path)
+
+def adjust_window_size(event=None):
+    root.update_idletasks()
+    tree.config(height=root.winfo_height() - 310)
+    
+    new_width = 300
+    depend_widht = 280
+    nombre_entry.config(width=new_width)
+    descripcion_entry.config(width=new_width)
+    repo_entry.config(width=new_width)
+    depen_entry.config(width=depend_widht)
+    
+def restore_window_size(event=None):
+    root.update_idletasks()
+    tree.config(height=root.winfo_height() - 310)
+    
+    new_width = 300
+    depend_width = 280
+    nombre_entry.config(width=new_width)
+    descripcion_entry.config(width=new_width)
+    repo_entry.config(width=new_width)
+    depen_entry.config(width=depend_width)
+
+    if root.state() != "zoomed": 
+        nombre_entry.config(width=100)
+        descripcion_entry.config(width=100)
+        repo_entry.config(width=100)
+        depen_entry.config(width=100)
+        
+def install_editor(name=""):
+    if name == "Visual Studio Code":
+        url = "https://code.visualstudio.com/sha/download?build=stable&os=win32-x64-user"
+        file_name = 'vscode_win64.exe'
+        response = requests.get(url)
+        with open(file_name, 'wb') as f:
+            f.write(response.content)
+        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
+        if quest:
+            subprocess.Popen([file_name], shell=True).wait()
+            os.remove(file_name)
+        else:
+            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+    elif name == "Sublime Text":
+        url = "https://download.sublimetext.com/Sublime%20Text%20Build%203211%20x64%20Setup.exe"
+        file_name = "SubText_win64.exe"
+        response = requests.get(url)
+        with open(file_name, 'wb') as f:
+            f.write(response.content)
+        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
+        if quest:
+            subprocess.Popen([file_name], shell=True).wait()
+            os.remove(file_name)
+        else:
+            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+    elif name == "Vim":
+        hvim = ms.askyesno("VIM", "You have choco install on your pc")
+        if hvim:
+            command = "choco install vim"
+            subprocess.Popen([command], shell=True)
+        else:
+            scoop_install = "Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"
+            command = "scoop install vim"
+            subprocess.Popen([scoop_install], shell=True).wait()
+            subprocess.Popen([command], shell=True).wait()
+            ms.showinfo("Vim", F"{name} has been installed")
+    elif name == "Neovim":
+        hvim = ms.askyesno(f"{name}", "You have scoop install on your pc")
+        if hvim:
+            command = "scoop install neovim"
+            subprocess.Popen([command], shell=True)
+        else:
+            scoop_install = "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser; Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression"
+            command = "scoop install neovim"
+            subprocess.Popen([scoop_install], shell=True).wait()
+            subprocess.Popen([command], shell=True).wait()
+            ms.showinfo(f"{name}", f"{name} has been installed")
+    elif name == "Emacs":
+        url = "http://ftp.rediris.es/mirror/GNU/emacs/windows/emacs-29/emacs-29.1-installer.exe"
+        file_name = "Emacs_win64.exe"
+        response = requests.get(url)
+        with open(file_name, 'wb') as f:
+            f.write(response.content)
+        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
+        if quest:
+            subprocess.Popen([file_name], shell=True).wait()
+            os.remove(file_name)
+        else:
+            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+    elif name == "Notepad++":
+        url = "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.6.4/npp.8.6.4.Installer.x64.exe"
+        file_name = "Notepad++_win64.exe"
+        response = requests.get(url)
+        with open(file_name, 'wb') as f:
+            f.write(response.content)
+        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
+        if quest:
+            subprocess.Popen([file_name], shell=True).wait()
+            os.remove(file_name)
+        else:
+            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+    elif name == "Brackets":
+        url = "https://github.com/brackets-cont/brackets/releases/download/v2.1.3/Brackets-2.1.3.exe"
+        file_name = "Brackets_Win64.exe"
+        response = requests.get(url)
+        with open(file_name, 'wb') as f:
+            f.write(response.content)
+        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
+        if quest:
+            subprocess.Popen([file_name], shell=True).wait()
+            os.remove(file_name)
+        else:
+            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+    elif name == "Geany":
+        url = "https://download.geany.org/geany-2.0_setup.exe"
+        file_name = "Geany2.0_Win64.exe"
+        response = requests.get(url)
+        with open(file_name, 'wb') as f:
+            f.write(response.content)
+        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
+        if quest:
+            subprocess.Popen([file_name], shell=True).wait()
+            os.remove(file_name)
+            geany_plugins = ms.askyesno(f"{name} PLUGINS", f"You want install {name}-Plugins to have more plugins")
+            if geany_plugins:
+                url = "https://plugins.geany.org/geany-plugins/geany-plugins-2.0_setup.exe"
+                file_name  = "Geany_plugins_Win64.exe"
+                response = requests.get(url)
+                with open(file_name, 'wb') as f:
+                    f.write(response.content)
+                quest = ms.askyesno("INSTALL", f"Do you want to install Geany-Plugins now?")
+                if quest:
+                    subprocess.Popen([file_name], shell=True).wait()
+                    os.remove(file_name)
+                else:
+                    ms.showinfo("INSTALL LATER", f"You can install Geany-Plugins later, the installer is saved in the same folder as this app")
+        else:
+            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+
 filas_ocultas = set()
 
 editores_disponibles = ["Visual Studio Code", "Sublime Text", "Atom", "Vim", "Emacs", 
         "Notepad++", "Brackets", "TextMate", "Geany", "gedit", 
         "Nano", "Kate", "Bluefish", "Eclipse", "IntelliJ IDEA", 
         "PyCharm", "Visual Studio", "Code::Blocks", "NetBeans", 
-        "Android Studio"]
+        "Android Studio", "neovim"]
 
 lenguajes = ["Python", "NodeJS", "bun", "React", "Vue", "C++", "C#", "Rust", "Go"]
 
@@ -1662,6 +1845,7 @@ menu_archivo = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label="Proyects", menu=menu_archivo)
 menu_archivo.add_command(label='Agree Proyect', command=agregar_proyecto_existente)
 menu_archivo.add_command(label='Create New', command=crear_nuevo_proyecto)
+menu_archivo.add_command(label="New Project Github", command=abrir_proyecto_github)
 menu_archivo.add_command(label="Push Update Github", command=push_actualizaciones_github)
 menu_archivo.add_command(label='Delete Proyect', command=lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4]))
 menu_archivo.add_command(label="Generate Report", command=generar_informe)
@@ -1676,6 +1860,28 @@ menu_settings.add_cascade(label='Install Lenguajes', menu=lenguajes_menu)
 for lenguaje in lenguajes:
     lenguajes_menu.add_command(label=lenguaje, command=lambda lenguaje=lenguaje: install_lenguaje(lenguaje))
 menu_settings.add_command(label='Install Choco', command=lambda: install_choco)
+menu_settings.add_command(label="Install Scoop", command=lambda: install_scoop)
+menu_editor = tk.Menu(menu_settings, tearoff=0)
+menu_settings.add_cascade(label="Instalar Editor", menu=menu_editor)
+menu_editor.add_command(label="Visual Studio Code", command=lambda: install_editor("Visual Studio Code"))
+menu_editor.add_command(label="Sublime Text", command=lambda: install_editor("Sublime Text"))
+menu_editor.add_command(label="Vim",  command=lambda: install_editor("Vim"))
+menu_editor.add_command(label="Neovim", command=lambda: install_editor("Neovim"))
+menu_editor.add_command(label="Emacs", command=lambda: install_editor("Emacs"))
+menu_editor.add_command(label="Notepad++", command=lambda: install_editor("Notepad++"))
+menu_editor.add_command(label="Brackets", command=lambda: install_editor("Brackets"))
+menu_editor.add_command(label="Geany", command=lambda: install_editor("Geany"))
+menu_editor.add_command(label="gedit", command=lambda: ms.showinfo("gedit", "gedit is a opensource editor for linux but in windows you can buy on microsoft store for 4$"))
+menu_editor.add_command(label="Nano")
+menu_editor.add_command(label="Kate")
+menu_editor.add_command(label="Bluefish")
+menu_editor.add_command(label="Eclipse")
+menu_editor.add_command(label="IntelliJ IDEA")
+menu_editor.add_command(label="PyCharm")
+menu_editor.add_command(label="Visual Studio")
+menu_editor.add_command(label="Code::Blocks")
+menu_editor.add_command(label="NetBeans")
+menu_editor.add_command(label="Android Studio")
 menu_settings.add_command(label="Terminal", command=select_terminal)
 theme_menu = tk.Menu(menu_settings, tearoff=0)
 menu_settings.add_cascade(label="Theme", menu=theme_menu)
@@ -1683,25 +1889,25 @@ for tema in temas:
     theme_menu.add_command(label=tema, command=lambda tema=tema: change_theme(tema))
 
 nombre_label = ttk.Label(root, text="Name:")
-nombre_label.grid(row=1, column=0, pady=5, padx=5)
+nombre_label.grid(row=1, column=0, pady=5, padx=5, sticky="nsew")
 
 nombre_entry = ttk.Entry(root, width=100)
 nombre_entry.grid(row=1, column=1, pady=5, padx=5)
 
 descripcion_label = ttk.Label(root, text='Description:')
-descripcion_label.grid(row=2, column=0, padx=5, pady=5)
+descripcion_label.grid(row=2, column=0, padx=5, pady=5, sticky="nsew")
 
 descripcion_entry = ttk.Entry(root, width=100)
 descripcion_entry.grid(row=2, column=1, pady=5, padx=5)
 
 repo_label = ttk.Label(root, text="Repository URL:")
-repo_label.grid(row=3, column=0, padx=5, pady=5)
+repo_label.grid(row=3, column=0, padx=5, pady=5, sticky="nsew")
 
 repo_entry = ttk.Entry(root, width=100)
 repo_entry.grid(row=3, column=1, pady=5, padx=5)
 
 depen_label = ttk.Label(root, text="Dependencies:")
-depen_label.grid(row=4, column=0, pady=5, padx=5)
+depen_label.grid(row=4, column=0, pady=5, padx=5, sticky="nsew")
 
 depen_entry = ttk.Entry(root, width=100)
 depen_entry.grid(row=4, column=1, pady=5, padx=5)
@@ -1713,7 +1919,7 @@ tree.heading('Descripcion', text='Description')
 tree.heading('Lenguaje', text='Lenguaje')
 tree.heading('Ruta', text='Path')
 tree.heading('Repositorio', text='Repository')
-tree.grid(row=5, columnspan=2, pady=5, padx=5)
+tree.grid(row=5, columnspan=2, pady=5, padx=5, sticky="nsew")
 
 
 scrollbar_y = ttk.Scrollbar(root, orient='vertical', command=tree.yview)
@@ -1728,7 +1934,7 @@ editor_options = [
         "Notepad++", "Brackets", "TextMate", "Geany", "gedit", 
         "Nano", "Kate", "Bluefish", "Eclipse", "IntelliJ IDEA", 
         "PyCharm", "Visual Studio", "Code::Blocks", "NetBeans", 
-        "Android Studio", "Editor Integrated"
+        "Android Studio", "Editor Integrated", "neovim"
     ]
 selected_editor.set(editor_options[0])
 editor_menu = ttk.OptionMenu(root, selected_editor, *editor_options)
@@ -1736,13 +1942,11 @@ editor_menu.grid(row=9, column=0, padx=5, pady=5, sticky="sw")
 
 tree.bind("<Button-3>", show_context_menu)
 tree.bind("<Double-1>", abrir_repositorio)
+tree.bind("<Control-1>", abrir_explorador)
 tree.bind("<<TreeviewSelect>>", on_project_select)
 
 btn_abrir = ttk.Button(root, text='Open Proyect', command=lambda: abrir_threading(tree.item(tree.selection())['values'][4], selected_editor.get()))
 btn_abrir.grid(row=9, columnspan=2, pady=5, padx=5, sticky="s")
-
-btn_repos = ttk.Button(root, text="Open Github Repository", command=abrir_proyecto_github)
-btn_repos.grid(row=9, column=1, pady=5, padx=5, sticky="s")
 
 btn_install = ttk.Button(root, text="Install dependencies", command=lambda: install_librarys(tree.item(tree.selection())['values'][3]))
 btn_install.grid(row=4, column=1, padx=5, pady=5, sticky="e")
@@ -1753,7 +1957,14 @@ version_label.grid(row=9, column=1, pady=5, padx=5, sticky="se")
 version_label.bind("<Enter>", label_hover_in)
 version_label.bind("<Leave>", label_hover_out)
 version_label.bind("<Button-1>", ver_info)
-root.bind("<Control-q", root.quit())
+
+root.bind("<Control-q>", lambda e: root.quit())
+root.after(100, lambda: root.bind("<Configure>", adjust_window_size))
+root.after(100, lambda: root.bind("<Configure>", restore_window_size))
+
+root.grid_rowconfigure(5, weight=1)
+root.grid_columnconfigure(0, weight=1)
+root.grid_columnconfigure(2, weight=1)
 
 crear_base_datos()
 mostrar_proyectos()
