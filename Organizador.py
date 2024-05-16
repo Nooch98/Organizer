@@ -589,7 +589,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             folder_id = tree.insert("", "end", text=item, open=False)
             tree.insert(folder_id, "end", text="")
 
-    load_plugins()
     editor.mainloop()
 
 def abrir_threading(ruta, editor):
@@ -1827,6 +1826,52 @@ def install_editor(name=""):
                     ms.showinfo("INSTALL LATER", f"You can install Geany-Plugins later, the installer is saved in the same folder as this app")
         else:
             ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+    elif name ==  "Kate":
+        url = "https://cdn.kde.org/ci-builds/utilities/kate/master/windows/kate-master-7254-windows-cl-msvc2022-x86_64.exe"
+        file_name = "Kate_Win64.exe"
+        response = requests.get(url)
+        with open(file_name, 'wb') as f:
+            f.write(response.content)
+        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
+        if quest:
+            subprocess.Popen([file_name], shell=True).wait()
+            os.remove(file_name)
+        else:
+            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+    elif name == "Eclipse":
+        url = "https://www.eclipse.org/downloads/download.php?file=/oomph/epp/2024-03/R/eclipse-inst-jre-win64.exe&mirror_id=1285"
+        file_name = "Eclipse_X86_64.exe"
+        response = requests.get(url)
+        with open(file_name, 'wb') as f:
+            f.write(response.content)
+        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
+        if quest:
+            subprocess.Popen([file_name], shell=True).wait()
+            os.remove(file_name)
+        else:
+            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+    elif name == "Intellij IDEA":
+        url = "https://www.jetbrains.com/idea/download/download-thanks.html?platform=windows"
+        file_name = "Intellij_Win64.exe"
+        response = requests.get(url)
+        with open(file_name, 'wb') as f:
+            f.write(response.content)
+        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
+        if quest:
+            subprocess.Popen([file_name], shell=True).wait()
+            os.remove(file_name)
+            buy = ms.askyesno("Intellij IDEA", "Free 30-day trial.If you want to buy a license, go to this link https://www.jetbrains.com/idea/buy/?section=personal&billing=monthly")
+            if buy:
+                webbrowser.open("https://www.jetbrains.com/idea/buy/?section=personal&billing=monthly")
+        else:
+            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+            buy = ms.askyesno("Intellij IDEA", "Free 30-day trial.you want buy a license?")
+            if buy:
+                webbrowser.open("https://www.jetbrains.com/idea/buy/?section=personal&billing=monthly")
+        
+        
+    
+        
 
 filas_ocultas = set()
 
@@ -1872,11 +1917,9 @@ menu_editor.add_command(label="Notepad++", command=lambda: install_editor("Notep
 menu_editor.add_command(label="Brackets", command=lambda: install_editor("Brackets"))
 menu_editor.add_command(label="Geany", command=lambda: install_editor("Geany"))
 menu_editor.add_command(label="gedit", command=lambda: ms.showinfo("gedit", "gedit is a opensource editor for linux but in windows you can buy on microsoft store for 4$"))
-menu_editor.add_command(label="Nano")
-menu_editor.add_command(label="Kate")
-menu_editor.add_command(label="Bluefish")
-menu_editor.add_command(label="Eclipse")
-menu_editor.add_command(label="IntelliJ IDEA")
+menu_editor.add_command(label="Kate", command=lambda: install_editor("Kate"))
+menu_editor.add_command(label="Eclipse", command=lambda: install_editor("Eclipse"))
+menu_editor.add_command(label="IntelliJ IDEA", command=lambda: install_editor("Intellij IDEA"))
 menu_editor.add_command(label="PyCharm")
 menu_editor.add_command(label="Visual Studio")
 menu_editor.add_command(label="Code::Blocks")
