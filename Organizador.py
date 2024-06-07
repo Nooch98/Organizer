@@ -1868,9 +1868,55 @@ def install_editor(name=""):
             buy = ms.askyesno("Intellij IDEA", "Free 30-day trial.you want buy a license?")
             if buy:
                 webbrowser.open("https://www.jetbrains.com/idea/buy/?section=personal&billing=monthly")
-        
-        
-    
+    elif name == "PyCharm":
+        url = "https://www.jetbrains.com/es-es/pycharm/download/download-thanks.html?platform=windows&code=PCC"
+        file_name = "PyCharm_win64.exe"
+        response = requests.get(url)
+        with open(file_name, 'wb') as f:
+            f.write(response.content)
+        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
+        if quest:
+            subprocess.Popen([file_name], shell=True).wait()
+            os.remove(file_name)
+            ms.showinfo("PyCharm Comunity Edition", "That is the comunity edition of pycharm you can buy a full version on the oficial web of jetbrains.com")
+        else:
+            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+    elif name == "Visual Studio":
+        url = "https://c2rsetup.officeapps.live.com/c2r/downloadVS.aspx?sku=community&channel=Release&version=VS2022&source=VSLandingPage&cid=2030:232ccb04440b4bedb3abd49370bb0fe8"
+        file_name = "Visualstudio_win64.exe"
+        response = requests.get(url)
+        with open(file_name, 'wb') as f:
+            f.write(response.content)
+        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
+        if quest:
+            subprocess.Popen([file_name], shell=True).wait()
+            os.remove(file_name)
+        else:
+            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+    elif name == "NetBeans":
+        url = "https://dlcdn.apache.org/netbeans/netbeans-installers/22/Apache-NetBeans-22-bin-windows-x64.exe"
+        file_name = "NetBeans_win64.exe"
+        response = requests.get(url)
+        with open(file_name, 'wb') as f:
+            f.write(response.content)
+        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
+        if quest:
+            subprocess.Popen([file_name], shell=True).wait()
+            os.remove(file_name)
+        else:
+            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+    elif name == "Andorid Studio":
+        url = "https://redirector.gvt1.com/edgedl/android/studio/install/2023.3.1.18/android-studio-2023.3.1.18-windows.exe"
+        file_name = "Androidstudio_win64.exe"
+        response = requests.get(url)
+        with open(file_name, 'wb') as f:
+            f.write(response.content)
+        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
+        if quest:
+            subprocess.Popen([file_name], shell=True).wait()
+            os.remove(file_name)
+        else:
+            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
         
 
 filas_ocultas = set()
@@ -1920,11 +1966,10 @@ menu_editor.add_command(label="gedit", command=lambda: ms.showinfo("gedit", "ged
 menu_editor.add_command(label="Kate", command=lambda: install_editor("Kate"))
 menu_editor.add_command(label="Eclipse", command=lambda: install_editor("Eclipse"))
 menu_editor.add_command(label="IntelliJ IDEA", command=lambda: install_editor("Intellij IDEA"))
-menu_editor.add_command(label="PyCharm")
-menu_editor.add_command(label="Visual Studio")
-menu_editor.add_command(label="Code::Blocks")
-menu_editor.add_command(label="NetBeans")
-menu_editor.add_command(label="Android Studio")
+menu_editor.add_command(label="PyCharm", command=lambda: install_editor("PyCharm"))
+menu_editor.add_command(label="Visual Studio", command=lambda: install_editor("Visual Studio"))
+menu_editor.add_command(label="NetBeans", command=lambda: install_editor("NetBeans"))
+menu_editor.add_command(label="Android Studio", command=lambda: install_editor("Andorid Studio"))
 menu_settings.add_command(label="Terminal", command=select_terminal)
 theme_menu = tk.Menu(menu_settings, tearoff=0)
 menu_settings.add_cascade(label="Theme", menu=theme_menu)
