@@ -55,7 +55,7 @@ toml==0.10.2
 tqdm>=4.66.3
 ttkthemes==3.2.2
 typing_extensions==4.11.0
-urllib3==2.2.1
+urllib3==2.2.2
 whichcraft==0.6.1
 wrapt==1.16.0
 zope.event==5.0
