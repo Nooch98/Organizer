@@ -6,7 +6,7 @@ beautifulsoup4==4.12.3
 bottle==0.12.25
 bottle-websocket==0.2.9
 bs4==0.0.2
-certifi==2024.2.2
+certifi>=2024.07.04
 cffi==1.16.0
 charset-normalizer==3.3.2
 chlorophyll==0.4.1
