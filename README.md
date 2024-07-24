@@ -5,20 +5,18 @@ Organizer is an application developed in python and open source which allows you
 
 
 # SOURCE CODE FEATURE AGREE
-* Now if you use Organizer with the Source code and not use the release the editor have syntaxis of code
+* Now in the integrated editor it is possible to create custom themes following the template that will be shown to you (You need to copy the chlorophyll folder available above inside the env development environment folder. You must also create in the same folder where you have the code a path that will be ```_internal\chlorophyll\colorscheme```
+inside that folder it will copy the themes that are available inside the chloropyll folder provided)
+* [!!] If you do not copy the chloropyll folder in the project env, replacing the original folder of the chloropyll library, the themes will not work since the original library is not prepared for the creation and use of custom base themes
 
-![Captura de pantalla 2024-04-10 195357](https://github.com/Nooch98/Organizer/assets/73700510/7195aaee-515e-44e5-a439-8b5375791a36)
+## EXAMPLE
+### WINDOWS
+```C:\User\User\Desktop\Organizer\src\_internal\chlorophyll\colorscheme\```
+### LINUX
+```~\Desktop\Organizer\src\_internal\chlorophyll\colorscheme\```
 
-* You can change the theme only change this line on code
+* Now also in Windows when you run the app it will recognize the active theme in Windows and will use a corresponding default theme
 
-![Captura de pantalla 2024-04-10 195600](https://github.com/Nooch98/Organizer/assets/73700510/910582e5-9b3e-43c1-8c82-65247ff692be)
-
-* Themes avalaibles right now:
-  * ayu-dark
-  * ayu-light
-  * dracula
-  * mariana
-  * monokai
 
 # LAST UPDATES
 To see the latest updates to the app, look in [Releases](https://github.com/Nooch98/Organizer/releases)
