@@ -16,10 +16,11 @@ import importlib.util
 import pygments.lexers
 import platform
 import subprocess
+import ttkbootstrap as ttk
 #--------------------------------------------------------#
 from tkinter import OptionMenu, StringVar, filedialog, simpledialog
 from tkinter import messagebox as ms
-from tkinter import scrolledtext, ttk
+from tkinter import scrolledtext
 from bs4 import BeautifulSoup
 from github import Auth, Github
 from openai import OpenAI
@@ -27,6 +28,8 @@ from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 from chlorophyll import CodeView
 from pathlib import Path
+from ttkbootstrap.constants import *
+import ttkthemes
 
 
 main_version = "ver.1.9.2"
@@ -2025,17 +2028,35 @@ def set_default_theme():
     system_theme = get_system_theme()
     
     if system_theme == "dark":
-        return "black"
+        change_bootstrap_theme(theme_name="cyborg")
     else:
-        return "arc"
+        change_bootstrap_theme(theme_name="cosmo")
+    
+def create_theme():
+        comando = "python -m ttkcreator"
+        
+        subprocess.run(f'{comando}', shell=True)
+        
+def ttk_themes():
+    style = ttk.Style()
+    
+    themes = style.theme_names()
+    
+    return themes
 
-default_theme = set_default_theme()
-root = ThemedTk(theme=default_theme)
+def change_bootstrap_theme(theme_name):
+    style = ttk.Style()
+    
+    style.theme_use(theme_name)
+
+
+root = ThemedTk()
 root.title('Proyect Organizer')
 root.geometry("1230x420")
 path = resource_path("software.ico")
 root.iconbitmap(path)
 temas = root.get_themes()
+ttkbootstrap_themes = ttk_themes()
 
 main_frame = ttk.Frame(root)
 main_frame.pack()
@@ -2289,9 +2310,14 @@ menu_editor.add_command(label="Android Studio")
 menu_settings.add_command(label="Backup Setting", command=setting_backup)
 menu_settings.add_command(label="Terminal", command=select_terminal)
 theme_menu = tk.Menu(menu_settings, tearoff=0)
+ttkmenu = tk.Menu(menu_settings, tearoff=0)
 menu_settings.add_cascade(label="Theme", menu=theme_menu)
 for tema in temas:
     theme_menu.add_command(label=tema, command=lambda tema=tema: change_theme(tema))
+ttkmenu.add_command(label="Create Theme", command=create_theme)
+menu_settings.add_cascade(label="ttkbootstrap Themes", menu=ttkmenu)
+for tema in ttkbootstrap_themes:
+    ttkmenu.add_command(label=tema, command=lambda theme_name=tema: change_bootstrap_theme(theme_name))
 
 nombre_label = ttk.Label(main_frame, text="Name:")
 nombre_label.grid(row=1, column=0, pady=5, padx=5, sticky="nsew")
@@ -2371,4 +2397,5 @@ root.grid_columnconfigure(2, weight=1)
 
 crear_base_datos()
 mostrar_proyectos()
+set_default_theme()
 root.mainloop()
