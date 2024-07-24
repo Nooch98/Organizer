@@ -1053,6 +1053,8 @@ def config_editors():
     main_frame.pack()
     
     rutas_editores = {}
+    
+    configs_editors = cargar_configuracion_editores()
 
     def guardar_y_cerrar():
         guardar_configuracion_editores(rutas_editores)
@@ -1064,6 +1066,10 @@ def config_editors():
         
         entry = ttk.Entry(main_frame)
         entry.grid(row=i, column=1, padx=5, pady=5)
+        
+        # Rellena el Entry con la configuración existente, si está disponible
+        if programa in configs_editors:
+            entry.insert(0, configs_editors[programa])
         
         btn = ttk.Button(main_frame, text="Agree", command=lambda prog=programa, ent=entry: seleccionar_ruta_editor(prog, ent))
         btn.grid(row=i, column=2, padx=5, pady=5)
