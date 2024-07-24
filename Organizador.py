@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import git
+import time
 import webbrowser
 import tkinter as tk
 import jedi
@@ -13,6 +14,7 @@ import markdown
 import requests
 import importlib.util
 import pygments.lexers
+import winreg as reg
 #--------------------------------------------------------#
 from tkinter import OptionMenu, StringVar, filedialog, simpledialog
 from tkinter import messagebox as ms
@@ -23,14 +25,15 @@ from openai import OpenAI
 from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 from chlorophyll import CodeView
+from pathlib import Path
 
-main_version = "ver.1.9.1"
+
+main_version = "ver.1.9.2"
 version = str(main_version)
-
-temas = ["arc", "equilux", "radiance", "blue", "ubuntu", "plastik", "smog", "adapta", "aquativo", "black", "breeze", "clearlooks", "elegance", "itft1", "keramik", "winxpblue", "yaru"]
 archivo_configuracion_editores = "configuracion_editores.json"
 archivo_confgiguracion_github = "configuracion_github.json"
 archivo_configuracion_gpt = "configuration_gpt.json"
+security_backup = "security_backup.json"
 selected_project_path = None
 text_editor = None
 
@@ -50,6 +53,23 @@ def crear_base_datos():
     
     conn.close()
     
+def get_projects_from_database():
+
+    conn = sqlite3.connect('proyectos.db')
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM proyectos")
+    projects = cursor.fetchall()
+
+    conn.close()
+
+    projects_list = []
+    for project in projects:
+        project_dict = {'nombre': project[1], 'ruta': project[4]}
+        projects_list.append(project_dict)
+
+    return projects_list
+    
 def insertar_proyecto(nombre, descripcion, ruta, repo, lenguaje=None):
     conn = sqlite3.connect('proyectos.db')
     cursor = conn.cursor()
@@ -63,6 +83,75 @@ def insertar_proyecto(nombre, descripcion, ruta, repo, lenguaje=None):
 
 def abrir_editor(ruta, ruta_editor):
     subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
+    
+def setting_backup():
+    backup = tk.Toplevel(root)
+    backup.title("Setting Security Backup")
+    backup.iconbitmap(path)
+    
+    main_frame = ttk.Frame(backup)
+    main_frame.pack()
+    
+    global combo_frequency
+    global status_label
+    
+    frequency_options = ["Daily", "Weekly", "Monthly"]
+    combo_frequency = ttk.Combobox(main_frame, values=frequency_options)
+    combo_frequency.set("Daily")
+    combo_frequency.grid(row=0, columnspan=2, padx=5, pady=5)
+    
+    status_label = ttk.Label(main_frame, text="")
+    status_label.grid(row=1, columnspan=2, padx=5, pady=5)
+    
+    btn_confirm = ttk.Button(main_frame, text="Confirm", command=get_selected_frequency)
+    btn_confirm.grid(row=2, column=0, padx=5, pady=5)
+    
+    btn_backup_now = ttk.Button(main_frame, text="Create Now", command=backup_now)
+    btn_backup_now.grid(row=2, column=1, padx=5, pady=5)
+    
+def get_selected_frequency():
+    selected_option = combo_frequency.get()
+    
+    if selected_option == "Daily":
+        frequency_seconds = 24 * 3600
+    elif selected_option == "Weekly":
+        frequency_seconds = 7 * 24 * 3600
+    elif selected_option == "Monthly":
+        frequency_seconds = 30 * 24 * 3600
+    else:
+        frequency_seconds = 24 * 3600
+        
+    schedule_backup(frequency_seconds)
+    
+def backup_now():
+    while True:
+        perform_backup()
+
+def schedule_backup(frequency_seconds):
+    while True:
+        perform_backup()
+        time.sleep(frequency_seconds)
+
+def perform_backup():
+    backups_dir = os.path.join(os.getcwd(), 'backups')
+    if not os.path.exists(backups_dir):
+        os.makedirs(backups_dir)
+    shutil.copyfile("proyectos.db", os.path.join(backups_dir, "proyectos_backup.db"))
+    
+    projects = get_projects_from_database()
+    
+    for project in projects:
+        project_name = project['nombre']
+        project_path = project['ruta']
+        project_backup_dir = os.path.join(backups_dir, project_name)
+        
+        if os.path.exists(project_backup_dir):
+            shutil.rmtree(project_backup_dir)
+        
+        shutil.copytree(project_path, project_backup_dir)
+
+def update_status(file_name):
+    status_label.config(text="Copying: {}".format(file_name))
 
 def abrir_proyecto(ruta, editor):
     configuracion_editores = cargar_configuracion_editores()
@@ -158,8 +247,10 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     tabs.pack(expand=True, fill="both", side="right")
     text_editors = []
     global_plugins = []
-    code_themes = ["ayu-dark", "ayu-light", "dracula", "mariana", "monokai", "macos", "atom", "electron", "materialtheme", "nightowl", "synthwave", "nord", "solarized"]
-    selected_theme = "ayu-dark"
+    code_themes_dir = Path(".\\_internal\\chlorophyll\\colorschemes\\")
+    tom_files = [archivo.stem for archivo in code_themes_dir.glob("*.toml")]
+    
+    selected_theme = ""
     
     def load_plugins():
         nonlocal  global_plugins
@@ -186,17 +277,110 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         for text_editor in text_editors:
             text_editor.config(color_scheme=theme_name)
             gpt_response.config(color_scheme=theme_name)
+            
+            
+    def create_code_theme():
+        ruta_new_theme = ".\\_internal\\chlorophyll\\colorschemes\\"
+        def save_theme(name):
+            default_content = "// Add your theme here"
+            with open(f"{ruta_new_theme}{name}.toml", "w+") as file:
+                file.write(default_content)
+            
+            new_theme.destroy()
+            open_theme_editor(name)
+        
+        def guardar_cambios1(text_editors, file_path, event=None):
+            if file_path:
+                with open(file_path, "w", encoding="utf-8") as file:
+                    file.write(text_editors.get(1.0, tk.END))
+                    ms.showinfo("Theme Saved", f"Theme saved successfully")
+                text_editors.edit_modified(False)
+                global builtin_color_schemes
+                code_themes_dir = Path(".\\_internal\\chlorophyll\\colorschemes\\")
+                builtin_color_schemes = set([archivo.stem for archivo in code_themes_dir.glob("*.toml")])
+                
+                theme_code_menu.delete(0, tk.END)
+                theme_code_menu.add_command(label='Create Code Theme', command=create_code_theme)
+                for code_theme in builtin_color_schemes:
+                    theme_code_menu.add_command(label=code_theme, command=lambda theme=code_theme: change_code_theme(theme))
+            else:
+                ms.showerror("ERROR", "Error: There is no open file to save changes.")
+
+        def example_code_theme():
+            theme_file_path = ".\\_internal\\chlorophyll\\colorschemes\\monokai.toml"
+
+            try:
+                with open(theme_file_path, "r") as file:
+                    theme_code = file.read()
+                return theme_code
+            except FileNotFoundError:
+                ms.showerror("ERROR", "Theme file nor found")
+                return ""
+        
+        def open_theme_editor(name):
+            global example_theme
+            new_tab_window = tk.Toplevel(editor)
+            new_tab_window.title(f"New Theme: {name}")
+            new_tab_window.iconbitmap(path)
+            
+            example_view = ttk.Frame(new_tab_window)
+            example_view.pack(side='right', fill="both", expand=True)
+            
+            new_tab_frame = ttk.Frame(new_tab_window)
+            new_tab_frame.pack(side='left', fill="both", expand=True)
+            new_theme_path = f"{ruta_new_theme}{name}.toml"
+            
+            lexer = pygments.lexers.get_lexer_for_filename(new_theme_path)
+                   
+            text_editors = CodeView(new_tab_frame, lexer=lexer, color_scheme=current_theme_get())
+            text_editors.pack(fill="both", expand=True)
+            
+            title_example_theme = ttk.Label(example_view, text="Example Theme: monokai.toml", foreground="purple", font=("Arial", 12))
+            title_example_theme.pack() 
+            
+            example_theme_label = CodeView(example_view, lexer=lexer, color_scheme=current_theme_get(), wrap="none")
+            example_theme_label.pack(fill="both", expand=True)
+    
+            example_theme_content = example_code_theme()
+            example_theme_label.insert("1.0", example_theme_content)
+            with open(new_theme_path, "r") as file:
+                content = file.read()
+                text_editors.insert(tk.END, content)
+            
+            text_editors.bind("<KeyPress>", on_key_press)
+            tabs.bind("<Button-2>", cerrar_pestaña)
+            editor.bind("<Control-w>", cerrar_pestaña_activa)
+            text_editors.bind("<Control-s>", lambda event, te=text_editors, fp=new_theme_path: guardar_cambios1(te, fp))
+        
+        new_theme = tk.Toplevel(editor)
+        new_theme.title("New Code Theme")
+        new_theme.iconbitmap(path)
+        
+        main_frame = ttk.Frame(new_theme)
+        main_frame.pack()
+        
+        title = ttk.Label(main_frame, text="Name of the new theme:")
+        title.grid(row=0, column=0, padx=5, pady=5)
+        
+        name = ttk.Entry(main_frame, width=50)
+        name.grid(row=0, column=1, padx=5, pady=5)
+        
+        save = ttk.Button(main_frame, text="Save", command=lambda: save_theme(name.get()))
+        save.grid(row=1, columnspan=2, padx=5, pady=5)
     
     def show_plugin_selector(plugins_list):
         plugin_selector = tk.Toplevel()
         plugin_selector.title("Plugin Selector")
         plugin_selector.iconbitmap(path)
         
+        main_frame = ttk.Frame(plugin_selector)
+        main_frame.pack()
+        
         selected_plugins = []
 
         for plugin in plugins_list:
             var = tk.BooleanVar()
-            cb = ttk.Checkbutton(plugin_selector, text=plugin.__name__, variable=var)
+            cb = ttk.Checkbutton(main_frame, text=plugin.__name__, variable=var)
             cb.pack(anchor=tk.W)
             selected_plugins.append((plugin, var))
 
@@ -205,7 +389,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                 if var.get():
                     plugin()
 
-        execute_button = ttk.Button(plugin_selector, text="Execute Selected Plugins", command=execute_selected_plugins)
+        execute_button = ttk.Button(main_frame, text="Execute Selected Plugins", command=execute_selected_plugins)
         execute_button.pack()
     
     def guardar_cambios(event=None):
@@ -213,9 +397,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         if current_file:
             index = tabs.index(tabs.select())
             with open(current_file, "w", encoding="utf-8") as file:
-                file.write(text_editors[index].get(1.0, tk.END))
-            
-            text_editors[index].edit_modified(False)
+                file.write(text_editors[index].get(1.0, tk.END).strip())
+            text_editors[index].edit_modified(False)  # Restablecer la marca de modificación
         else:
             ms.showerror("ERROR", "Error: There is no open file to save changes.")
     
@@ -244,10 +427,9 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                     tabs.add(new_tab_frame, text=current_file)
                     
                     lexer = pygments.lexers.get_lexer_for_filename(item_path)
-                    
                     text_editor = CodeView(new_tab_frame, lexer=lexer, color_scheme=current_theme_get())
                     text_editor.pack(fill="both", expand=True)
-                    text_editor.insert("1.0", content)
+                    text_editor.insert(tk.END, content)
                     text_editors.append(text_editor)
                     text_editor.bind("<KeyPress>", on_key_press)
                     tabs.bind("<Button-2>", cerrar_pestaña)
@@ -271,13 +453,16 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         name.iconbitmap(path)
         name.title('New File')
         
-        label = ttk.Label(name, text='Name of your new file: ')
+        main_frame = ttk.Frame(name)
+        main_frame.pack()
+        
+        label = ttk.Label(main_frame, text='Name of your new file: ')
         label.grid(row=0, column=0, padx=5, pady=5)
         
-        filename = ttk.Entry(name, width=50)
+        filename = ttk.Entry(main_frame, width=50)
         filename.grid(row=0, column=1, padx=5, pady=5)
         
-        subbmit = ttk.Button(name, text='Acept', command=create_new_file)
+        subbmit = ttk.Button(main_frame, text='Acept', command=create_new_file)
         subbmit.grid(row=1, columnspan=2, padx=5, pady=5)
     
     def name_new_folder():
@@ -288,13 +473,16 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         foldername.iconbitmap(path)
         foldername.title('New Folder')
         
-        label = ttk.Label(foldername, text='Name of your new folder: ')
+        main_frame = ttk.Frame(foldername)
+        main_frame.pack()
+        
+        label = ttk.Label(main_frame, text='Name of your new folder: ')
         label.grid(row=0, column=0, padx=5, pady=5)
         
-        foldere = ttk.Entry(foldername, width=50)
+        foldere = ttk.Entry(main_frame, width=50)
         foldere.grid(row=0, column=1, padx=5, pady=5)
         
-        subbmit = ttk.Button(foldername, text='Acept', command=create_new_folder)
+        subbmit = ttk.Button(main_frame, text='Acept', command=create_new_folder)
         subbmit.grid(row=1, columnspan=2, padx=5, pady=5)        
         
     def create_new_file():
@@ -359,7 +547,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             current_editor = text_editors[tab_index]
             
             if hay_cambios_sin_guardar(current_editor):
-                respuesta = ms.askyesno("SAVE CHANGES", "¿Deseas guardar los cambios?")
+                respuesta = ms.askyesno("SAVE CHANGES", "You want Save Changes")
                 if respuesta:
                     guardar_antes_de_cerrar(current_editor)
                     widget.forget(tab_index)
@@ -523,7 +711,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     
     def tree_popup(event):
         tree_menu.post(event.x_root, event.y_root)
-        
+       
+    builtin_color_schemes = set(tom_files)
     menu_bar = tk.Menu(editor)
     file_menu = tk.Menu(menu_bar, tearoff=0)
     file_menu.add_command(label="Save", command=guardar_cambios)
@@ -539,12 +728,12 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     themes_menu.add_command(label='Create Theme', command=create_theme)
     theme_code_menu = tk.Menu(settings_menu, tearoff=0)
     settings_menu.add_cascade(label='Code Theme', menu=theme_code_menu)
-    for code_theme in code_themes:
+    theme_code_menu.add_command(label='Create Code Theme', command=create_code_theme)
+    for code_theme in builtin_color_schemes:
         theme_code_menu.add_command(label=code_theme, command=lambda theme=code_theme: change_code_theme(theme))
     editor.config(menu=menu_bar)
 
     gpt_frame = ttk.Frame(editor)
-    gpt_frame.pack(fill='both', side='right')
     
     gpt_response = CodeView(gpt_frame, color_scheme=current_theme_get())
     gpt_response.pack(fill='both', expand=True)
@@ -623,7 +812,10 @@ def crear_nuevo_proyecto():
     ventana_lenguaje.title("Selection lenguaje")
     ventana_lenguaje.iconbitmap(path)
     
-    label = ttk.Label(ventana_lenguaje, text="Select the project language:")
+    main_frame = ttk.Frame(ventana_lenguaje)
+    main_frame.pack()
+    
+    label = ttk.Label(main_frame, text="Select the project language:")
     label.grid(row=0, columnspan=2, pady=5, padx=5)
     
     lenguaje_options = ["Selection lenguaje", "Python", "NodeJS", "bun", "React", "Vue", "C++", "C#", "Rust", "Go"]
@@ -633,16 +825,16 @@ def crear_nuevo_proyecto():
     seleccion = tk.StringVar()
     seleccion.set(lenguaje_options[0])
     
-    menu_lenguaje = ttk.OptionMenu(ventana_lenguaje, seleccion, *lenguaje_options)
+    menu_lenguaje = ttk.OptionMenu(main_frame, seleccion, *lenguaje_options)
     menu_lenguaje.grid(row=1, columnspan=2, padx=5, pady=5)
     
-    rules_label = ttk.Label(ventana_lenguaje, text="If you create git repo insert in textbox your rules for the .gitignore")
+    rules_label = ttk.Label(main_frame, text="If you create git repo insert in textbox your rules for the .gitignore")
     rules_label.grid(row=2, columnspan=2, padx=5, pady=5)
     
-    textbox = scrolledtext.ScrolledText(ventana_lenguaje)
+    textbox = scrolledtext.ScrolledText(main_frame)
     textbox.grid(row=3, columnspan=2, pady=5, padx=5)
     
-    btn_selec = ttk.Button(ventana_lenguaje, text="Select", command=lambda: ejecutar_con_threading(seleccion.get(), textbox))
+    btn_selec = ttk.Button(main_frame, text="Select", command=lambda: ejecutar_con_threading(seleccion.get(), textbox))
     btn_selec.grid(row=5, columnspan=2, pady=5, padx=5)
         
 def ejecutar_con_threading(lenguaje, textbox):
@@ -857,6 +1049,9 @@ def config_editors():
     config_editor.title("Editors Config")
     config_editor.iconbitmap(path)
     
+    main_frame = ttk.Frame(config_editor)
+    main_frame.pack()
+    
     rutas_editores = {}
 
     def guardar_y_cerrar():
@@ -864,18 +1059,18 @@ def config_editors():
         config_editor.destroy()
 
     for i, programa in enumerate(editores_disponibles):
-        label = ttk.Label(config_editor, text=programa)
+        label = ttk.Label(main_frame, text=programa)
         label.grid(row=i, column=0, padx=5, pady=5)
         
-        entry = ttk.Entry(config_editor)
+        entry = ttk.Entry(main_frame)
         entry.grid(row=i, column=1, padx=5, pady=5)
         
-        btn = ttk.Button(config_editor, text="Agree", command=lambda prog=programa, ent=entry: seleccionar_ruta_editor(prog, ent))
+        btn = ttk.Button(main_frame, text="Agree", command=lambda prog=programa, ent=entry: seleccionar_ruta_editor(prog, ent))
         btn.grid(row=i, column=2, padx=5, pady=5)
         
         rutas_editores[programa] = entry
 
-    aceptar_btn = ttk.Button(config_editor, text="Confirm", command=guardar_y_cerrar)
+    aceptar_btn = ttk.Button(main_frame, text="Confirm", command=guardar_y_cerrar)
     aceptar_btn.grid(row=len(editores_disponibles), column=0, columnspan=3, padx=5, pady=5)
     
 def config_github():
@@ -883,13 +1078,16 @@ def config_github():
     config_github.title("Api Key Github")
     config_github.iconbitmap(path)
     
-    titulo = ttk.Label(config_github, text="Github Configuration")
+    main_frame = ttk.Frame(config_github)
+    main_frame.pack()
+    
+    titulo = ttk.Label(main_frame, text="Github Configuration")
     titulo.grid(row=0, columnspan=2, pady=5, padx=5)
     
-    label = ttk.Label(config_github, text="Github Api Key: ")
+    label = ttk.Label(main_frame, text="Github Api Key: ")
     label.grid(row=1, column=0, pady=5, padx=5)
     
-    api_entry = ttk.Entry(config_github, width=50)
+    api_entry = ttk.Entry(main_frame, width=50)
     api_entry.grid(row=1, column=1, pady=5, padx=5)
     
     def guardar():
@@ -897,7 +1095,7 @@ def config_github():
         guardar_configuracion_github(api_key)
         config_github.destroy()
     
-    sub_button = ttk.Button(config_github, text="Accept", command=guardar)
+    sub_button = ttk.Button(main_frame, text="Accept", command=guardar)
     sub_button.grid(row=2, columnspan=2, pady=5, padx=5)
     
 def config_openai():
@@ -905,13 +1103,16 @@ def config_openai():
     config_openai.title("Api Key OpenAI")
     config_openai.iconbitmap(path)
     
-    titulo = ttk.Label(config_openai, text="OpenAI Configuration")
+    main_frame = ttk.Frame(config_openai)
+    main_frame.pack()
+    
+    titulo = ttk.Label(main_frame, text="OpenAI Configuration")
     titulo.grid(row=0, columnspan=2, pady=5, padx=5)
     
-    label = ttk.Label(config_openai, text="OpenAI Api Key: ")
+    label = ttk.Label(main_frame, text="OpenAI Api Key: ")
     label.grid(row=1, column=0, pady=5, padx=5)
     
-    api_gpt_entry = ttk.Entry(config_openai, width=50)
+    api_gpt_entry = ttk.Entry(main_frame, width=50)
     api_gpt_entry.grid(row=1, column=1, pady=5, padx=5)
     
     def guardar():
@@ -919,7 +1120,7 @@ def config_openai():
         save_config_gpt(api_key)
         config_openai.destroy()
     
-    sub_button = ttk.Button(config_openai, text="Accept", command=guardar)
+    sub_button = ttk.Button(main_frame, text="Accept", command=guardar)
     sub_button.grid(row=2, columnspan=2, pady=5, padx=5)
     
 def seleccionar_ruta_editor(editor, entry):
@@ -998,6 +1199,7 @@ def show_selected_row():
 def show_context_menu(event):
     menu_items = [
         ("Edit", modificar_proyecto),
+        ("Delete", eliminar_proyecto),
         ("Git Init", lambda: git_init(selected_project_path)),
         ("Git Add", lambda: git_add(selected_project_path)),
         ("Git Commit", lambda: git_commit(selected_project_path)),
@@ -1025,8 +1227,11 @@ def show_context_menu(event):
 def git_add(project_path):
     output_window = tk.Toplevel(root)
     output_window.title("Salida de Git Add")
+    
+    main_frame = ttk.Frame(output_window)
+    main_frame.pack()
 
-    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text = scrolledtext.ScrolledText(main_frame, width=80, height=20)
     output_text.pack()
 
     try:
@@ -1038,8 +1243,11 @@ def git_add(project_path):
 def git_commit(project_path):
     output_window = tk.Toplevel(root)
     output_window.title("Salida de Git Commit")
+    
+    main_frame = ttk.Frame(output_window)
+    main_frame.pack()
 
-    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text = scrolledtext.ScrolledText(main_frame, width=80, height=20)
     output_text.pack()
 
     try:
@@ -1051,8 +1259,11 @@ def git_commit(project_path):
 def git_status(project_path):
     output_window = tk.Toplevel(root)
     output_window.title("Salida de Git Status")
+    
+    main_frame = ttk.Frame(output_window)
+    main_frame.pack()
 
-    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text = scrolledtext.ScrolledText(main_frame, width=80, height=20)
     output_text.pack()
 
     try:
@@ -1064,8 +1275,11 @@ def git_status(project_path):
 def git_pull(project_path):
     output_window = tk.Toplevel(root)
     output_window.title("Salida de Git Pull")
+    
+    main_frame = ttk.Frame(output_window)
+    main_frame.pack()
 
-    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text = scrolledtext.ScrolledText(main_frame, width=80, height=20)
     output_text.pack()
 
     try:
@@ -1077,8 +1291,11 @@ def git_pull(project_path):
 def git_init(project_path):
     output_window = tk.Toplevel(root)
     output_window.title("Salida de Git Init")
+    
+    main_frame = ttk.Frame(output_window)
+    main_frame.pack()
 
-    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text = scrolledtext.ScrolledText(main_frame, width=80, height=20)
     output_text.pack()
 
     try:
@@ -1090,8 +1307,11 @@ def git_init(project_path):
 def git_log(project_path):
     output_window = tk.Toplevel(root)
     output_window.title("Salida de Git")
+    
+    main_frame = ttk.Frame(output_window)
+    main_frame.pack()
 
-    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text = scrolledtext.ScrolledText(main_frame, width=80, height=20)
     output_text.pack()
 
     try:
@@ -1103,8 +1323,11 @@ def git_log(project_path):
 def git_diff(project_path):
     output_window = tk.Toplevel(root)
     output_window.title("Git Diff Output")
+    
+    main_frame = ttk.Frame(output_window)
+    main_frame.pack()
 
-    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text = scrolledtext.ScrolledText(main_frame, width=80, height=20)
     output_text.pack()
 
     try:
@@ -1116,8 +1339,11 @@ def git_diff(project_path):
 def git_push(project_path):
     output_window = tk.Toplevel(root)
     output_window.title("Git Push Output")
+    
+    main_frame = ttk.Frame(output_window)
+    main_frame.pack()
 
-    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text = scrolledtext.ScrolledText(main_frame, width=80, height=20)
     output_text.pack()
 
     try:
@@ -1129,8 +1355,11 @@ def git_push(project_path):
 def git_branch(project_path):
     output_window = tk.Toplevel(root)
     output_window.title("Git Branch Output")
+    
+    main_frame = ttk.Frame(output_window)
+    main_frame.pack()
 
-    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text = scrolledtext.ScrolledText(main_frame, width=80, height=20)
     output_text.pack()
 
     try:
@@ -1142,8 +1371,11 @@ def git_branch(project_path):
 def git_checkout(project_path):
     output_window = tk.Toplevel(root)
     output_window.title("Git Checkout Output")
+    
+    main_frame = ttk.Frame(output_window)
+    main_frame.pack()
 
-    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text = scrolledtext.ScrolledText(main_frame, width=80, height=20)
     output_text.pack()
 
     try:
@@ -1155,8 +1387,11 @@ def git_checkout(project_path):
 def git_merge(project_path):
     output_window = tk.Toplevel(root)
     output_window.title("Git Merge Output")
+    
+    main_frame = ttk.Frame(output_window)
+    main_frame.pack()
 
-    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text = scrolledtext.ScrolledText(main_frame, width=80, height=20)
     output_text.pack()
 
     try:
@@ -1168,8 +1403,11 @@ def git_merge(project_path):
 def git_remote(project_path):
     output_window = tk.Toplevel(root)
     output_window.title("Git Remote Output")
+    
+    main_frame = ttk.Frame(output_window)
+    main_frame.pack()
 
-    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text = scrolledtext.ScrolledText(main_frame, width=80, height=20)
     output_text.pack()
 
     try:
@@ -1181,8 +1419,11 @@ def git_remote(project_path):
 def git_fetch(project_path):
     output_window = tk.Toplevel(root)
     output_window.title("Git Fetch Output")
+    
+    main_frame = ttk.Frame(output_window)
+    main_frame.pack()
 
-    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text = scrolledtext.ScrolledText(main_frame, width=80, height=20)
     output_text.pack()
 
     try:
@@ -1194,8 +1435,11 @@ def git_fetch(project_path):
 def git_reset(project_path):
     output_window = tk.Toplevel(root)
     output_window.title("Git Reset Output")
+    
+    main_frame = ttk.Frame(output_window)
+    main_frame.pack()
 
-    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text = scrolledtext.ScrolledText(main_frame, width=80, height=20)
     output_text.pack()
 
     try:
@@ -1207,8 +1451,11 @@ def git_reset(project_path):
 def git_revert(project_path):
     output_window = tk.Toplevel(root)
     output_window.title("Git Revert Output")
+    
+    main_frame = ttk.Frame(output_window)
+    main_frame.pack()
 
-    output_text = scrolledtext.ScrolledText(output_window, width=80, height=20)
+    output_text = scrolledtext.ScrolledText(main_frame, width=80, height=20)
     output_text.pack()
 
     try:
@@ -1229,7 +1476,7 @@ def abrir_repositorio(event):
     url_repositorio = item_seleccionado['values'][5]
 
     webbrowser.open_new(url_repositorio)
-
+    
 def abrir_explorador(event):
     item_seleccionado = tree.item(tree.selection())
     ruta = item_seleccionado['values'][4]
@@ -1512,12 +1759,15 @@ def modificar_proyecto():
     mod_window = tk.Toplevel(root)
     mod_window.title("Modify Project")
     mod_window.iconbitmap(path)
+    
+    main_frame = ttk.Frame(mod_window)
+    main_frame.pack()
 
     for field, index in field_index.items():
-        field_label = ttk.Label(mod_window, text=f"{field}:")
+        field_label = ttk.Label(main_frame, text=f"{field}:")
         field_label.grid(row=index, column=0, padx=5, pady=5)
 
-        new_value_entry = ttk.Entry(mod_window, width=50)
+        new_value_entry = ttk.Entry(main_frame, width=50)
         new_value_entry.insert(0, current_values[index])
         new_value_entry.grid(row=index, column=1, padx=5, pady=5)
 
@@ -1531,7 +1781,7 @@ def modificar_proyecto():
         update_project(project_id, field_index, new_values)
         mod_window.destroy()
 
-    apply_button = ttk.Button(mod_window, text="Apply", command=apply_modification)
+    apply_button = ttk.Button(main_frame, text="Apply", command=apply_modification)
     apply_button.grid(row=9, columnspan=2, padx=5, pady=5)
 
 def update_project(project_id, field_index, new_values):
@@ -1552,7 +1802,6 @@ def update_project(project_id, field_index, new_values):
     conn.close()
     mostrar_proyectos()
   
-
 def change_theme(theme_name):
     root.set_theme(theme_name)
     root.update_idletasks()
@@ -1566,7 +1815,7 @@ def install_choco():
 def install_scoop():
     subprocess.run("Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser; Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression").wait()
     ms.showinfo("INSTALL COMPLETE", "Scoop has install correctly")
-    
+
 def install_lenguaje(lenguaje_selected):
     if lenguaje_selected == "Python":
         comando_python = 'choco install python3 -y'
@@ -1612,18 +1861,21 @@ def select_terminal():
     setting_terminal.title("Setting Terminal")
     setting_terminal.iconbitmap(path)
     
-    terminal_label = ttk.Label(setting_terminal, text="Select Terminal")
+    main_frame = ttk.Frame(setting_terminal)
+    main_frame.pack()
+    
+    terminal_label = ttk.Label(main_frame, text="Select Terminal")
     terminal_label.grid(row=0, columnspan=2, padx=5, pady=5)
     
     selected_terminal = tk.StringVar()
     terminal_choices = ["Select Terminal", "Command Pormpt", "Windows Terminal", "PowerShell", "Git Bash"]
-    terminal_menu = ttk.OptionMenu(setting_terminal, selected_terminal, *terminal_choices)
+    terminal_menu = ttk.OptionMenu(main_frame, selected_terminal, *terminal_choices)
     terminal_menu.grid(row=1, columnspan=2, pady=5, padx=5)
     
-    terminal_path_label = ttk.Label(setting_terminal, text="Terminal Executable Path: ")
+    terminal_path_label = ttk.Label(main_frame, text="Terminal Executable Path: ")
     terminal_path_label.grid(row=2, column=0, padx=5, pady=5)
     
-    terminal_path_entry = ttk.Entry(setting_terminal, width=50)
+    terminal_path_entry = ttk.Entry(main_frame, width=50)
     terminal_path_entry.grid(row=2, column=1, padx=5, pady=5)
     
     def save_settigns():
@@ -1639,7 +1891,7 @@ def select_terminal():
             
         setting_terminal.destroy()
             
-    save_button = ttk.Button(setting_terminal, text="Save", command=save_settigns)
+    save_button = ttk.Button(main_frame, text="Save", command=save_settigns)
     save_button.grid(row=3, columnspan=2, padx=5, pady=5)
 
 def label_hover_in(event):
@@ -1682,13 +1934,35 @@ def ver_info(event):
     scrollbar_vertical.pack(side="right", fill="y")
     notas_html.configure(yscrollcommand=scrollbar_vertical.set)
 
+def get_windows_theme():
+    try:
+        key = reg.OpenKey(reg.HKEY_CURRENT_USER, r'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize')
+        current_theme = reg.QueryValueEx(key, "AppsUseLightTheme")[0]
+        reg.CloseKey(key)
+        
+        return "light" if current_theme == 1 else "dark"
+    except Exception as e:
+        ms.showerror("ERROR", f"Can't Obtain theme of your system: {str(e)}")
+        return "light"
     
-root = ThemedTk(theme='')
+def set_default_theme():
+    windows_theme = get_windows_theme()
+    
+    if windows_theme == "dark":
+        return "black"
+    else:
+        return "arc"
+
+default_theme = set_default_theme()
+root = ThemedTk(theme=default_theme)
 root.title('Proyect Organizer')
 root.geometry("1230x420")
-root.minsize(1230, 420)
 path = resource_path("software.ico")
 root.iconbitmap(path)
+temas = root.get_themes()
+
+main_frame = ttk.Frame(root)
+main_frame.pack()
 
 def adjust_window_size(event=None):
     root.update_idletasks()
@@ -1717,7 +1991,7 @@ def restore_window_size(event=None):
         descripcion_entry.config(width=100)
         repo_entry.config(width=100)
         depen_entry.config(width=100)
-        
+
 def install_editor(name=""):
     if name == "Visual Studio Code":
         url = "https://code.visualstudio.com/sha/download?build=stable&os=win32-x64-user"
@@ -1826,6 +2100,19 @@ def install_editor(name=""):
                     ms.showinfo("INSTALL LATER", f"You can install Geany-Plugins later, the installer is saved in the same folder as this app")
         else:
             ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+    elif name == "Nano":
+        hnano = ms.askyesno(f"{name}", f"you have scoop installed")
+        if hnano:
+            command = "scoop install nano"
+            subprocess.Popen([command], shell=True).wait()
+            ms.showinfo(f"{name}", f"{name} has been installed")
+        else:
+            scoop_install = "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser; Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression"
+            command = "scoop install nano"
+            subprocess.Popen([scoop_install], shell=True).wait()
+            ms.showinfo("Scoop", "Scoop has ben installed")
+            subprocess.Popen([command], shell=True).wait()
+            ms.showinfo(f"{name}", f"{name} has been installed")
     elif name ==  "Kate":
         url = "https://cdn.kde.org/ci-builds/utilities/kate/master/windows/kate-master-7254-windows-cl-msvc2022-x86_64.exe"
         file_name = "Kate_Win64.exe"
@@ -1868,55 +2155,6 @@ def install_editor(name=""):
             buy = ms.askyesno("Intellij IDEA", "Free 30-day trial.you want buy a license?")
             if buy:
                 webbrowser.open("https://www.jetbrains.com/idea/buy/?section=personal&billing=monthly")
-    elif name == "PyCharm":
-        url = "https://www.jetbrains.com/es-es/pycharm/download/download-thanks.html?platform=windows&code=PCC"
-        file_name = "PyCharm_win64.exe"
-        response = requests.get(url)
-        with open(file_name, 'wb') as f:
-            f.write(response.content)
-        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
-        if quest:
-            subprocess.Popen([file_name], shell=True).wait()
-            os.remove(file_name)
-            ms.showinfo("PyCharm Comunity Edition", "That is the comunity edition of pycharm you can buy a full version on the oficial web of jetbrains.com")
-        else:
-            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
-    elif name == "Visual Studio":
-        url = "https://c2rsetup.officeapps.live.com/c2r/downloadVS.aspx?sku=community&channel=Release&version=VS2022&source=VSLandingPage&cid=2030:232ccb04440b4bedb3abd49370bb0fe8"
-        file_name = "Visualstudio_win64.exe"
-        response = requests.get(url)
-        with open(file_name, 'wb') as f:
-            f.write(response.content)
-        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
-        if quest:
-            subprocess.Popen([file_name], shell=True).wait()
-            os.remove(file_name)
-        else:
-            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
-    elif name == "NetBeans":
-        url = "https://dlcdn.apache.org/netbeans/netbeans-installers/22/Apache-NetBeans-22-bin-windows-x64.exe"
-        file_name = "NetBeans_win64.exe"
-        response = requests.get(url)
-        with open(file_name, 'wb') as f:
-            f.write(response.content)
-        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
-        if quest:
-            subprocess.Popen([file_name], shell=True).wait()
-            os.remove(file_name)
-        else:
-            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
-    elif name == "Andorid Studio":
-        url = "https://redirector.gvt1.com/edgedl/android/studio/install/2023.3.1.18/android-studio-2023.3.1.18-windows.exe"
-        file_name = "Androidstudio_win64.exe"
-        response = requests.get(url)
-        with open(file_name, 'wb') as f:
-            f.write(response.content)
-        quest = ms.askyesno("INSTALL", f"Do you want to install {name} now?")
-        if quest:
-            subprocess.Popen([file_name], shell=True).wait()
-            os.remove(file_name)
-        else:
-            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
         
 
 filas_ocultas = set()
@@ -1963,44 +2201,47 @@ menu_editor.add_command(label="Notepad++", command=lambda: install_editor("Notep
 menu_editor.add_command(label="Brackets", command=lambda: install_editor("Brackets"))
 menu_editor.add_command(label="Geany", command=lambda: install_editor("Geany"))
 menu_editor.add_command(label="gedit", command=lambda: ms.showinfo("gedit", "gedit is a opensource editor for linux but in windows you can buy on microsoft store for 4$"))
+menu_editor.add_command(label="Nano", command=lambda: install_editor("Nano"))
 menu_editor.add_command(label="Kate", command=lambda: install_editor("Kate"))
 menu_editor.add_command(label="Eclipse", command=lambda: install_editor("Eclipse"))
 menu_editor.add_command(label="IntelliJ IDEA", command=lambda: install_editor("Intellij IDEA"))
-menu_editor.add_command(label="PyCharm", command=lambda: install_editor("PyCharm"))
-menu_editor.add_command(label="Visual Studio", command=lambda: install_editor("Visual Studio"))
-menu_editor.add_command(label="NetBeans", command=lambda: install_editor("NetBeans"))
-menu_editor.add_command(label="Android Studio", command=lambda: install_editor("Andorid Studio"))
+menu_editor.add_command(label="PyCharm")
+menu_editor.add_command(label="Visual Studio")
+menu_editor.add_command(label="Code::Blocks")
+menu_editor.add_command(label="NetBeans")
+menu_editor.add_command(label="Android Studio")
+menu_settings.add_command(label="Backup Setting", command=setting_backup)
 menu_settings.add_command(label="Terminal", command=select_terminal)
 theme_menu = tk.Menu(menu_settings, tearoff=0)
 menu_settings.add_cascade(label="Theme", menu=theme_menu)
 for tema in temas:
     theme_menu.add_command(label=tema, command=lambda tema=tema: change_theme(tema))
 
-nombre_label = ttk.Label(root, text="Name:")
+nombre_label = ttk.Label(main_frame, text="Name:")
 nombre_label.grid(row=1, column=0, pady=5, padx=5, sticky="nsew")
 
-nombre_entry = ttk.Entry(root, width=100)
+nombre_entry = ttk.Entry(main_frame, width=100)
 nombre_entry.grid(row=1, column=1, pady=5, padx=5)
 
-descripcion_label = ttk.Label(root, text='Description:')
+descripcion_label = ttk.Label(main_frame, text='Description:')
 descripcion_label.grid(row=2, column=0, padx=5, pady=5, sticky="nsew")
 
-descripcion_entry = ttk.Entry(root, width=100)
+descripcion_entry = ttk.Entry(main_frame, width=100)
 descripcion_entry.grid(row=2, column=1, pady=5, padx=5)
 
-repo_label = ttk.Label(root, text="Repository URL:")
+repo_label = ttk.Label(main_frame, text="Repository URL:")
 repo_label.grid(row=3, column=0, padx=5, pady=5, sticky="nsew")
 
-repo_entry = ttk.Entry(root, width=100)
+repo_entry = ttk.Entry(main_frame, width=100)
 repo_entry.grid(row=3, column=1, pady=5, padx=5)
 
-depen_label = ttk.Label(root, text="Dependencies:")
+depen_label = ttk.Label(main_frame, text="Dependencies:")
 depen_label.grid(row=4, column=0, pady=5, padx=5, sticky="nsew")
 
-depen_entry = ttk.Entry(root, width=100)
+depen_entry = ttk.Entry(main_frame, width=100)
 depen_entry.grid(row=4, column=1, pady=5, padx=5)
 
-tree = ttk.Treeview(root, columns=('ID', 'Nombre', 'Descripcion', 'Lenguaje', 'Ruta', 'Repositorio'), show='headings')
+tree = ttk.Treeview(main_frame, columns=('ID', 'Nombre', 'Descripcion', 'Lenguaje', 'Ruta', 'Repositorio'), show='headings')
 tree.heading('ID', text='ID')
 tree.heading('Nombre', text='Name')
 tree.heading('Descripcion', text='Description')
@@ -2010,7 +2251,7 @@ tree.heading('Repositorio', text='Repository')
 tree.grid(row=5, columnspan=2, pady=5, padx=5, sticky="nsew")
 
 
-scrollbar_y = ttk.Scrollbar(root, orient='vertical', command=tree.yview)
+scrollbar_y = ttk.Scrollbar(main_frame, orient='vertical', command=tree.yview)
 scrollbar_y.grid(row=5, column=2, sticky='ns')
 
 tree.configure(yscrollcommand=scrollbar_y.set)
@@ -2025,7 +2266,7 @@ editor_options = [
         "Android Studio", "Editor Integrated", "neovim"
     ]
 selected_editor.set(editor_options[0])
-editor_menu = ttk.OptionMenu(root, selected_editor, *editor_options)
+editor_menu = ttk.OptionMenu(main_frame, selected_editor, *editor_options)
 editor_menu.grid(row=9, column=0, padx=5, pady=5, sticky="sw")
 
 tree.bind("<Button-3>", show_context_menu)
@@ -2033,13 +2274,13 @@ tree.bind("<Double-1>", abrir_repositorio)
 tree.bind("<Control-1>", abrir_explorador)
 tree.bind("<<TreeviewSelect>>", on_project_select)
 
-btn_abrir = ttk.Button(root, text='Open Proyect', command=lambda: abrir_threading(tree.item(tree.selection())['values'][4], selected_editor.get()))
+btn_abrir = ttk.Button(main_frame, text='Open Proyect', command=lambda: abrir_threading(tree.item(tree.selection())['values'][4], selected_editor.get()))
 btn_abrir.grid(row=9, columnspan=2, pady=5, padx=5, sticky="s")
 
-btn_install = ttk.Button(root, text="Install dependencies", command=lambda: install_librarys(tree.item(tree.selection())['values'][3]))
+btn_install = ttk.Button(main_frame, text="Install dependencies", command=lambda: install_librarys(tree.item(tree.selection())['values'][3]))
 btn_install.grid(row=4, column=1, padx=5, pady=5, sticky="e")
 
-version_label = ttk.Label(root, text=version)
+version_label = ttk.Label(main_frame, text=version)
 version_label.grid(row=9, column=1, pady=5, padx=5, sticky="se")
 
 version_label.bind("<Enter>", label_hover_in)
@@ -2047,8 +2288,6 @@ version_label.bind("<Leave>", label_hover_out)
 version_label.bind("<Button-1>", ver_info)
 
 root.bind("<Control-q>", lambda e: root.quit())
-root.after(100, lambda: root.bind("<Configure>", adjust_window_size))
-root.after(100, lambda: root.bind("<Configure>", restore_window_size))
 
 root.grid_rowconfigure(5, weight=1)
 root.grid_columnconfigure(0, weight=1)
