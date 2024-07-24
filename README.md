@@ -5,9 +5,9 @@ Organizer is an application developed in python and open source which allows you
 
 
 # SOURCE CODE FEATURE AGREE
-* Now in the integrated editor it is possible to create custom themes following the template that will be shown to you (You need to copy the chlorophyll folder available above inside the env development environment folder. You must also create in the same folder where you have the code a path that will be ```_internal\chlorophyll\colorscheme```
-inside that folder it will copy the themes that are available inside the chloropyll folder provided)
-* [!!] If you do not copy the chloropyll folder in the project env, replacing the original folder of the chloropyll library, the themes will not work since the original library is not prepared for the creation and use of custom base themes
+* Now in the integrated editor it is possible to create custom themes following the template that will be shown to you (You need to copy the [chlorophyll](https://github.com/rdbende/chlorophyll) folder available above inside the env development environment folder. You must also create in the same folder where you have the code a path that will be ```_internal\chlorophyll\colorscheme```
+inside that folder it will copy the themes that are available inside the [chlorophyll](https://github.com/rdbende/chlorophyll) folder provided)
+* [!!] If you do not copy the [chlorophyll](https://github.com/rdbende/chlorophyll) folder in the project env, replacing the original folder of the [chlorophyll](https://github.com/rdbende/chlorophyll) library, the themes will not work since the original library is not prepared for the creation and use of custom base themes
 
 ## EXAMPLE
 ### WINDOWS
