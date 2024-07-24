@@ -1067,7 +1067,6 @@ def config_editors():
         entry = ttk.Entry(main_frame)
         entry.grid(row=i, column=1, padx=5, pady=5)
         
-        # Rellena el Entry con la configuración existente, si está disponible
         if programa in configs_editors:
             entry.insert(0, configs_editors[programa])
         
