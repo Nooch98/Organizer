@@ -1,0 +1,80 @@
+[editor]
+bg = "#002B36"
+fg = "#839496"
+select_bg = "#073642"
+select_fg = "#839496"
+inactive_select_bg = "#073642"
+caret = "#93A1A1"
+caret_width = 1
+border_width = 0
+focus_border_width = 0
+
+[general]
+comment = "#586E75"
+error = "#DC322F"
+escape = "#839496"
+keyword = "#859900"
+name = "#268BD2"
+string = "#B58900"
+punctuation = "#839496"
+
+[keyword]
+constant = "#CB4B16"
+declaration = "#859900"
+namespace = "#859900"
+pseudo = "#859900"
+reserved = "#859900"
+type = "#859900"
+
+[name]
+attr = "#268BD2"
+builtin = "#D33682"
+builtin_pseudo = "#839496"
+class = "#268BD2"
+class_variable = "#839496"
+constant = "#839496"
+decorator = "#839496"
+entity = "#839496"
+exception = "#839496"
+function = "#268BD2"
+global_variable = "#839496"
+instance_variable = "#839496"
+label = "#839496"
+magic_function = "#839496"
+magic_variable = "#839496"
+namespace = "#839496"
+tag = "#93A1A1"
+variable = "#839496"
+
+[operator]
+symbol = "#839496"
+word = "#839496"
+
+[string]
+affix = "#2AA198"
+char = "#2AA198"
+delimeter = "#2AA198"
+doc = "#2AA198"
+double = "#2AA198"
+escape = "#2AA198"
+heredoc = "#2AA198"
+interpol = "#2AA198"
+regex = "#2AA198"
+single = "#2AA198"
+symbol = "#2AA198"
+
+[number]
+binary = "#CB4B16"
+float = "#CB4B16"
+hex = "#CB4B16"
+integer = "#CB4B16"
+long = "#CB4B16"
+octal = "#CB4B16"
+
+[comment]
+hashbang = "#586E75"
+multiline = "#586E75"
+preproc = "#586E75"
+preprocfile = "#586E75"
+single = "#586E75"
+special = "#586E75"
