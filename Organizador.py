@@ -14,7 +14,8 @@ import markdown
 import requests
 import importlib.util
 import pygments.lexers
-import winreg as reg
+import platform
+import subprocess
 #--------------------------------------------------------#
 from tkinter import OptionMenu, StringVar, filedialog, simpledialog
 from tkinter import messagebox as ms
@@ -1067,6 +1068,7 @@ def config_editors():
         entry = ttk.Entry(main_frame)
         entry.grid(row=i, column=1, padx=5, pady=5)
         
+        # Rellena el Entry con la configuración existente, si está disponible
         if programa in configs_editors:
             entry.insert(0, configs_editors[programa])
         
@@ -1939,6 +1941,9 @@ def ver_info(event):
     scrollbar_vertical.pack(side="right", fill="y")
     notas_html.configure(yscrollcommand=scrollbar_vertical.set)
 
+if platform.system() == "Windows":
+    import winreg as reg
+
 def get_windows_theme():
     try:
         key = reg.OpenKey(reg.HKEY_CURRENT_USER, r'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize')
@@ -1950,10 +1955,76 @@ def get_windows_theme():
         ms.showerror("ERROR", f"Can't Obtain theme of your system: {str(e)}")
         return "light"
     
-def set_default_theme():
-    windows_theme = get_windows_theme()
+def get_mac_theme():
+    try:
+        from subprocess import run, PIPE
+        result = run(['defaults', 'read', 'g', 'AppleInterfaceStyle'], stdout=PIPE, stderr=PIPE, text=True)
+        if 'Dark' in result.stdout:
+            return 'dark'
+        else:
+            return 'light'
+    except Exception as e:
+        ms.showerror("ERROR", f"Can't obtain the theme of your system: {str(e)}")
+        return "light"
+
+def get_linux_theme():
+    try:
+        try:
+            result = subprocess.run(['gsettings', 'get', 'org.gnome.desktop.interface', 'gtk-theme'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode == 0:
+                gtk_theme = result.stdout.strip().strip("'")
+                if "dark" in gtk_theme.lower():
+                    return "dark"
+                else:
+                    return "light"
+        except Exception:
+            pass
+
+        try:
+            kde_config = os.path.expanduser('~/.config/kdeglobals')
+            if os.path.isfile(kde_config):
+                with open(kde_config, 'r') as f:
+                    lines = f.readlines()
+                for line in lines:
+                    if "ColorScheme=" in line:
+                        if "Dark" in line:
+                            return "dark"
+                        else:
+                            return "light"
+        except Exception:
+            pass
+
+        try:
+            result = subprocess.run(['xfconf-query', '--channel', 'xsettings', '--property', '/Net/ThemeName'], stdout=subprocess.PIPE, text=True)
+            if "dark" in result.stdout.lower():
+                return "dark"
+            else:
+                return "light"
+        except Exception:
+            pass
+
+        return "light"
+
+    except Exception as e:
+        ms.showerror("ERROR", f"Can't obtain the theme of your system: {str(e)}")
+        return "light"
     
-    if windows_theme == "dark":
+def get_system_theme():
+    system = platform.system()
+    if system == "Windows":
+        return get_windows_theme()
+    elif system == "Darwin":
+        return get_mac_theme()
+    elif system == "Linux":
+        return get_linux_theme()
+    else:
+        ms.showerror("ERROR", f"Unsupported operating system: {system}")
+        return "light"
+    
+def set_default_theme():
+    system_theme = get_system_theme()
+    
+    if system_theme == "dark":
         return "black"
     else:
         return "arc"
