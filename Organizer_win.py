@@ -1208,6 +1208,8 @@ def show_selected_row():
         
 def show_context_menu(event):
     menu_items = [
+        ("Open Explorer", lambda: abrir_explorador(event)),
+        ("Open Github", lambda: abrir_repositorio(event)),
         ("Edit", modificar_proyecto),
         ("Delete", eliminar_proyecto),
         ("Git Init", lambda: git_init(selected_project_path)),
