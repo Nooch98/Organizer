@@ -1901,7 +1901,7 @@ def ver_info():
     info_window = tk.Toplevel(root)
     info_window.title("PATCH NOTES")
     info_window.geometry("1500x600")
-    info_window.iconphoto(True, tk.PhotoImage(file=path))
+    info_window.iconbitmap(path)
 
     repo = "Nooch98/Organizer"
     release_info = obtener_ultima_release(repo)
@@ -2291,6 +2291,10 @@ menu_settings.add_cascade(label="ttkbootstrap Themes", menu=ttkmenu)
 for tema in ttkbootstrap_themes:
     ttkmenu.add_command(label=tema, command=lambda theme_name=tema: change_bootstrap_theme(theme_name))
 
+help_menu = tk.Menu(menu, tearoff=0)
+menu.add_cascade(label="Help", menu=help_menu)
+help_menu.add_command(label="InfoVersion", command=ver_info)
+
 nombre_label = ttk.Label(main_frame, text="Name:")
 nombre_label.grid(row=1, column=0, pady=5, padx=5, sticky="nsew")
 
@@ -2356,10 +2360,6 @@ btn_install.grid(row=4, column=1, padx=5, pady=5, sticky="e")
 
 version_label = ttk.Label(main_frame, text=version)
 version_label.grid(row=9, column=1, pady=5, padx=5, sticky="se")
-
-version_label.bind("<Enter>", label_hover_in)
-version_label.bind("<Leave>", label_hover_out)
-version_label.bind("<Button-1>", ver_info)
 
 root.bind("<Control-q>", lambda e: root.quit())
 
