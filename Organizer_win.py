@@ -17,6 +17,7 @@ import pygments.lexers
 import platform
 import subprocess
 import ttkbootstrap as ttk
+import markdown2
 #--------------------------------------------------------#
 from tkinter import OptionMenu, StringVar, filedialog, simpledialog
 from tkinter import messagebox as ms
@@ -157,82 +158,51 @@ def perform_backup():
 def update_status(file_name):
     status_label.config(text="Copying: {}".format(file_name))
 
+def detectar_editores_disponibles():
+    editores = {
+        "Visual Studio Code": "code",
+        "Sublime Text": "sublime_text.exe",
+        "Atom": "atom.exe",
+        "Vim": "vim.exe",
+        "Emacs": "emacs.exe",
+        "Notepad++": "notepad++.exe",
+        "Brackets": "brackets.exe",
+        "TextMate": "mate.exe",
+        "Geany": "geany.exe",
+        "gedit": "gedit.exe",
+        "Nano": "nano.exe",
+        "Kate": "kate.exe",
+        "Bluefish": "bluefish.exe",
+        "Eclipse": "eclipse.exe",
+        "IntelliJ IDEA": "idea.exe",
+        "PyCharm": "pycharm.exe",
+        "Visual Studio": "devenv.exe",
+        "Code::Blocks": "codeblocks.exe",
+        "NetBeans": "netbeans.exe",
+        "Android Studio": "studio64.exe",
+        "neovim": "nvim.exe"
+    }
+    return {nombre: shutil.which(binario) for nombre, binario in editores.items() if shutil.which(binario)}
+
 def abrir_proyecto(ruta, editor):
     configuracion_editores = cargar_configuracion_editores()
-    ruta_editor = None
+    ruta_editor = configuracion_editores.get(editor) if configuracion_editores and editor in configuracion_editores else None
 
-    if configuracion_editores and editor in configuracion_editores:
-        ruta_editor = configuracion_editores[editor]
-        subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-        subprocess.run(f'Start wt -d "{ruta}"', shell=True)
+    if not ruta_editor:
+        editores_disponibles = detectar_editores_disponibles()
+        ruta_editor = editores_disponibles.get(editor)
     
+    if ruta_editor:
+        subprocess.Popen([ruta_editor, ruta], shell=True)
+        subprocess.run(f'Start wt -d "{ruta}"', shell=True)
+    elif editor == "neovim":
+        comando_ps = f"Start-Process nvim '{ruta}' -WorkingDirectory '{ruta}'"
+        subprocess.Popen(["powershell", "-Command", comando_ps])
+    elif editor == "Editor Integrated":
+        subprocess.Popen(f'Start wt -d "{ruta}"', shell=True)
+        abrir_editor_thread(ruta, tree.item(tree.selection())['values'][1])
     else:
-        if editor == "Visual Studio Code":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "Sublime Text":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "Atom":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "Vim":
-            comando_ps = f"Start-Process vim '{ruta}' -WorkingDirectory '{ruta}'"
-            subprocess.Popen(["powershell", "-Command", comando_ps])
-        elif editor == "Emacs":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "Notepad++":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "Brackets":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "TextMate":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "Geany":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "gedit":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "Nano":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "Kate":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "Bluefish":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "Eclipse":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "IntelliJ IDEA":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "PyCharm":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "Visual Studio":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "Code::Blocks":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "NetBeans":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "Android Studio":
-            subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-            subprocess.run(f'Start wt -d "{ruta}"', shell=True)
-        elif editor == "neovim":
-            comando_ps = f"Start-Process nvim '{ruta}' -WorkingDirectory '{ruta}'"
-            subprocess.Popen(["powershell", "-Command", comando_ps])
-        elif editor == "Editor Integrated":
-            subprocess.Popen(f'Start wt -d "{ruta}"', shell=True)
-            abrir_editor_thread(ruta, tree.item(tree.selection())['values'][1])
+        ms.showerror("ERROR", f"{editor} Not found")
 
 def abrir_editor_thread(ruta, name):
     threading.Thread(target=abrir_editor_integrado, args=(ruta, name)).start()
@@ -1059,19 +1029,20 @@ def config_editors():
     rutas_editores = {}
     
     configs_editors = cargar_configuracion_editores()
+    if configs_editors is None:
+        configs_editors = {}
 
     def guardar_y_cerrar():
         guardar_configuracion_editores(rutas_editores)
         config_editor.destroy()
-
+    
     for i, programa in enumerate(editores_disponibles):
         label = ttk.Label(main_frame, text=programa)
         label.grid(row=i, column=0, padx=5, pady=5)
         
-        entry = ttk.Entry(main_frame)
+        entry = ttk.Entry(main_frame, width=80)
         entry.grid(row=i, column=1, padx=5, pady=5)
         
-        # Rellena el Entry con la configuración existente, si está disponible
         if programa in configs_editors:
             entry.insert(0, configs_editors[programa])
         
@@ -1775,6 +1746,8 @@ def modificar_proyecto():
     main_frame = ttk.Frame(mod_window)
     main_frame.pack()
 
+    entry_widgets = {}
+
     for field, index in field_index.items():
         field_label = ttk.Label(main_frame, text=f"{field}:")
         field_label.grid(row=index, column=0, padx=5, pady=5)
@@ -1783,10 +1756,12 @@ def modificar_proyecto():
         new_value_entry.insert(0, current_values[index])
         new_value_entry.grid(row=index, column=1, padx=5, pady=5)
 
+        entry_widgets[field] = new_value_entry
+
     def apply_modification():
         new_values = []
         for field, index in field_index.items():
-            entry = mod_window.grid_slaves(row=index, column=1)[0]
+            entry = entry_widgets[field]
             value = entry.get()
             new_values.append(value if value.strip() else None)
         project_id = current_values[field_index['ID']]
@@ -1915,33 +1890,28 @@ def label_hover_out(event):
 def renderizar_markdown(texto):
     html = markdown(texto)
     return html
-  
-def ver_info(event):
+
+def obtener_ultima_release(repo):
+    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json()
+
+def ver_info():
     info_window = tk.Toplevel(root)
     info_window.title("PATCH NOTES")
     info_window.geometry("1500x600")
-    info_window.iconbitmap(path)
-    
-    notas_markdown = """
-# RELEASE v1.9.1
+    info_window.iconphoto(True, tk.PhotoImage(file=path))
 
-## CHANGES
-* The UI was changed in the editing function
-* The Open github repository button was removed and now appears in the projects option in the top toolbar and its operation was modified
-* Now the general UI is adaptive in size (I know it is not the best thing to do)
-* The Neovim editor was added to the list of editors
+    repo = "Nooch98/Organizer"
+    release_info = obtener_ultima_release(repo)
 
-
-## IN PROGRESS
-* The menu is already there although it is not functional but I am adding an editor installer
-* I am creating a function so that from time to time it creates a backup of all the projects that have been added to the app
-""" 
-
-    html = markdown.markdown(notas_markdown)
+    notas_markdown = release_info.get('body', 'No release notes available.')
+    html = markdown2.markdown(notas_markdown)
 
     notas_html = HTMLLabel(info_window, html=html)
     notas_html.pack(expand=True, fill="both", side="left")
-    
+
     scrollbar_vertical = ttk.Scrollbar(info_window, orient="vertical", command=notas_html.yview)
     scrollbar_vertical.pack(side="right", fill="y")
     notas_html.configure(yscrollcommand=scrollbar_vertical.set)
