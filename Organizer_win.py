@@ -2021,7 +2021,6 @@ def change_bootstrap_theme(theme_name):
     
     style.theme_use(theme_name)
 
-
 root = ThemedTk()
 root.title('Proyect Organizer')
 root.geometry("1230x420")
@@ -2031,35 +2030,7 @@ temas = root.get_themes()
 ttkbootstrap_themes = ttk_themes()
 
 main_frame = ttk.Frame(root)
-main_frame.pack()
-
-def adjust_window_size(event=None):
-    root.update_idletasks()
-    tree.config(height=root.winfo_height() - 310)
-    
-    new_width = 300
-    depend_widht = 280
-    nombre_entry.config(width=new_width)
-    descripcion_entry.config(width=new_width)
-    repo_entry.config(width=new_width)
-    depen_entry.config(width=depend_widht)
-    
-def restore_window_size(event=None):
-    root.update_idletasks()
-    tree.config(height=root.winfo_height() - 310)
-    
-    new_width = 300
-    depend_width = 280
-    nombre_entry.config(width=new_width)
-    descripcion_entry.config(width=new_width)
-    repo_entry.config(width=new_width)
-    depen_entry.config(width=depend_width)
-
-    if root.state() != "zoomed": 
-        nombre_entry.config(width=100)
-        descripcion_entry.config(width=100)
-        repo_entry.config(width=100)
-        depen_entry.config(width=100)
+main_frame.grid(row=0, column=0, sticky="nsew")
 
 def install_editor(name=""):
     if name == "Visual Studio Code":
@@ -2290,34 +2261,37 @@ ttkmenu.add_command(label="Create Theme", command=create_theme)
 menu_settings.add_cascade(label="ttkbootstrap Themes", menu=ttkmenu)
 for tema in ttkbootstrap_themes:
     ttkmenu.add_command(label=tema, command=lambda theme_name=tema: change_bootstrap_theme(theme_name))
+    
+menu_help = tk.Menu(menu, tearoff=0)
 
-help_menu = tk.Menu(menu, tearoff=0)
-menu.add_cascade(label="Help", menu=help_menu)
-help_menu.add_command(label="InfoVersion", command=ver_info)
+menu.add_cascade(label="Help", menu=menu_help)
+menu_help.add_command(label="Version", command=show_version)
+menu_help.add_command(label="Changelog", command=ver_info)
+
 
 nombre_label = ttk.Label(main_frame, text="Name:")
 nombre_label.grid(row=1, column=0, pady=5, padx=5, sticky="nsew")
 
 nombre_entry = ttk.Entry(main_frame, width=100)
-nombre_entry.grid(row=1, column=1, pady=5, padx=5)
+nombre_entry.grid(row=1, column=1, pady=5, padx=5, sticky="ew")
 
 descripcion_label = ttk.Label(main_frame, text='Description:')
 descripcion_label.grid(row=2, column=0, padx=5, pady=5, sticky="nsew")
 
 descripcion_entry = ttk.Entry(main_frame, width=100)
-descripcion_entry.grid(row=2, column=1, pady=5, padx=5)
+descripcion_entry.grid(row=2, column=1, pady=5, padx=5, sticky="ew")
 
 repo_label = ttk.Label(main_frame, text="Repository URL:")
 repo_label.grid(row=3, column=0, padx=5, pady=5, sticky="nsew")
 
 repo_entry = ttk.Entry(main_frame, width=100)
-repo_entry.grid(row=3, column=1, pady=5, padx=5)
+repo_entry.grid(row=3, column=1, pady=5, padx=5, sticky="ew")
 
 depen_label = ttk.Label(main_frame, text="Dependencies:")
 depen_label.grid(row=4, column=0, pady=5, padx=5, sticky="nsew")
 
 depen_entry = ttk.Entry(main_frame, width=100)
-depen_entry.grid(row=4, column=1, pady=5, padx=5)
+depen_entry.grid(row=4, column=1, pady=5, padx=5, sticky="ew")
 
 tree = ttk.Treeview(main_frame, columns=('ID', 'Nombre', 'Descripcion', 'Lenguaje', 'Ruta', 'Repositorio'), show='headings')
 tree.heading('ID', text='ID')
@@ -2363,9 +2337,11 @@ version_label.grid(row=9, column=1, pady=5, padx=5, sticky="se")
 
 root.bind("<Control-q>", lambda e: root.quit())
 
-root.grid_rowconfigure(5, weight=1)
+root.grid_rowconfigure(0, weight=1)
 root.grid_columnconfigure(0, weight=1)
-root.grid_columnconfigure(2, weight=1)
+
+main_frame.grid_rowconfigure(5, weight=1)
+main_frame.grid_columnconfigure(1, weight=1)
 
 crear_base_datos()
 mostrar_proyectos()
