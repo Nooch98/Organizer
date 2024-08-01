@@ -31,6 +31,7 @@ from chlorophyll import CodeView
 from pathlib import Path
 from ttkbootstrap.constants import *
 import ttkthemes
+from PIL import Image, ImageTk
 
 
 main_version = "ver.1.9.2"
@@ -2020,6 +2021,37 @@ def change_bootstrap_theme(theme_name):
     style = ttk.Style()
     
     style.theme_use(theme_name)
+
+def show_version():
+    show_ver = tk.Toplevel(root)
+    show_ver.title("Organizer Version")
+    show_ver.iconbitmap(path)
+    
+    main_frame = ttk.Frame(show_ver)
+    main_frame.grid(row=0, column=0, sticky="nsew")
+    
+    image_path = path
+    img = Image.open(image_path)
+    photo = ImageTk.PhotoImage(img)
+    
+    img_label = ttk.Label(main_frame, image=photo)
+    img_label.image = photo
+    img_label.grid(row=0, column=0, padx=10, pady=10)
+    
+    app_name = ttk.Label(main_frame, text="Organizer", font=("Arial", 20))
+    app_name.grid(row=1, columnspan=2, padx=10, pady=10)
+    
+    app_author = ttk.Label(main_frame, text="Nooch98", font=("Arial", 12))
+    app_author.grid(row=2, columnspan=2, padx=10, pady=10)
+    
+    app_version = ttk.Button(main_frame, text="1.9.2", width=3)
+    app_version.grid(row=3, columnspan=2, padx=10, pady=10)
+    
+    app_web = ttk.Button(main_frame, text="Website", command=lambda: webbrowser.open("https://github.com/Nooch98/Organizer"), width=20)
+    app_web.grid(row=5, columnspan=2, padx=10, pady=10)
+    
+    app_issue = ttk.Button(main_frame, text="Report an Issue", command=lambda: webbrowser.open("https://github.com/Nooch98/Organizer/issues"), width=20)
+    app_issue.grid(row=6, columnspan=2, padx=10, pady=10)
 
 root = ThemedTk()
 root.title('Proyect Organizer')
