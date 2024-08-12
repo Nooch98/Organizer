@@ -31,7 +31,7 @@ from chlorophyll import CodeView
 from pathlib import Path
 from ttkbootstrap.constants import *
 
-main_version = "ver.1.9.2"
+main_version = "ver.1.9.3"
 version = str(main_version)
 archivo_configuracion_editores = "configuracion_editores.json"
 archivo_confgiguracion_github = "configuracion_github.json"
@@ -1011,92 +1011,6 @@ def eliminar_proyecto(id, ruta):
         conn.commit()
         conn.close()
         mostrar_proyectos()
-
-def config_editors():
-    config_editor = tk.Toplevel(root)
-    config_editor.title("Editors Config")
-    config_editor.iconphoto(True, tk.PhotoImage(file=path))
-    
-    main_frame = ttk.Frame(config_editor)
-    main_frame.pack()
-    
-    rutas_editores = {}
-    
-    configs_editors = cargar_configuracion_editores()
-    if configs_editors is None:
-        configs_editors = {}
-
-    def guardar_y_cerrar():
-        guardar_configuracion_editores(rutas_editores)
-        config_editor.destroy()
-    
-    for i, programa in enumerate(editores_disponibles):
-        label = ttk.Label(main_frame, text=programa)
-        label.grid(row=i, column=0, padx=5, pady=5)
-        
-        entry = ttk.Entry(main_frame)
-        entry.grid(row=i, column=1, padx=5, pady=5)
-        
-        if programa in configs_editors:
-            entry.insert(0, configs_editors[programa])
-        
-        btn = ttk.Button(main_frame, text="Agree", command=lambda prog=programa, ent=entry: seleccionar_ruta_editor(prog, ent))
-        btn.grid(row=i, column=2, padx=5, pady=5)
-        
-        rutas_editores[programa] = entry
-
-    aceptar_btn = ttk.Button(main_frame, text="Confirm", command=guardar_y_cerrar)
-    aceptar_btn.grid(row=len(editores_disponibles), column=0, columnspan=3, padx=5, pady=5)
-    
-def config_github():
-    config_github = tk.Toplevel(root)
-    config_github.title("Api Key Github")
-    config_github.iconphoto(True, tk.PhotoImage(file=path))
-    
-    main_frame = ttk.Frame(config_github)
-    main_frame.pack()
-    
-    titulo = ttk.Label(main_frame, text="Github Configuration")
-    titulo.grid(row=0, columnspan=2, pady=5, padx=5)
-    
-    label = ttk.Label(main_frame, text="Github Api Key: ")
-    label.grid(row=1, column=0, pady=5, padx=5)
-    
-    api_entry = ttk.Entry(main_frame, width=50)
-    api_entry.grid(row=1, column=1, pady=5, padx=5)
-    
-    def guardar():
-        api_key = api_entry.get()
-        guardar_configuracion_github(api_key)
-        config_github.destroy()
-    
-    sub_button = ttk.Button(main_frame, text="Accept", command=guardar)
-    sub_button.grid(row=2, columnspan=2, pady=5, padx=5)
-    
-def config_openai():
-    config_openai = tk.Toplevel(root)
-    config_openai.title("Api Key OpenAI")
-    config_openai.iconphoto(True, tk.PhotoImage(file=path))
-    
-    main_frame = ttk.Frame(config_openai)
-    main_frame.pack()
-    
-    titulo = ttk.Label(main_frame, text="OpenAI Configuration")
-    titulo.grid(row=0, columnspan=2, pady=5, padx=5)
-    
-    label = ttk.Label(main_frame, text="OpenAI Api Key: ")
-    label.grid(row=1, column=0, pady=5, padx=5)
-    
-    api_gpt_entry = ttk.Entry(main_frame, width=50)
-    api_gpt_entry.grid(row=1, column=1, pady=5, padx=5)
-    
-    def guardar():
-        api_key = api_gpt_entry.get()
-        save_config_gpt(api_key)
-        config_openai.destroy()
-    
-    sub_button = ttk.Button(main_frame, text="Accept", command=guardar)
-    sub_button.grid(row=2, columnspan=2, pady=5, padx=5)
     
 def seleccionar_ruta_editor(editor, entry):
     ruta_editor = filedialog.askopenfilename(title=f"Seleccione el ejecutable de {editor}", filetypes=[("Ejecutables", "*.exe")])
@@ -1862,44 +1776,6 @@ def detect_distro():
     except FileNotFoundError:
         ms.showerror("ERROR", "Cannot detect Linux distribution.")
         return None
-         
-def select_terminal():
-    setting_terminal = tk.Toplevel(root)
-    setting_terminal.title("Setting Terminal")
-    setting_terminal.iconphoto(True, tk.PhotoImage(file=path))
-    
-    main_frame = ttk.Frame(setting_terminal)
-    main_frame.pack()
-    
-    terminal_label = ttk.Label(main_frame, text="Select Terminal")
-    terminal_label.grid(row=0, columnspan=2, padx=5, pady=5)
-    
-    selected_terminal = tk.StringVar()
-    terminal_choices = ["Select Terminal", "Command Pormpt", "Windows Terminal", "PowerShell", "Git Bash"]
-    terminal_menu = ttk.OptionMenu(main_frame, selected_terminal, *terminal_choices)
-    terminal_menu.grid(row=1, columnspan=2, pady=5, padx=5)
-    
-    terminal_path_label = ttk.Label(main_frame, text="Terminal Executable Path: ")
-    terminal_path_label.grid(row=2, column=0, padx=5, pady=5)
-    
-    terminal_path_entry = ttk.Entry(main_frame, width=50)
-    terminal_path_entry.grid(row=2, column=1, padx=5, pady=5)
-    
-    def save_settigns():
-        selected_terminal_value = selected_terminal.get()
-        terminal_path_value = terminal_path_entry.get()
-        
-        config = {
-            "Selected_terminal": selected_terminal_value,
-            "terminal_path": terminal_path_value
-            }
-        with open("terminal_config.json", "w") as f:
-            json.dump(config, f)
-            
-        setting_terminal.destroy()
-            
-    save_button = ttk.Button(main_frame, text="Save", command=save_settigns)
-    save_button.grid(row=3, columnspan=2, padx=5, pady=5)
 
 def label_hover_in(event):
     version_label.config(background="gray", cursor='hand2')
@@ -2020,7 +1896,7 @@ def set_default_theme():
     system_theme = get_system_theme()
     
     if system_theme == "dark":
-        change_bootstrap_theme(theme_name="cyborg")
+        change_bootstrap_theme(theme_name="darkly")
     else:
         change_bootstrap_theme(theme_name="cosmo")
 
@@ -2036,6 +1912,291 @@ def change_bootstrap_theme(theme_name):
 def create_theme():
     command = "python3 -m ttkcreator"
     subprocess.run(f'{command}', shell=True)
+
+def setting_window():
+    config_window = tk.Toplevel(root)
+    config_window.title("Settings")
+    config_window.iconphoto(True, tk.PhotoImage(file=path))
+    
+    main_frame = ttk.Frame(config_window)
+    main_frame.grid(row=0, column=0, sticky="nsew")
+    
+    theme_frame = ttk.Frame(main_frame)
+    ttktheme_frame = ttk.Frame(main_frame)
+    editor_frame = ttk.Frame(main_frame)
+    github_frame = ttk.Frame(main_frame)
+    openai_frame = ttk.Frame(main_frame)
+    choco_frame = ttk.Frame(main_frame)
+    scoop_frame = ttk.Frame(main_frame)
+    editors_frame = ttk.Frame(main_frame)
+    lenguajes_frame = ttk.Frame(main_frame)
+    terminal_frame = ttk.Frame(main_frame)
+    backup_frame = ttk.Frame(main_frame)
+    
+    list_settings = tk.Listbox(main_frame, height=33, width=40)
+    list_settings.grid(row=0, column=0, padx=2, pady=2, sticky="nsew")
+    
+    list_settings.insert(tk.END, "Editors Configure")
+    list_settings.insert(tk.END, "Github")
+    list_settings.insert(tk.END, "Open Ai")
+    list_settings.insert(tk.END, "Install Lenguajes")
+    list_settings.insert(tk.END, "Install choco")
+    list_settings.insert(tk.END, "Install scoop")
+    list_settings.insert(tk.END, "Install Editors")
+    list_settings.insert(tk.END, "Backup Settings")
+    list_settings.insert(tk.END, "Terminal Setting")
+    list_settings.insert(tk.END, "Theme")
+    list_settings.insert(tk.END, "TTKTheme")
+    
+    def hide_frames():
+        theme_frame.grid_forget()
+        ttktheme_frame.grid_forget()
+        editor_frame.grid_forget()
+        github_frame.grid_forget()
+        openai_frame.grid_forget()
+        choco_frame.grid_forget()
+        scoop_frame.grid_forget()
+        editors_frame.grid_forget()
+        lenguajes_frame.grid_forget()
+        terminal_frame.grid_forget()
+        backup_frame.grid_forget()
+        
+    def select_user_config(event=None):
+        selection = list_settings.curselection()
+        if selection:
+            index = selection[0]
+            item = list_settings.get(index)
+            
+        if item == "Editors Configure":
+            hide_frames()
+            editor_frame.grid(row=0, column=1, sticky="nsew")
+            rutas_editores = {}
+    
+            configs_editors = cargar_configuracion_editores()
+            if configs_editors is None:
+                configs_editors = {}
+
+            def guardar_y_cerrar():
+                guardar_configuracion_editores(rutas_editores)
+            
+            for i, programa in enumerate(editores_disponibles):
+                label = ttk.Label(editor_frame, text=programa)
+                label.grid(row=i, column=0, padx=5, pady=5)
+                
+                entry = ttk.Entry(editor_frame, width=80)
+                entry.grid(row=i, column=1, padx=5, pady=5)
+                
+                if programa in configs_editors:
+                    entry.insert(0, configs_editors[programa])
+                
+                btn = ttk.Button(editor_frame, text="Agree", command=lambda prog=programa, ent=entry: seleccionar_ruta_editor(prog, ent))
+                btn.grid(row=i, column=2, padx=5, pady=5)
+                
+                rutas_editores[programa] = entry
+
+            aceptar_btn = ttk.Button(editor_frame, text="Confirm", command=guardar_y_cerrar)
+            aceptar_btn.grid(row=len(editores_disponibles), column=0, columnspan=3, padx=5, pady=5)
+    
+        
+        elif item == "Github":
+            hide_frames()
+            github_frame.grid(row=0, column=1, sticky="nsew")
+            titulo = ttk.Label(github_frame, text="Github Configuration")
+            titulo.grid(row=0, columnspan=2, pady=5, padx=5)
+            
+            label = ttk.Label(github_frame, text="Github Api Key: ")
+            label.grid(row=1, column=0, pady=5, padx=5)
+            
+            api_entry = ttk.Entry(github_frame, width=50)
+            api_entry.grid(row=1, column=1, pady=5, padx=5)
+            
+            def guardar():
+                api_key = api_entry.get()
+                guardar_configuracion_github(api_key)
+            
+            sub_button = ttk.Button(github_frame, text="Accept", command=guardar)
+            sub_button.grid(row=2, columnspan=2, pady=5, padx=5)
+        
+        elif item == "Open Ai":
+            hide_frames()
+            openai_frame.grid(row=0, column=1, sticky="nsew")
+            titulo = ttk.Label(openai_frame, text="OpenAI Configuration")
+            titulo.grid(row=0, columnspan=2, pady=5, padx=5)
+            
+            label = ttk.Label(openai_frame, text="OpenAI Api Key: ")
+            label.grid(row=1, column=0, pady=5, padx=5)
+            
+            api_gpt_entry = ttk.Entry(openai_frame, width=50)
+            api_gpt_entry.grid(row=1, column=1, pady=5, padx=5)
+            
+            def guardar():
+                api_key = api_gpt_entry.get()
+                save_config_gpt(api_key)
+            
+            sub_button = ttk.Button(openai_frame, text="Accept", command=guardar)
+            sub_button.grid(row=2, columnspan=2, pady=5, padx=5)
+        
+        elif item == "Install Lenguajes":
+            hide_frames()
+            lenguajes_frame.grid(row=0, column=1, sticky="nsew")
+            
+            for widget in lenguajes_frame.winfo_children():
+                widget.destroy()
+                
+            num_colums = 3
+            
+            for index, lenguaje in enumerate(lenguajes):
+                row = index // num_colums
+                column = index & num_colums
+                button = ttk.Button(lenguajes_frame, text=lenguaje, command=lambda lenguaje=lenguaje: install_lenguaje(lenguaje))
+                button.grid(row=row, column=column, sticky="ew", padx=2, pady=2)
+        
+        elif item == "Install choco":
+            hide_frames()
+            choco_frame.grid(row=0, column=1, sticky="nsew")
+            quest_label = ttk.Label(choco_frame, text="You want install pakage manager Chocolatey in your powersell")
+            quest_label.grid(row=0,columnspan=2, sticky="ew")
+            
+            yes_btn = ttk.Button(choco_frame, text="YES", command=install_choco)
+            yes_btn.grid(row=1, column=0, sticky="ew", padx=2, pady=2)
+            
+            no_btn = ttk.Button(choco_frame, text="NO", command=hide_frames)
+            no_btn.grid(row=1, column=1, sticky="ew", padx=2, pady=2)
+            
+        
+        elif item == "Install scoop":
+            hide_frames()
+            scoop_frame.grid(row=0, column=1, sticky="nsew")
+            quest_label = ttk.Label(scoop_frame, text="You want install pakage manager Scoop in your powersell")
+            quest_label.grid(row=0,columnspan=2, sticky="ew")
+            
+            yes_btn = ttk.Button(scoop_frame, text="YES", command=install_scoop)
+            yes_btn.grid(row=1, column=0, sticky="ew", padx=2, pady=2)
+            
+            no_btn = ttk.Button(scoop_frame, text="NO", command=hide_frames)
+            no_btn.grid(row=1, column=1, sticky="ew", padx=2, pady=2)
+        
+        elif item == "Install Editors":
+            hide_frames()
+            editors_frame.grid(row=0, column=1, sticky="nsew")
+            
+            for widget in editors_frame.winfo_children():
+                widget.destroy()
+
+            num_colums = 3
+            
+            for index, editor in enumerate(editores_disponibles):
+                row = index // num_colums
+                column = index & num_colums
+                button = ttk.Button(editors_frame, text=editor, command=lambda editor=editor: install_editor(editor))
+                button.grid(row=row, column=column, sticky="ew", padx=2, pady=2)
+            
+            
+        elif item == "Backup Settings":
+            hide_frames()
+            backup_frame.grid(row=0, column=1, sticky="nsew")
+            
+            global combo_frequency
+            global status_label
+            
+            frequency_options = ["Daily", "Weekly", "Monthly"]
+            combo_frequency = ttk.Combobox(backup_frame, values=frequency_options)
+            combo_frequency.set("Daily")
+            combo_frequency.grid(row=0, columnspan=2, padx=5, pady=5)
+            
+            status_label = ttk.Label(backup_frame, text="")
+            status_label.grid(row=1, columnspan=2, padx=5, pady=5)
+            
+            btn_confirm = ttk.Button(backup_frame, text="Confirm", command=get_selected_frequency)
+            btn_confirm.grid(row=2, column=0, padx=5, pady=5)
+            
+            btn_backup_now = ttk.Button(backup_frame, text="Create Now", command=backup_now)
+            btn_backup_now.grid(row=2, column=1, padx=5, pady=5)
+        
+        elif item == "Terminal Setting":
+            hide_frames()
+            terminal_frame.grid(row=0, column=1, sticky="nsew")
+            
+            terminal_label = ttk.Label(terminal_frame, text="Select Terminal")
+            terminal_label.grid(row=0, columnspan=2, padx=5, pady=5)
+            
+            selected_terminal = tk.StringVar()
+            terminal_choices = ["Select Terminal", "Command Pormpt", "Windows Terminal", "PowerShell", "Git Bash"]
+            terminal_menu = ttk.OptionMenu(terminal_frame, selected_terminal, *terminal_choices)
+            terminal_menu.grid(row=1, columnspan=2, pady=5, padx=5)
+            
+            terminal_path_label = ttk.Label(terminal_frame, text="Terminal Executable Path: ")
+            terminal_path_label.grid(row=2, column=0, padx=5, pady=5)
+            
+            terminal_path_entry = ttk.Entry(terminal_frame, width=50)
+            terminal_path_entry.grid(row=2, column=1, padx=5, pady=5)
+            
+            def save_settigns():
+                selected_terminal_value = selected_terminal.get()
+                terminal_path_value = terminal_path_entry.get()
+                
+                config = {
+                    "Selected_terminal": selected_terminal_value,
+                    "terminal_path": terminal_path_value
+                    }
+                with open("terminal_config.json", "w") as f:
+                    json.dump(config, f)
+                    
+                    
+            save_button = ttk.Button(terminal_frame, text="Save", command=save_settigns)
+            save_button.grid(row=3, columnspan=2, padx=5, pady=5)
+        
+        elif item == "Theme":
+            hide_frames()
+            theme_frame.grid(row=0, column=1, sticky="nsew")
+            
+            def change_theme1(theme_name):
+                root.set_theme(theme_name)
+                root.update_idletasks()
+            
+            for widget in theme_frame.winfo_children():
+                widget.destroy()
+            
+            num_columns = 3
+
+            for index, theme in enumerate(temas):
+                row = index // num_columns
+                column = index % num_columns
+                button = ttk.Button(theme_frame, text=theme, command=lambda theme=theme: change_theme1(theme))
+                button.grid(row=row, column=column, sticky="ew", padx=2, pady=2)
+
+        elif item == "TTKTheme":
+            hide_frames()
+            ttktheme_frame.grid(row=0, column=1, sticky="nsew")
+            def ttk_themes():
+                style = ttk.Style()
+                themes = style.theme_names()
+                return themes
+            
+            def change_ttktheme(theme_name):
+                style = ttk.Style()
+                style.theme_use(theme_name)
+                            
+            themes = ttk_themes()
+            
+            for widget in ttktheme_frame.winfo_children():
+                widget.destroy()
+                
+            num_columns = 3
+            
+            for index, theme in enumerate(themes):
+                row = index // num_columns
+                column = index % num_columns
+                button1 = ttk.Button(ttktheme_frame, text=theme, command=lambda theme=theme: change_ttktheme(theme))
+                button1.grid(row=row, column=column, sticky="ew", padx=2, pady=2)
+            button2 = ttk.Button(ttktheme_frame, text="Create Theme", command=create_theme)
+            button2.grid(row=row, column=column, sticky="ew", padx=2, pady=2)
+    
+    list_settings.bind("<Double-1>", select_user_config)
+    main_frame.grid_rowconfigure(0, weight=1)
+    main_frame.grid_rowconfigure(1, weight=8)
+    main_frame.grid_rowconfigure(2, weight=1)
+    main_frame.grid_columnconfigure(1, weight=1)
 
 path = resource_path("software.png")
 
@@ -2264,48 +2425,7 @@ menu_archivo.add_command(label="Push Update Github", command=push_actualizacione
 menu_archivo.add_command(label='Delete Proyect', command=lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4]))
 menu_archivo.add_command(label="Generate Report", command=generar_informe)
 
-menu_settings = tk.Menu(menu, tearoff=0)
-menu.add_cascade(label="Settings", menu=menu_settings)
-menu_settings.add_command(label="Config Editor", command=config_editors)
-menu_settings.add_command(label="Github", command=config_github)
-menu_settings.add_command(label="OpenAI", command=config_openai)
-lenguajes_menu = tk.Menu(menu_settings, tearoff=0)
-menu_settings.add_cascade(label='Install Lenguajes', menu=lenguajes_menu)
-for lenguaje in lenguajes:
-    lenguajes_menu.add_command(label=lenguaje, command=lambda lenguaje=lenguaje: install_lenguaje(lenguaje))
-menu_settings.add_command(label='Install Choco', command=lambda: install_choco)
-menu_settings.add_command(label="Install Scoop", command=lambda: install_scoop)
-menu_editor = tk.Menu(menu_settings, tearoff=0)
-menu_settings.add_cascade(label="Instalar Editor", menu=menu_editor)
-menu_editor.add_command(label="Visual Studio Code", command=lambda: install_editor("Visual Studio Code"))
-menu_editor.add_command(label="Sublime Text", command=lambda: install_editor("Sublime Text"))
-menu_editor.add_command(label="Vim",  command=lambda: install_editor("Vim"))
-menu_editor.add_command(label="Neovim", command=lambda: install_editor("Neovim"))
-menu_editor.add_command(label="Emacs", command=lambda: install_editor("Emacs"))
-menu_editor.add_command(label="Notepad++", command=lambda: install_editor("Notepad++"))
-menu_editor.add_command(label="Brackets", command=lambda: install_editor("Brackets"))
-menu_editor.add_command(label="Geany", command=lambda: install_editor("Geany"))
-menu_editor.add_command(label="gedit", command=lambda: ms.showinfo("gedit", "gedit is a opensource editor for linux but in windows you can buy on microsoft store for 4$"))
-menu_editor.add_command(label="Nano", command=lambda: install_editor("Nano"))
-menu_editor.add_command(label="Kate", command=lambda: install_editor("Kate"))
-menu_editor.add_command(label="Eclipse", command=lambda: install_editor("Eclipse"))
-menu_editor.add_command(label="IntelliJ IDEA", command=lambda: install_editor("Intellij IDEA"))
-menu_editor.add_command(label="PyCharm")
-menu_editor.add_command(label="Visual Studio")
-menu_editor.add_command(label="Code::Blocks")
-menu_editor.add_command(label="NetBeans")
-menu_editor.add_command(label="Android Studio")
-menu_settings.add_command(label="Backup Setting", command=setting_backup)
-menu_settings.add_command(label="Terminal", command=select_terminal)
-theme_menu = tk.Menu(menu_settings, tearoff=0)
-ttkmenu = tk.Menu(menu_settings, tearoff=0)
-menu_settings.add_cascade(label="Theme", menu=theme_menu)
-for tema in temas:
-    theme_menu.add_command(label=tema, command=lambda tema=tema: change_theme(tema))
-ttkmenu.add_command(label="Create Theme", command=create_theme)
-menu_settings.add_cascade(label="ttkbootstrap Themes", menu=ttkmenu)
-for tema in ttkbootstrap_themes:
-    ttkmenu.add_command(label=tema, command=lambda theme_name=tema: change_bootstrap_theme(theme_name))
+menu.add_command(label="Settings", command=setting_window)
 
 help_menu = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label="Help", menu=help_menu)
