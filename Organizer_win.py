@@ -11,6 +11,7 @@ import webbrowser
 import tkinter as tk
 import jedi
 import markdown
+from numpy import column_stack, pad
 import requests
 import pygments.lexers
 import platform
@@ -52,13 +53,11 @@ def check_new_version():
         url = "https://api.github.com/repos/Nooch98/Organizer/releases/latest"
         
         response = requests.get(url)
-        print(response)
         
         if response.status_code == 200:
             release_data = response.json()
             
             latest_version = release_data.get("tag_name")
-            print(latest_version)
             
             if latest_version:
                 if latest_version > current_version:
@@ -798,7 +797,8 @@ def agregar_proyecto_existente():
         descripcion_entry.delete(0, tk.END)
         repo_entry.delete(0, tk.END)
 
-def crear_nuevo_proyecto():    
+def crear_nuevo_proyecto():
+    global new_description_entry, new_name_entry, ventana_lenguaje
     ventana_lenguaje = tk.Toplevel(orga)
     ventana_lenguaje.title("Selection lenguaje")
     ventana_lenguaje.iconbitmap(path)
@@ -806,8 +806,20 @@ def crear_nuevo_proyecto():
     main_frame = ttk.Frame(ventana_lenguaje)
     main_frame.pack()
     
+    new_name_label = ttk.Label(main_frame, text="Name")
+    new_name_label.grid(row=0, columnspan=2, padx=2, pady=2, sticky="n")
+    
+    new_name_entry = ttk.Entry(main_frame, width=50)
+    new_name_entry.grid(row=2, columnspan=2, padx=2, pady=2, sticky="ew")
+    
+    new_description_label = ttk.Label(main_frame, text="Desciption")
+    new_description_label.grid(row=3, padx=2, pady=2, columnspan=2)
+    
+    new_description_entry = ttk.Entry(main_frame, width=50)
+    new_description_entry.grid(row=4, padx=2, pady=2, columnspan=2, sticky="ew")
+    
     label = ttk.Label(main_frame, text="Select the project language:")
-    label.grid(row=0, columnspan=2, pady=5, padx=5)
+    label.grid(row=5, columnspan=2, pady=5, padx=5)
     
     lenguaje_options = ["Selection lenguaje", "Python", "NodeJS", "bun", "React", "Vue", "C++", "C#", "Rust", "Go"]
     
@@ -817,16 +829,16 @@ def crear_nuevo_proyecto():
     seleccion.set(lenguaje_options[0])
     
     menu_lenguaje = ttk.OptionMenu(main_frame, seleccion, *lenguaje_options)
-    menu_lenguaje.grid(row=1, columnspan=2, padx=5, pady=5)
+    menu_lenguaje.grid(row=6, columnspan=2, padx=5, pady=5)
     
     rules_label = ttk.Label(main_frame, text="If you create git repo insert in textbox your rules for the .gitignore")
-    rules_label.grid(row=2, columnspan=2, padx=5, pady=5)
+    rules_label.grid(row=7, columnspan=2, padx=5, pady=5)
     
     textbox = scrolledtext.ScrolledText(main_frame)
-    textbox.grid(row=3, columnspan=2, pady=5, padx=5)
+    textbox.grid(row=8, columnspan=2, pady=5, padx=5)
     
     btn_selec = ttk.Button(main_frame, text="Select", command=lambda: ejecutar_con_threading(seleccion.get(), textbox))
-    btn_selec.grid(row=5, columnspan=2, pady=5, padx=5)
+    btn_selec.grid(row=9, columnspan=2, pady=5, padx=5)
         
 def ejecutar_con_threading(lenguaje, textbox):
     threading.Thread(target=iniciar_new_proyect, args=(lenguaje, textbox)).start()
@@ -1120,8 +1132,8 @@ def run_git_command(command, cwd=None):
         ms.showerror("ERROR", f"Error: {e.output.decode()}")
    
 def iniciar_new_proyect(lenguaje, textbox):
-    nombre = nombre_entry.get()
-    descripcion = descripcion_entry.get()
+    nombre = new_name_entry.get()
+    descripcion = new_description_entry.get()
     ruta_proyecto = filedialog.askdirectory()
     repo = repo_entry.get()
     rules = textbox.get("1.0", "end")
@@ -1135,7 +1147,6 @@ def iniciar_new_proyect(lenguaje, textbox):
                 respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
                 if respuesta:
                     crear_repo_github(nombre, descripcion, ruta_completa)
-                print(f"Este es el lenguaje:{lenguaje}")
                 insertar_proyecto(nombre, descripcion, ruta_completa, repo, lenguaje)
                 git = ms.askyesno("Create Git", "Do you want create Git Repo")
                 if git:
@@ -1264,10 +1275,8 @@ def iniciar_new_proyect(lenguaje, textbox):
                         git_init(ruta_completa)
                         git_add(ruta_completa)
     
-    nombre_entry.delete(0, tk.END)
-    descripcion_entry.delete(0, tk.END)
-    repo_entry.delete(0, tk.END)
-    textbox.delete(0, tk.END)
+    ventana_lenguaje.destroy()
+    mostrar_proyectos()
 
 def eliminar_proyecto(id, ruta):
     try:
@@ -1350,7 +1359,7 @@ def show_context_menu(event):
         ("Open Explorer", lambda: abrir_explorador(event)),
         ("Open Github", lambda: abrir_repositorio(event)),
         ("Edit", modificar_proyecto),
-        ("Delete", eliminar_proyecto),
+        ("Delete", lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4])),
         ("Version Control", mostrar_control_versiones),
         ("Detect Dependencies", detectar_dependencias),
         ("Git Init", lambda: git_init(selected_project_path)),
@@ -2254,8 +2263,7 @@ def setting_window():
     main_frame.grid_rowconfigure(1, weight=8)
     main_frame.grid_rowconfigure(2, weight=1)
     main_frame.grid_columnconfigure(1, weight=1)
-    
-    
+
 def mostrar_control_versiones():
     # Obtener la ruta del proyecto seleccionado desde la pantalla principal
     seleccion = tree.selection()
@@ -2527,10 +2535,33 @@ def crear_proyecto_con_estructura(estructura):
                 f.write("")  # Crear archivo vacío
 
     ms.showinfo("Succes", "Project created with the template structure.")
+    
+def on_key_release(event):
+    search_text = search_entry.get().strip()
+
+    # Limpiar el Treeview antes de mostrar nuevos resultados
+    for item in tree.get_children():
+        tree.delete(item)
+
+    # Si el campo de búsqueda está vacío, mostrar todos los proyectos
+    if not search_text:
+        mostrar_proyectos()
+    else:
+        # Conectar a la base de datos y buscar los proyectos que coinciden
+        conn = sqlite3.connect('proyectos.db')
+        cursor = conn.cursor()
+        query = "SELECT * FROM proyectos WHERE nombre LIKE ? OR descripcion LIKE ? OR lenguaje LIKE ?"
+        cursor.execute(query, ('%' + search_text + '%', '%' + search_text + '%', '%' + search_text + '%'))
+        proyectos = cursor.fetchall()
+        conn.close()
+
+        # Insertar los resultados de búsqueda en el Treeview
+        for proyecto in proyectos:
+            tree.insert('', 'end', values=proyecto)
 
 orga = ThemedTk()
 orga.title('Proyect Organizer')
-orga.geometry("1230x420")
+orga.geometry("1230x440")
 path = resource_path("software.ico")
 orga.iconbitmap(path)
 temas = orga.get_themes()
@@ -2789,7 +2820,14 @@ editor_options = [
     ]
 selected_editor.set(editor_options[0])
 editor_menu = ttk.OptionMenu(main_frame, selected_editor, *editor_options)
-editor_menu.grid(row=9, column=0, padx=5, pady=5, sticky="sw")
+editor_menu.grid(row=10, column=0, padx=5, pady=5, sticky="sw")
+
+search_label = ttk.Label(main_frame, text="Search Project:")
+search_label.grid(row=9, column=0, padx=2, pady=2, sticky="ew")
+
+search_entry = ttk.Entry(main_frame, width=170)
+search_entry.grid(row=9, column=1, padx=2, pady=2, sticky="ew")
+search_entry.bind("<KeyRelease>", on_key_release)
 
 tree.bind("<Button-3>", show_context_menu)
 tree.bind("<Double-1>", abrir_repositorio)
@@ -2798,13 +2836,13 @@ tree.bind("<<TreeviewSelect>>", on_project_select)
 #tree.bind("<Double-Button-1>", previsualizar_proyecto)
 
 btn_abrir = ttk.Button(main_frame, text='Open Proyect', command=lambda: abrir_threading(tree.item(tree.selection())['values'][4], selected_editor.get()))
-btn_abrir.grid(row=9, columnspan=2, pady=5, padx=5, sticky="s")
+btn_abrir.grid(row=10, columnspan=2, pady=5, padx=5, sticky="s")
 
 btn_install = ttk.Button(main_frame, text="Install dependencies", command=lambda: install_librarys(tree.item(tree.selection())['values'][3]))
 btn_install.grid(row=4, column=1, padx=5, pady=5, sticky="e")
 
 version_label = ttk.Label(main_frame, text=version)
-version_label.grid(row=9, column=1, pady=5, padx=5, sticky="se")
+version_label.grid(row=10, column=1, pady=5, padx=5, sticky="se")
 
 orga.grid_rowconfigure(5, weight=1)
 orga.grid_columnconfigure(0, weight=1)
