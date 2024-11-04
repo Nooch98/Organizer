@@ -11,7 +11,6 @@ import webbrowser
 import tkinter as tk
 import jedi
 import markdown
-import pkg_resources
 import requests
 import pygments.lexers
 import platform
@@ -265,9 +264,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     
     def current_theme_get():
         return selected_theme
-
-    def list_libraris():
-        return [str(d).split(" ")[0] for d in pkg_resources.working_set]
     
     def read_requirements(file_path):
         dependencies = []
@@ -363,28 +359,35 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         
         return data.get("dependencies", [])
             
-    def load_dependencies():
-        file_path = filedialog.askopenfilename(
-            title="Seleccionar archivo de dependencias",
-            filetypes=[("Text files", "*.txt;*.toml;*.csproj;*.json")]
-        )
-        if file_path.endswith(".toml"):
-            libraries = read_rust_dependencies(file_path)
-            show_requiriments(libraries)
-        elif file_path.endswith(".csproj"):
-            libraries = read_csharp_dependencies(file_path)
-            show_requiriments(libraries)
-        elif file_path.endswith("CMakeLists.txt"):
-            libraries = read_cmake_dependencies(file_path)
-            show_requiriments(libraries)
-        elif file_path.endswith(".json"):
-            libraries = read_vcpkg_dependencies(file_path)
-            show_requiriments(libraries)
-        elif file_path.endswith(".txt"):
-            libraries = read_requirements(file_path)
-            show_requiriments(libraries)
-        else:
-            libraries = []
+    def load_dependencies(file_path=None):
+        if not file_path:
+            file_path = filedialog.askopenfilename(
+                title="Seleccionar archivo de dependencias",
+                filetypes=[("Text files", "*.txt;*.toml;*.csproj;*.json")]
+            )
+        
+        if file_path:
+            denpendencies_entry.delete(0, tk.END)
+            denpendencies_entry.insert(0, file_path)
+                
+            if file_path.endswith(".toml"):
+                libraries = read_rust_dependencies(file_path)
+                show_requiriments(libraries)
+            elif file_path.endswith(".csproj"):
+                libraries = read_csharp_dependencies(file_path)
+                show_requiriments(libraries)
+            elif file_path.endswith("CMakeLists.txt"):
+                libraries = read_cmake_dependencies(file_path)
+                show_requiriments(libraries)
+            elif file_path.endswith(".json"):
+                libraries = read_vcpkg_dependencies(file_path)
+                show_requiriments(libraries)
+            elif file_path.endswith(".txt"):
+                libraries = read_requirements(file_path)
+                show_requiriments(libraries)
+            else:
+                libraries = []
+            
     
     def show_requiriments(libraries):
         for widget in lib_frame.winfo_children():
@@ -479,42 +482,47 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             
             command.append(file_path)  # Añadir el archivo .py principal
         else:
-            ms.showerror("ERROR", "Tipo de archivo no soportado para compilación.")
+            ms.showerror("ERROR", "File type not supported for compilation.")
             return
 
         def run_conversion():
-            output_box.insert(tk.END, f"\nEjecuting {command}\n")
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True)
-            output_box.insert(tk.END, "\nWait to finish...\n")
+            convert_btn.config(state=tk.DISABLED)
+            output_box.insert(tk.END, f"\nExecuting {command}\n")
+            progressbar.grid(row=7, columnspan=2, padx=2, pady=2, sticky="ew")
+            progressbar.start()
+            process = subprocess.Popen(command, stderr=subprocess.PIPE, text=True, shell=True)
+            
+            def read_output():
+                global output_dir
+                for line in iter(process.stderr.readline, ""):
+                    output_box.insert(tk.END, line)
+                    output_box.see(tk.END)
+                    output_box.update_idletasks()
+                
+                process.wait()
+                output_box.insert(tk.END, "\nCompilación Complete.\n")
+                progressbar.stop()
+                progressbar.grid_forget()
 
-            for line in iter(process.stdout.readline, ""):
-                output_box.insert(tk.END, line)
-                output_box.see(tk.END)
-                output_box.update()
-
-            stderr_output, _ = process.communicate()
-            if stderr_output:
-                output_box.insert(tk.END, stderr_output)
-
-            output_box.insert(tk.END, "\nCompilación Complete.\n")
-
-            # Obtener el archivo .exe generado si es un proyecto Python
-            if file_extension == ".py":
                 base_filename = os.path.splitext(os.path.basename(file_path))[0]
                 output_dir = output_entry.get() if output_entry.get() else os.getcwd()
                 exe_path = os.path.join(output_dir, base_filename + ".exe")
 
-            open_explorer_button.config(state=tk.NORMAL)
-            clear_output.config(state=tk.NORMAL)
+                open_explorer_button.grid(row=8, column=2, padx=2, pady=2, sticky="ew")
+                clear_output.grid(row=8, column=0, padx=2, pady=2, sticky="ew")
+                convert_btn.config(state=tk.NORMAL)
+            
+            output_thread = threading.Thread(target=read_output)
+            output_thread.start()
 
         conversion_thread = threading.Thread(target=run_conversion)
         conversion_thread.start()
         
     def open_explorer():
-        if exe_path and os.path.exists(exe_path):
-            os.startfile(os.path.dirname(exe_path))
+        if output_dir:
+            os.startfile(output_dir)
         else:
-            ms.showwarning("Warning", "No se encontró el archivo .exe.")
+            ms.showwarning("Warning", "The .exe file was not found.")
 
     def update_command_label(file_path):
         command = ["pyinstaller"]
@@ -577,8 +585,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             
     def clear_all():
         output_box.delete(1.0, tk.END)
-        open_explorer_button.config(state=tk.DISABLED)
-        clear_output.config(state=tk.DISABLED)
+        open_explorer_button.grid_forget()
+        clear_output.grid_forget()
         
     def import_configuration():
         config_path = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")])
@@ -598,10 +606,16 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             onefile_var.set(config.get("onefile", False))
             noconsole_var.set(config.get("noconsole", False))
             
-            load_dependencies()
+            denpendencies_entry.delete(0, tk.END)
+            denpendencies_entry.insert(0, config.get("dependencies_path"))
             
+            dep_path = denpendencies_entry.get()
+            if dep_path:
+                load_dependencies(dep_path)
+            
+            selected_libraries = config.get("libraries", [])
             for lib, var in libraries_vars.items():
-                var.set(lib in config.get("libraries", []))
+                var.set(lib in selected_libraries)
                 
             additional_files.clear()
             additional_files.extend(config.get("additional_files", []))
@@ -613,6 +627,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             "file_path": file_entry.get(),
             "output_dir": output_entry.get(),
             "icon_path": icon_entry.get(),
+            "dependencies_path": denpendencies_entry.get(),
             "onefile": onefile_var.get(),
             "noconsole": noconsole_var.get(),
             "libraries": [lib for lib, var in libraries_vars.items() if var.get()],
@@ -637,7 +652,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         update_command_label(file_entry.get())
 
     def converter_options():
-        global file_entry, lib_frame, libraries_vars, icon_entry, onefile_var, noconsole_var, output_box, output_entry, command_label, open_explorer_button, clear_output, additional_files
+        global file_entry, lib_frame, libraries_vars, icon_entry, onefile_var, noconsole_var, output_box, output_entry, command_label, open_explorer_button, clear_output, additional_files, progressbar, convert_btn, denpendencies_entry
 
         converter = ttk.Toplevel(editor)
         converter.title("Compiler")
@@ -713,14 +728,18 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         output_box = tk.Text(frame, height=15, width=80, wrap='word')
         output_box.grid(row=6, columnspan=3, padx=2, pady=2, sticky="ew")
 
-        clear_output = ttk.Button(frame, text="Clear Output", command=clear_all, state=tk.DISABLED)
-        clear_output.grid(row=7, column=0, padx=2, pady=2, sticky="ew")
+        clear_output = ttk.Button(frame, text="Clear Output", command=clear_all)
 
-        convert_btn = ttk.Button(frame, text="Convert Py to exe", command=execute_conversion)
-        convert_btn.grid(row=7, column=1, padx=2, pady=2, sticky="ew")
+        convert_btn = ttk.Button(frame, text="Compile", command=execute_conversion)
+        convert_btn.grid(row=8, column=1, padx=2, pady=2, sticky="ew")
         
-        open_explorer_button = ttk.Button(frame, text="Abrir Carpeta", command=open_explorer, state=tk.DISABLED)
-        open_explorer_button.grid(row=7, column=2, padx=2, pady=2, sticky="ew")
+        open_explorer_button = ttk.Button(frame, text="Open Folder", command=open_explorer)
+        
+        progressbar = ttk.Progressbar(frame, orient="horizontal", mode='indeterminate', length=500)
+        
+        denpendencies_entry = ttk.Entry(frame, width=40)
+        denpendencies_entry.grid_forget()
+        
 
     
     def change_code_theme(theme_name):
@@ -1169,7 +1188,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     file_menu = tk.Menu(menu_bar, tearoff=0)
     menu_bar.add_cascade(label="File", menu=file_menu)
     file_menu.add_command(label="Save", command=guardar_cambios)
-    file_menu.add_command(label="Convert py to exe", command=converter_options)
+    file_menu.add_command(label="Compiler", command=converter_options)
     
     settings_menu = tk.Menu(menu_bar, tearoff=0)
     menu_bar.add_cascade(label='Settings', menu=settings_menu)
@@ -3341,6 +3360,7 @@ menu_archivo.add_command(label="Push Update Github", command=lambda: push_actual
 menu_archivo.add_command(label='Delete Proyect', command=lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4]))
 menu_archivo.add_command(label="Generate Report", command=generar_informe)
 
+
 menu_settings = tk.Menu(menu, tearoff=0)
 menu.add_command(label="Settings", command=setting_window)   
 
@@ -3424,7 +3444,6 @@ version_label.grid(row=10, column=1, pady=5, padx=5, sticky="se")
 orga.grid_rowconfigure(5, weight=1)
 orga.grid_columnconfigure(0, weight=1)
 orga.grid_columnconfigure(2, weight=1)
-
 
 crear_base_datos()
 mostrar_proyectos()
