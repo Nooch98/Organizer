@@ -8,18 +8,21 @@ import threading
 import git
 import time
 import webbrowser
+import importlib
 import tkinter as tk
 import jedi
 import markdown
 import requests
-import importlib.util
 import pygments.lexers
 import platform
 import subprocess
-import markdown2
 import ttkbootstrap as ttk
+import markdown2
+import re
+import glob
 #--------------------------------------------------------#
 from tkinter import OptionMenu, StringVar, filedialog, simpledialog
+from urllib.parse import urlparse
 from tkinter import messagebox as ms
 from tkinter import scrolledtext, PhotoImage
 from bs4 import BeautifulSoup
@@ -30,15 +33,67 @@ from ttkthemes import ThemedTk
 from chlorophyll import CodeView
 from pathlib import Path
 from ttkbootstrap.constants import *
+from git import Repo
+import xml.etree.ElementTree as ET
 
-main_version = "ver.1.9.3"
+main_version = "ver.1.9.4"
 version = str(main_version)
 archivo_configuracion_editores = "configuracion_editores.json"
 archivo_confgiguracion_github = "configuracion_github.json"
 archivo_configuracion_gpt = "configuration_gpt.json"
 security_backup = "security_backup.json"
+config_file = "config.json"
 selected_project_path = None
 text_editor = None
+app_name = "./Organizer_linux"
+exe_path = os.path.abspath(sys.argv[0])
+current_version = "v1.9.4"
+img = "software.png"
+
+def check_new_version():
+    try:
+        url = "https://api.github.com/repos/Nooch98/Organizer/releases/latest"
+
+        response = requests.get(url)
+
+        if response.status_code == 200:
+            release_data = response.json()
+            latest_version = release_data.get("tag_name")
+
+            if latest_version:
+                if latest_version > current_version:
+                    quest = ms.askyesno("Update", f"Version {latest_version} of Organizer Available.\n You want install")
+                    if quest:
+                        assets = release_data.get("assets", [])
+                        if not assets:
+                            return "Can't found any file to download"
+                        
+                        selectd_asset = None
+                        for asset in assets:
+                            if asset["name"] == "Organizer_linux.zip":
+                                selectd_asset = asset
+                                break
+                        if not selectd_asset:
+                            return "Can't found the file Organizer_linux.zip"
+                        asset_url = selectd_asset["browser_download_url"]
+                        current_directory = os.getcwd()
+                        file_path = os.path.join(current_directory, selectd_asset["name"])
+                        download_response = requests.get(asset_url)
+                        with open(file_path, "wb") as file:
+                            file.write(download_response)
+                        ms.showinfo("Update", "Closing Organizer to update")
+                        subprocess.Popen("./updater_linux")
+                        root.after(1000, root.destroy())
+                    else:
+                        pass
+                else:
+                    pass
+            else:
+                ms.showerror("ERROR", "Can't Obtain the last version")
+        else:
+            ms.showerror("ERROR", f"Can't Verify the version: {response.status_code}")
+    except Exception as e:
+        ms.showerror("ERROR", f"Can't verify the version: {str(e)}")
 
 def crear_base_datos():
     conn = sqlite3.connect('proyectos.db')
@@ -202,13 +257,11 @@ def abrir_editor_thread(ruta, name):
     threading.Thread(target=abrir_editor_integrado, args=(ruta, name)).start()
 
 def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
-    import time
     global current_file
 
     editor = ThemedTk()
     editor.title("Editor Integrated")
     editor.geometry("800x400")
-    #editor.iconphoto(True, tk.PhotoImage(file=path))
     
     current_file = None
     tabs = ttk.Notebook(editor)
@@ -238,6 +291,461 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     
     def current_theme_get():
         return selected_theme
+    
+    def read_requiriments(file_path):
+        dependencies = []
+        with open(file_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+
+                match = re.match(r'^\s*([a-zA-Z0-9_\-]+)', line)
+                if match:
+                    dependencies.append(match.group(1))
+
+        return dependencies
+    
+    def read_rust_dependencies(file_path):
+        if not os.path.exists(file_path):
+            return []
+        
+        libraries = set()
+        with open(file_path, 'r') as f:
+            in_dependencies_section = False
+            for line in f:
+                # Detectar si estamos en la sección [dependencies]
+                if line.strip() == "[dependencies]":
+                    in_dependencies_section = True
+                elif line.strip().startswith("[") and in_dependencies_section:
+                    # Salir si encontramos otra sección
+                    break
+                elif in_dependencies_section:
+                    match = re.match(r'^\s*([a-zA-Z0-9\-_]+)', line)
+                    if match:
+                        libraries.add(match.group(1))  # Solo el nombre
+
+        return list(libraries)
+    
+    def read_csharp_dependencies(file_path):
+        if not os.path.exists(file_path):
+            return []
+        
+        try:
+            # Parsear el XML
+            tree = ET.parse(file_path)
+            root = tree.getroot()
+            
+            # Intentar obtener el espacio de nombres del archivo
+            namespaces = {'msbuild': root.tag.split('}')[0].strip('{') if '}' in root.tag else ''}
+            
+            libraries = set()
+            
+            # Buscar todos los PackageReference con o sin espacio de nombres
+            if namespaces['msbuild']:
+                for package in root.findall(".//msbuild:PackageReference", namespaces):
+                    name = package.get("Include")
+                    if name:
+                        libraries.add(name)
+            else:
+                for package in root.findall(".//PackageReference"):
+                    name = package.get("Include")
+                    if name:
+                        libraries.add(name)
+            
+            return list(libraries)
+        
+        except ET.ParseError:
+            ms.showerror('ERROR', "Error: Could not parse .csproj file. Make sure it is well formed.")
+            return []
+        except Exception as e:
+            ms.showerror('ERROR', f"Error reading dependencies from .csproj file: {e}")
+            return []
+        
+    def read_cmake_dependencies(file_path):
+        if not os.path.exists(file_path):
+            return []
+        
+        libraries = set()
+        with open(file_path, 'r') as f:
+            for line in f:
+                match = re.match(r'^\s*find_package\(\s*([a-zA-Z0-9\-_]+)', line)
+                if match:
+                    libraries.add(match.group(1))  # Solo el nombre
+
+        return list(libraries)
+    
+    def read_vcpkg_dependencies(file_path):
+        if not os.path.exists(file_path):
+            return []
+        
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+        
+        return data.get("dependencies", [])
+    
+    def load_dependencies():
+        file_path = filedialog.askopenfilename(
+            title="Seleccionar archivo de dependencias")
+        
+        if file_path.endswith(".toml"):
+            libraries = read_rust_dependencies(file_path)
+            show_requiriments(libraries)
+        elif file_path.endswith(".csproj"):
+            libraries = read_csharp_dependencies(file_path)
+            show_requiriments(libraries)
+        elif file_path.endswith("CMakeLists.txt"):
+            libraries = read_cmake_dependencies(file_path)
+            show_requiriments(libraries)
+        elif file_path.endswith(".json"):
+            libraries = read_vcpkg_dependencies(file_path)
+            show_requiriments(libraries)
+        elif file_path.endswith(".txt"):
+            libraries = read_requiriments(file_path)
+            show_requiriments(libraries)
+        else:
+            libraries = []
+
+    def show_requiriments(libraries):
+        global var
+        for widget in lib_frame.winfo_children():
+            widget.destroy()
+
+        num_columns = 4
+        row = 0
+        col = 0
+
+        for lib in libraries:
+            var = tk.BooleanVar(value=False)
+            libraries_vars[lib] = var
+            # Pasar el valor de `lib` a la lambda usando `lib=lib`
+            checkbox = ttk.Checkbutton(
+                lib_frame,
+                text=lib,
+                variable=var,
+                command=lambda lib=lib: update_command_label(file_entry.get())
+            )
+            checkbox.grid(row=row, column=col, sticky="ew", padx=2, pady=2)
+
+            col += 1
+            if col >= num_columns:
+                col = 0
+                row += 1
+
+    def get_compiler_command(file_path, libraries):
+        if file_path.endswith(".csproj"):
+            return ["dotnet", "build", file_path]
+        elif file_path.endswith("Cargo.toml"):
+            return ["cargo", "build", "--release", "--manifest-path", file_path]
+        elif file_path.endswith("CMakeLists.txt"):
+            build_dir = os.path.join(os.path.dirname(file_path), "build")
+            os.makedirs(build_dir, exist_ok=True)
+            return ["cmake", "-S", os.path.dirname(file_path), "-B", build_dir, "&&", "cmake", "--build", build_dir]
+        elif file_path.endswith(".txt") or file_path.endswith(".json"):
+            # Usa PyInstaller para archivos Python
+            command = ["pyinstaller"]
+            if onefile_var.get():
+                command.append("--onefile")
+            if noconsole_var.get():
+                command.append("--noconsole")
+            if icon_entry.get():
+                command.extend(["--icon", icon_entry.get()])
+            if output_entry.get():
+                command.extend(["--distpath", output_entry.get()])
+            
+            # Agregar dependencias seleccionadas para ocultarlas como imports
+            for lib in libraries:
+                command.extend(["--hidden-import", lib])
+            
+            command.append(file_entry.get())  # Añadir el archivo .py principal
+            return command
+        else:
+            raise ValueError("No se reconoce el tipo de archivo para compilación.")
+        
+    def convert_to_exe(file_path):
+        global exe_path
+        
+        # Determinar la extensión del archivo
+        file_extension = os.path.splitext(file_path)[1]
+
+        # Comando a ejecutar basado en la extensión del archivo
+        if file_extension == ".csproj":
+            command = ["dotnet", "build", file_path]
+        elif file_extension == ".rs":
+            command = ["cargo", "build", "--release", "--manifest-path", file_path]
+        elif file_extension == ".c" or file_extension == ".cpp":
+            # Asumimos que hay un CMakeLists.txt en el mismo directorio
+            build_dir = os.path.join(os.path.dirname(file_path), "build")
+            os.makedirs(build_dir, exist_ok=True)
+            command = ["cmake", "-S", os.path.dirname(file_path), "-B", build_dir]
+            command.extend(["&&", "cmake", "--build", build_dir])
+        elif file_extension == ".py":
+            command = ["pyinstaller"]
+            if onefile_var.get():
+                command.append("--onefile")
+            if noconsole_var.get():
+                command.append("--noconsole")
+            if icon_entry.get():
+                command.extend(["--icon", icon_entry.get()])
+            if output_entry.get():
+                command.extend(["--distpath", output_entry.get()])
+            
+            for lib, var in libraries_vars.items():
+                if var.get():
+                    command.extend(["--hidden-import", lib])
+            
+            for additional_file in additional_files:
+                dest = "."  # Usar el directorio actual como destino
+                command.extend(["--add-data", f"{additional_file};{dest}"])
+            
+            command.append(file_path)  # Añadir el archivo .py principal
+        else:
+            ms.showerror("ERROR", "Tipo de archivo no soportado para compilación.")
+            return
+
+        def run_conversion():
+            output_box.insert(tk.END, f"\nEjecuting {command}\n")
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True)
+            output_box.insert(tk.END, "\nWait to finish...\n")
+
+            for line in iter(process.stdout.readline, ""):
+                output_box.insert(tk.END, line)
+                output_box.see(tk.END)
+                output_box.update()
+
+            stderr_output, _ = process.communicate()
+            if stderr_output:
+                output_box.insert(tk.END, stderr_output)
+
+            output_box.insert(tk.END, "\nCompilación Complete.\n")
+
+            # Obtener el archivo .exe generado si es un proyecto Python
+            if file_extension == ".py":
+                base_filename = os.path.splitext(os.path.basename(file_path))[0]
+                output_dir = output_entry.get() if output_entry.get() else os.getcwd()
+                exe_path = os.path.join(output_dir, base_filename + ".exe")
+
+            open_explorer_button.config(state=tk.NORMAL)
+            clear_output.config(state=tk.NORMAL)
+
+        conversion_thread = threading.Thread(target=run_conversion)
+        conversion_thread.start()
+        
+    def open_explorer():
+        if exe_path and os.path.exists(exe_path):
+            os.startfile(os.path.dirname(exe_path))
+        else:
+            ms.showwarning("Warning", "No se encontró el archivo .exe.")
+
+    def update_command_label(file_path):
+        command = ["pyinstaller"]
+
+        if onefile_var.get():
+            command.append("--onefile")
+        if noconsole_var.get():
+            command.append("--noconsole")
+        if icon_entry.get():
+            command.extend(["--icon", icon_entry.get()])
+        if output_entry.get():
+            command.extend(["--distpath", output_entry.get()])
+        
+        for additional_file in additional_files:
+            dest = "."
+            command.extend(["--add-data", f"{additional_file};{dest}"])
+
+        for lib, var in libraries_vars.items():
+            if var.get():
+                command.extend(["--hidden-import", lib])
+
+        command.append(file_path)
+
+        command_str = "Command: " + ' '.join(command)
+
+        max_line_length = 80
+        command_with_line_breaks = '\n'.join([command_str[i:i+max_line_length] for i in range(0, len(command_str), max_line_length)])
+        
+        command_label.config(text=command_with_line_breaks)
+
+    def select_file():
+        file_path = filedialog.askopenfilename(filetypes=[("Python Files", "*.py")])
+        if file_path:
+            file_entry.delete(0, tk.END)
+            file_entry.insert(0, file_path)
+            update_command_label(file_path)
+
+    def select_icon():
+        icon_path = filedialog.askopenfilename(filetypes=[("Icon Files", "*.ico")])
+        if icon_path:
+            icon_entry.delete(0, tk.END)
+            icon_entry.insert(0, icon_path)
+            update_command_label(file_entry.get())
+
+    def select_output_directory():
+        output_dir = filedialog.askdirectory()
+        if output_dir:
+            output_entry.delete(0, tk.END)
+            output_entry.insert(0, output_dir)
+            update_command_label(file_entry.get())
+
+    def execute_conversion():
+        file_path = file_entry.get()
+        if not file_path:
+            ms.showwarning("Warning", "Seleccione un archivo para convertir o compilar.")
+            return
+
+        output_box.delete(1.0, tk.END)
+        threading.Thread(target=convert_to_exe, args=(file_path,), daemon=True).start()
+            
+    def clear_all():
+        output_box.delete(1.0, tk.END)
+        open_explorer_button.config(state=tk.DISABLED)
+        clear_output.config(state=tk.DISABLED)
+        
+    def import_configuration():
+        config_path = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")])
+        if config_path:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+
+            file_entry.delete(0, tk.END)
+            file_entry.insert(0, config.get("file_path", ""))
+            
+            output_entry.delete(0, tk.END)
+            output_entry.insert(0, config.get("output_dir", ""))
+            
+            icon_entry.delete(0, tk.END)
+            icon_entry.insert(0, config.get("icon_path", ""))
+            
+            onefile_var.set(config.get("onefile", False))
+            noconsole_var.set(config.get("noconsole", False))
+            
+            load_dependencies()
+            
+            for lib, var in libraries_vars.items():
+                var.set(lib in config.get("libraries", []))
+                
+            additional_files.clear()
+            additional_files.extend(config.get("additional_files", []))
+
+            update_command_label(file_entry.get())
+            
+    def export_configuration():
+        config = {
+            "file_path": file_entry.get(),
+            "output_dir": output_entry.get(),
+            "icon_path": icon_entry.get(),
+            "onefile": onefile_var.get(),
+            "noconsole": noconsole_var.get(),
+            "libraries": [lib for lib, var in libraries_vars.items() if var.get()],
+            "additional_files": additional_files
+        }
+
+        config_path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
+        if config_path:
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=4)
+                
+    def add_additional_files():
+        files = filedialog.askopenfilenames(title="Select adicional files")
+        for file in files:
+            additional_files.append(file)
+        update_command_label(file_entry.get())
+        
+    def add_additional_folder():
+        folder_path = filedialog.askdirectory(title="Select adicional folder")
+        if folder_path:
+            additional_files.append(folder_path)
+        update_command_label(file_entry.get())
+
+    def converter_options():
+        global file_entry, lib_frame, libraries_vars, icon_entry, onefile_var, noconsole_var, output_box, output_entry, command_label, open_explorer_button, clear_output, additional_files
+        print("iniciando...")
+        converter = ThemedTk()
+        converter.title("Compiler")
+        
+        op_menu = tk.Menu(converter)
+        converter.config(menu=op_menu)
+        
+        file_menu = tk.Menu(op_menu, tearoff=0)
+        op_menu.add_cascade(label="Files", menu=file_menu)
+        file_menu.add_command(label="Import Config", command=import_configuration)
+        file_menu.add_command(label="Export Config", command=export_configuration)
+        file_menu.add_command(label="Load Requiriments", command=load_dependencies)
+        
+        under_frame = ttk.Frame(converter)
+        under_frame.grid(row=0, column=0, padx=2, pady=2, sticky="nsew")
+
+        frame = ttk.Frame(under_frame)
+        frame.grid(row=0, column=0, padx=2, pady=2, sticky="nsew")
+
+        lib_frame = ttk.Frame(under_frame)
+        lib_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+
+        libraries_vars = {}
+        additional_files = []
+
+        file_label = ttk.Label(frame, text="Main File:")
+        file_label.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
+
+        file_entry = ttk.Entry(frame, width=40)
+        file_entry.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+
+        file_btn = ttk.Button(frame, text="Select", command=select_file)
+        file_btn.grid(row=0, column=2, padx=2, pady=2, sticky="ew")
+
+        output_label = ttk.Label(frame, text="Output Dir:")
+        output_label.grid(row=1, column=0, padx=2, pady=2, sticky="ew")
+
+        output_entry = ttk.Entry(frame, width=40)
+        output_entry.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
+
+        output_btn = ttk.Button(frame, text="Select", command=select_output_directory)
+        output_btn.grid(row=1, column=2, padx=2, pady=2, sticky="ew")
+
+        icon_label = ttk.Label(frame, text="Select Icon:")
+        icon_label.grid(row=2, column=0, padx=2, pady=2, sticky="ew")
+
+        icon_entry = ttk.Entry(frame, width=40)
+        icon_entry.grid(row=2, column=1, padx=2, pady=2, sticky="ew")
+
+        icon_btn = ttk.Button(frame, text="Select Icon", command=select_icon)
+        icon_btn.grid(row=2, column=2, padx=2, pady=2, sticky="ew")
+
+        add_files_label = ttk.Label(frame, text="Additional Files")
+        add_files_label.grid(row=3, column=0, padx=2, pady=2, sticky="ew")
+        
+        add_files_btn = ttk.Button(frame, text="Add Files", command=add_additional_files)
+        add_files_btn.grid(row=3, column=1, padx=2, pady=2, sticky="ew")
+        
+        add_folder_btn = ttk.Button(frame, text="Add Folder", command=add_additional_folder)
+        add_folder_btn.grid(row=3, column=2, padx=2, pady=2, sticky="ew")
+        
+        command_label = ttk.Label(frame, text="Command: ")  # Corregido el nombre de la variable
+        command_label.grid(row=4, columnspan=3, padx=2, pady=2, sticky="ew")
+
+        onefile_var = tk.BooleanVar(value=False)
+        onefile_check = ttk.Checkbutton(frame, text="Onefile", variable=onefile_var,
+                                        command=lambda: update_command_label(file_entry.get()))
+        onefile_check.grid(row=5, column=0, padx=2, pady=2, sticky="ew")
+
+        noconsole_var = tk.BooleanVar(value=False)
+        noconsole_check = ttk.Checkbutton(frame, text="Noconsole", variable=noconsole_var,
+                                        command=lambda: update_command_label(file_entry.get()))
+        noconsole_check.grid(row=5, column=1, padx=2, pady=2, sticky="ew")
+
+        output_box = tk.Text(frame, height=15, width=80, wrap='word')
+        output_box.grid(row=6, columnspan=3, padx=2, pady=2, sticky="ew")
+
+        clear_output = ttk.Button(frame, text="Clear Output", command=clear_all, state=tk.DISABLED)
+        clear_output.grid(row=7, column=0, padx=2, pady=2, sticky="ew")
+
+        convert_btn = ttk.Button(frame, text="Convert Py to exe", command=execute_conversion)
+        convert_btn.grid(row=7, column=1, padx=2, pady=2, sticky="ew")
+        
+        open_explorer_button = ttk.Button(frame, text="Abrir Carpeta", command=open_explorer, state=tk.DISABLED)
+        open_explorer_button.grid(row=7, column=2, padx=2, pady=2, sticky="ew")
+
+        converter.mainloop()
     
     def change_code_theme(theme_name):
         global selected_theme
@@ -289,7 +797,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             global example_theme
             new_tab_window = tk.Toplevel(editor)
             new_tab_window.title(f"New Theme: {name}")
-            new_tab_window.iconphoto(True, tk.PhotoImage(file=path))
             
             example_view = ttk.Frame(new_tab_window)
             example_view.pack(side='right', fill="both", expand=True)
@@ -322,7 +829,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         
         new_theme = tk.Toplevel(editor)
         new_theme.title("New Code Theme")
-        new_theme.iconphoto(True, tk.PhotoImage(file=path))
         
         main_frame = ttk.Frame(new_theme)
         main_frame.pack()
@@ -339,7 +845,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     def show_plugin_selector(plugins_list):
         plugin_selector = tk.Toplevel()
         plugin_selector.title("Plugin Selector")
-        plugin_selector.iconbitmap(path)
         
         main_frame = ttk.Frame(plugin_selector)
         main_frame.pack()
@@ -418,7 +923,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         global name
         
         name = tk.Toplevel(editor)
-        name.iconphoto(True, tk.PhotoImage(file=path))
         name.title('New File')
         
         main_frame = ttk.Frame(name)
@@ -438,7 +942,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         global foldername
         
         foldername = tk.Toplevel(editor)
-        foldername.iconphoto(True, tk.PhotoImage(file=path))
         foldername.title('New Folder')
         
         main_frame = ttk.Frame(foldername)
@@ -685,6 +1188,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     file_menu = tk.Menu(menu_bar, tearoff=0)
     file_menu.add_command(label="Save", command=guardar_cambios)
     menu_bar.add_cascade(label="File", menu=file_menu)
+    file_menu.add_command(label="Compiler", command=converter_options)
     
     settings_menu = tk.Menu(menu_bar, tearoff=0)
     menu_bar.add_cascade(label='Settings', menu=settings_menu)
@@ -1091,6 +1595,8 @@ def show_context_menu(event):
         ("Open Github", lambda: abrir_repositorio(event)),
         ("Edit", modificar_proyecto),
         ("Delete", eliminar_proyecto),
+        ("Version Control", show_controlversion),
+        ("Detect Dependencies", detectar_dependencias),
         ("Git Init", lambda: git_init(selected_project_path)),
         ("Git Add", lambda: git_add(selected_project_path)),
         ("Git Commit", lambda: git_commit(selected_project_path)),
@@ -2198,11 +2704,237 @@ def setting_window():
     main_frame.grid_rowconfigure(2, weight=1)
     main_frame.grid_columnconfigure(1, weight=1)
 
-path = resource_path("software.png")
+def on_key_release(event):
+    search_text = search_entry.get().strip()
 
+    # Limpiar el Treeview antes de mostrar nuevos resultados
+    for item in tree.get_children():
+        tree.delete(item)
+
+    # Si el campo de búsqueda está vacío, mostrar todos los proyectos
+    if not search_text:
+        mostrar_proyectos()
+    else:
+        # Conectar a la base de datos y buscar los proyectos que coinciden
+        conn = sqlite3.connect('proyectos.db')
+        cursor = conn.cursor()
+        query = "SELECT * FROM proyectos WHERE nombre LIKE ? OR descripcion LIKE ? OR lenguaje LIKE ?"
+        cursor.execute(query, ('%' + search_text + '%', '%' + search_text + '%', '%' + search_text + '%'))
+        proyectos = cursor.fetchall()
+        conn.close()
+
+        # Insertar los resultados de búsqueda en el Treeview
+        for proyecto in proyectos:
+            tree.insert('', 'end', values=proyecto)
+
+def show_controlversion():
+    seleccion = tree.selection()
+    if not seleccion:
+        ms.showwarning("Warning", "Please select a project first.")
+        return
+
+    ruta_proyecto = tree.item(seleccion, "values")[4]
+
+    if not os.path.exists(os.path.join(ruta_proyecto, '.git')):
+        ms.showerror("ERROR", "A Git repository was not found in the selected project.")
+        return
+
+    control_version = tk.Toplevel(root)
+    control_version.title(f"Version Control: {ruta_proyecto}")
+    control_version.geometry("1320x740")
+
+    frame_commits = ttk.Frame(control_version)
+    frame_commits.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+
+    treeview_commits = ttk.Treeview(frame_commits, columns=("commit", "author", "date"), show='headings', height=36)
+    treeview_commits.heading("commit", text="commit")
+    treeview_commits.heading("author", text="author")
+    treeview_commits.heading("date", text="Date")
+
+    treeview_commits.grid(row=0, column=0, sticky="nsew")
+
+    scrollbar_y_commits = ttk.Scrollbar(frame_commits, orient="vertical", command=treeview_commits.yview)
+    treeview_commits.configure(yscrollcommand=scrollbar_y_commits.set)
+    scrollbar_y_commits.grid(row=0, column=1, sticky="ns")
+
+    frame_detalles = ttk.Frame(control_version)
+    frame_detalles.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
+
+    scrolled_text_detalles = scrolledtext.ScrolledText(frame_detalles, wrap=tk.WORD)
+    scrolled_text_detalles.grid(row=0, column=0, sticky="nsew")
+
+    # Configurar cómo se distribuyen las filas y columnas en el grid
+    control_version.grid_rowconfigure(0, weight=1)  # Permitir que la fila del TreeView se expanda
+    frame_commits.grid_columnconfigure(0, weight=1)  # Permitir que el TreeView se expanda
+    frame_detalles.grid_rowconfigure(0, weight=1)  # Permitir que el área de detalles se expanda
+
+    # Cargar el historial de commits
+    repo = Repo(ruta_proyecto)
+    for commit in repo.iter_commits():
+        treeview_commits.insert("", "end", values=(commit.hexsha[:7], commit.author.name, commit.committed_datetime))
+
+    # Función para mostrar detalles del commit al hacer clic
+    def mostrar_detalles(event):
+        seleccion = treeview_commits.selection()
+        if seleccion:
+            item = seleccion[0]
+            commit_sha = treeview_commits.item(item, "values")[0]
+            commit = repo.commit(commit_sha)
+            
+            # Verificar si el commit tiene padres antes de calcular el diff
+            if commit.parents:
+                dif = commit.diff(commit.parents[0])  # Diferencia con el primer padre
+            else:
+                dif = []  # Si no hay padres, no hay diferencias que mostrar
+
+            detalles = f"Commit: {commit.hexsha}\nAutor: {commit.author.name}\nFecha: {commit.committed_datetime}\n\nMensaje:\n{commit.message}\n\nDiferencias:\n"
+            for cambio in dif:
+                detalles += f"{cambio}\n"
+            
+            scrolled_text_detalles.delete(1.0, tk.END)
+            scrolled_text_detalles.insert(tk.END, detalles)
+
+    treeview_commits.bind("<Double-1>", mostrar_detalles)
+    
+def detectar_dependencias():
+    # Obtener la ruta del proyecto seleccionado desde la pantalla principal
+    seleccion = tree.selection()
+    if not seleccion:
+        ms.showwarning("Warning", "Please select a project first.")
+        return
+
+    ruta_proyecto = tree.item(seleccion, "values")[4]  # Tomar la ruta del proyecto desde los valores
+
+    # Lista para almacenar dependencias encontradas
+    dependencias = []
+
+    # Comprobar si existen archivos de dependencias
+    archivos_dependencias = {
+        # Python
+        "requirements.txt": "pip install -r requirements.txt",
+        "setup.py": "pip install .",
+        "Pipfile": "pipenv install",
+        "pyproject.toml": "pip install .",
+
+        # JavaScript
+        "package.json": "npm install",
+        "yarn.lock": "yarn install",
+
+        # Ruby
+        "Gemfile": "bundle install",
+        
+        # PHP
+        "composer.json": "composer install",
+        
+        # Java
+        "pom.xml": "mvn install",
+        "build.gradle": "gradle build",
+
+        # .NET
+        "project.json": "dotnet restore",
+        "*.csproj": "dotnet restore",
+        
+        # R
+        "DESCRIPTION": "Rscript -e 'devtools::install()'",
+
+        # Elixir
+        "mix.exs": "mix deps.get",
+
+        # Haskell
+        "cabal.config": "cabal install",
+
+        # Rust
+        "Cargo.toml": "cargo build"
+    }
+
+    for archivo, comando in archivos_dependencias.items():
+        # Usar glob para detectar patrones como "*.csproj"
+        if '*' in archivo:
+            for file in glob.glob(os.path.join(ruta_proyecto, archivo)):
+                dependencias.append((file, comando))
+        else:
+            ruta_archivo = os.path.join(ruta_proyecto, archivo)
+            if os.path.exists(ruta_archivo):
+                dependencias.append((archivo, comando))
+
+    # Si se encuentran dependencias, mostrarlas en una ventana
+    if dependencias:
+        ventana_dependencias = tk.Toplevel(root)
+        ventana_dependencias.title("Dependencis Found")
+        ventana_dependencias.geometry("600x400")
+
+        # Crear un canvas para permitir el desplazamiento
+        canvas = tk.Canvas(ventana_dependencias)
+        scrollbar = tk.Scrollbar(ventana_dependencias, orient="vertical", command=canvas.yview)
+        frame_dependencias = tk.Frame(canvas)
+
+        frame_dependencias.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        canvas.create_window((0, 0), window=frame_dependencias, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Empaquetar el canvas y la barra de desplazamiento
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Función para desplazar el canvas usando la rueda del ratón
+        def desplazar_canvas(event):
+            canvas.yview_scroll(-1 * int(event.delta / 120), "units")  # Ajusta el desplazamiento por la rueda
+
+        # Vincular la rueda del ratón al canvas
+        canvas.bind_all("<MouseWheel>", desplazar_canvas)  # Para Windows
+        canvas.bind_all("<Button-4>", lambda event: canvas.yview_scroll(-1, "units"))  # Para Linux
+        canvas.bind_all("<Button-5>", lambda event: canvas.yview_scroll(1, "units"))
+
+        # Mostrar dependencias encontradas
+        for idx, (archivo, comando) in enumerate(dependencias):
+            label = tk.Label(frame_dependencias, text=f"{archivo} found.")
+            label.pack(anchor="w", padx=5, pady=5)
+
+            # Leer las librerías o dependencias a instalar
+            if archivo == "requirements.txt":
+                with open(os.path.join(ruta_proyecto, archivo), "r") as f:
+                    librerias = f.readlines()
+                    librerias = [lib.strip() for lib in librerias if lib.strip()]
+
+                librerias_label = tk.Label(frame_dependencias, text="Libraries to install:")
+                librerias_label.pack(anchor="w", padx=5, pady=5)
+
+                for libreria in librerias:
+                    libreria_label = tk.Label(frame_dependencias, text=f"- {libreria}")
+                    libreria_label.pack(anchor="w", padx=5)
+
+            elif archivo == "package.json":
+                with open(os.path.join(ruta_proyecto, archivo), "r") as f:
+                    data = json.load(f)
+                    if "dependencies" in data:
+                        librerias = data["dependencies"]
+                        librerias_label = tk.Label(frame_dependencias, text="Dependencies to install:")
+                        librerias_label.pack(anchor="w", padx=5, pady=5)
+
+                        for libreria, version in librerias.items():
+                            libreria_label = tk.Label(frame_dependencias, text=f"- {libreria} ({version})")
+                            libreria_label.pack(anchor="w", padx=5)
+
+            # Botón para instalar las dependencias
+            boton_instalar = tk.Button(ventana_dependencias, text="Install", command=lambda cmd=comando: instalar_dependencias(ruta_proyecto, cmd))
+            boton_instalar.pack(anchor="w", padx=5, pady=5)
+
+    else:
+        ms.showinfo("Information", "No dependency files were found in the project.")
+
+def instalar_dependencias(ruta_proyecto, comando):
+    try:
+        # Cambiar al directorio del proyecto
+        subprocess.run(comando, cwd=ruta_proyecto, shell=True, check=True)
+        ms.showinfo("Success", "Dependencies installed correctly.")
+    except subprocess.CalledProcessError:
+        ms.showerror("Error", "There was a problem installing the dependencies.")
+
+path = resource_path(img)
 root = ThemedTk()
 root.title('Proyect Organizer')
-root.geometry("1230x420")
+root.geometry("1550x500")
 root.iconphoto(True, tk.PhotoImage(file=path))
 temas = root.get_themes()
 ttkbootstrap_themes = ttk_themes()
@@ -2481,21 +3213,28 @@ editor_options = [
     ]
 selected_editor.set(editor_options[0])
 editor_menu = ttk.OptionMenu(main_frame, selected_editor, *editor_options)
-editor_menu.grid(row=9, column=0, padx=5, pady=5, sticky="sw")
+editor_menu.grid(row=10, column=0, padx=5, pady=5, sticky="sw")
 
 tree.bind("<Button-3>", show_context_menu)
 tree.bind("<Double-1>", abrir_repositorio)
 tree.bind("<Control-1>", abrir_explorador)
 tree.bind("<<TreeviewSelect>>", on_project_select)
 
+search_label = ttk.Label(main_frame, text="Search")
+search_label.grid(row=9, column=0, padx=2, pady=2, sticky="ew")
+
+search_entry = ttk.Entry(main_frame, width=170)
+search_entry.grid(row=9, column=1, padx=2, pady=2, sticky="ew")
+search_entry.bind("<KeyRelease>", on_key_release)
+
 btn_abrir = ttk.Button(main_frame, text='Open Proyect', command=lambda: abrir_threading(tree.item(tree.selection())['values'][4], selected_editor.get()))
-btn_abrir.grid(row=9, columnspan=2, pady=5, padx=5, sticky="s")
+btn_abrir.grid(row=10, columnspan=2, pady=5, padx=5, sticky="s")
 
 btn_install = ttk.Button(main_frame, text="Install dependencies", command=lambda: install_librarys(tree.item(tree.selection())['values'][3]))
 btn_install.grid(row=4, column=1, padx=5, pady=5, sticky="e")
 
 version_label = ttk.Label(main_frame, text=version)
-version_label.grid(row=9, column=1, pady=5, padx=5, sticky="se")
+version_label.grid(row=10, column=1, pady=5, padx=5, sticky="se")
 
 root.bind("<Control-q>", lambda e: root.quit())
 
@@ -2506,4 +3245,5 @@ root.grid_columnconfigure(2, weight=1)
 crear_base_datos()
 mostrar_proyectos()
 set_default_theme()
+check_new_version()
 root.mainloop()
