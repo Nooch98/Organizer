@@ -1,6 +1,5 @@
 import os
 import sys
-import zipfile
 import subprocess
 import tkinter as tk
 from ttkthemes import ThemedTk
@@ -15,28 +14,10 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 def update_organizer():
-    current_directory = os.getcwd()
-    zip_file_path = os.path.join(current_directory, "Organizer_win.zip")
-    
-    if zipfile.is_zipfile(zip_file_path):
-        os.remove("Organizer_win.exe")
-        
-        with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
-            file_list = zip_ref.infolist()
-            total_files = len(file_list)
-            
-            update_progress["maximum"] = total_files
+    subprocess.Popen("Organizer_setup.exe")
+    main.after(1000, main.destroy())
 
-            for i, file in enumerate(file_list, 1):
-                zip_ref.extract(file, current_directory)
-                
-                update_progress["value"] = i
-                main.update_idletasks()
-            
-            ms.showinfo("Update", "Update complete opening Organizer...")
-            subprocess.Popen("Organizer_win.exe")
-            main.after(1000, main.destroy())
-
+# Configuración de la ventana principal
 path = resource_path("software.ico")
 main = ThemedTk(theme="arc")
 main.title("Organizer Update")
