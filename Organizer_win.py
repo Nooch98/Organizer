@@ -1,9 +1,12 @@
+from concurrent.futures import thread
 import json
 import os
 import shutil
 import sqlite3
+from stat import FILE_ATTRIBUTE_HIDDEN
 import subprocess
 import sys
+from tarfile import PAX_FIELDS
 import threading
 import git
 import time
@@ -11,14 +14,18 @@ import webbrowser
 import tkinter as tk
 import jedi
 import markdown
+from pyparsing import html_comment
 import requests
 import pygments.lexers
 import platform
 import subprocess
+import difflib
 import ttkbootstrap as ttk
 import markdown2
 import glob
 import re
+import xml.etree.ElementTree as ET
+import ctypes
 #--------------------------------------------------------#
 from tkinter import OptionMenu, StringVar, filedialog, simpledialog
 from urllib.parse import urlparse
@@ -33,12 +40,11 @@ from chlorophyll import CodeView
 from pathlib import Path
 from ttkbootstrap.constants import *
 from git import Repo
-import xml.etree.ElementTree as ET
+from datetime import datetime
 
 main_version = "ver.1.9.4"
 version = str(main_version)
 archivo_configuracion_editores = "configuracion_editores.json"
-archivo_confgiguracion_github = "configuracion_github.json"
 archivo_configuracion_gpt = "configuration_gpt.json"
 security_backup = "security_backup.json"
 archivo_configuracion_editores = "configuracion_editores.json"
@@ -48,6 +54,39 @@ text_editor = None
 app_name = "Organizer_win.exe"
 exe_path = os.path.abspath(sys.argv[0])
 current_version = "v1.9.4"
+
+# Integration with local control version app
+VCS_DIR = ".myvcs"
+vcs_configfile = ".myvcs/config.json"
+vcs_githubconfigfile = ".myvcs/github_config.json"
+selected_file = None
+file_name = None
+
+def search_github_key():
+    posible_name = ["GITHUB", "TOKEN", "API", "KEY", "SECRET"]
+    for name_var, valor in os.environ.items():
+        if any(clave in name_var.upper() for clave in posible_name):
+            if is_github_token_valid(valor):
+                return valor
+            else:
+                ms.showerror("ERROR", "No github api key found in your environment variables")
+                return None
+
+def is_github_token_valid(token):
+    url = "https://api.github.com/user"
+    headers = {"Authorization": f"Bearer {token}"}
+    response = requests.get(url, headers=headers)
+    return response.status_code == 200
+
+GITHUB_TOKEN = search_github_key()
+
+def hide_folder_windows(folder_path):
+    FILE_ATTRIBUTE_HIDDEN = 0x02
+    result = ctypes.windll.kernel32.SetFileAttributesW(folder_path, FILE_ATTRIBUTE_HIDDEN)
+    if result:
+        ms.showinfo("COMPLETE", f"Folde '{folder_path}' hidden")
+    else:
+        ms.showerror("ERROR", f"Can't hidde folder: {folder_path}")
     
 def check_new_version():
     try:
@@ -95,10 +134,120 @@ def check_new_version():
     except Exception as e:
         ms.showerror("ERROR", f"Can't verify the version: {str(e)}")
 
+# Función para obtener la ruta base de la carpeta de proyectos de la app
+def obtener_carpeta_proyectos_app():
+    # Obtener la ruta de la carpeta _internal/projects en el directorio de instalación de la app
+    ruta_base_app = Path(__file__).parent  # Obtiene la ruta donde está instalada la app
+    carpeta_proyectos = ruta_base_app / "_internal" / "projects"
+    
+    # Crear la carpeta si no existe
+    carpeta_proyectos.mkdir(parents=True, exist_ok=True)
+    
+    return carpeta_proyectos
+
+# Ejemplo de uso en la función de sincronización
+def obtener_ruta_copia_proyecto(nombre_proyecto):
+    carpeta_proyectos = obtener_carpeta_proyectos_app()
+    ruta_copia = carpeta_proyectos / nombre_proyecto
+    ruta_copia.mkdir(parents=True, exist_ok=True)  # Asegurarse de que la carpeta del proyecto existe
+    return ruta_copia
+
+def obtener_info_proyecto(id_proyecto):
+    conn = sqlite3.connect('proyectos.db')
+    cursor = conn.cursor()
+    
+    # Obtener ruta y nombre del proyecto de la tabla de proyectos
+    cursor.execute("SELECT ruta, nombre FROM proyectos WHERE id=?", (id_proyecto,))
+    resultado = cursor.fetchone()
+    if resultado:
+        ruta_usuario, nombre_proyecto = resultado
+        ruta_copia = os.path.join("MisProyectos", nombre_proyecto)
+        
+        # Obtener estado de sincronización de la tabla estado_proyectos
+        cursor.execute("SELECT abierto_editor, ultima_sincronizacion FROM estado_proyectos WHERE id_proyecto=?", (id_proyecto,))
+        estado = cursor.fetchone() or (0, None)  # Estado por defecto si no existe
+        
+        conn.close()
+        return ruta_usuario, ruta_copia, estado[0], estado[1]
+    
+    conn.close()
+    return None, None, None, None
+
+# Función para actualizar el estado de sincronización en la tabla estado_proyectos
+def actualizar_estado_proyecto(id_proyecto, sincronizado):
+    conn = sqlite3.connect('proyectos.db')
+    cursor = conn.cursor()
+    
+    # Crear o actualizar registro en estado_proyectos
+    cursor.execute("""
+        INSERT INTO estado_proyectos (id_proyecto, abierto_editor, ultima_sincronizacion)
+        VALUES (?, ?, ?)
+        ON CONFLICT(id_proyecto) DO UPDATE SET
+            abierto_editor = ?,
+            ultima_sincronizacion = ?
+    """, (id_proyecto, int(sincronizado), datetime.now(), int(sincronizado), datetime.now()))
+    
+    conn.commit()
+    conn.close()
+    
+# Función para sincronizar proyectos que estaban abiertos en un editor al iniciar la app
+def sincronizar_proyectos_abiertos():
+    conn = sqlite3.connect('proyectos.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT id_proyecto FROM estado_proyectos WHERE abierto_editor=1")
+    proyectos_abiertos = cursor.fetchall()
+    conn.close()
+    
+    for (id_proyecto,) in proyectos_abiertos:
+        ruta_usuario, ruta_copia, _, ultima_sincronizacion = obtener_info_proyecto(id_proyecto)
+        if ruta_usuario and ruta_copia:
+            sincronizar_diferencial(ruta_usuario, ruta_copia, ultima_sincronizacion)
+            # Marcar proyecto como cerrado después de la sincronización
+            actualizar_estado_proyecto(id_proyecto, False)
+            
+def thread_sinc():
+    threading.Thread(sincronizar_proyectos_abiertos()).start()
+            
+# Función para obtener la última sincronización desde la tabla estado_proyectos
+def obtener_ultima_sincronizacion(id_proyecto):
+    conn = sqlite3.connect('proyectos.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT ultima_sincronizacion FROM estado_proyectos WHERE id_proyecto=?", (id_proyecto,))
+    resultado = cursor.fetchone()
+    conn.close()
+    return resultado[0] if resultado else None
+        
+# Sincronización diferencial según la última marca de tiempo registrada
+def sincronizar_diferencial(origen, destino, ultima_sincronizacion):
+    origen_path = Path(origen)
+    destino_path = Path(destino)
+
+    # Convertir última sincronización en datetime si existe
+    ultima_sync_time = datetime.fromisoformat(ultima_sincronizacion) if ultima_sincronizacion else None
+
+    for origen_archivo in origen_path.rglob('*'):
+        destino_archivo = destino_path / origen_archivo.relative_to(origen_path)
+
+        if origen_archivo.is_dir():
+            destino_archivo.mkdir(parents=True, exist_ok=True)
+        elif origen_archivo.is_file():
+            if ultima_sync_time is None or datetime.fromtimestamp(origen_archivo.stat().st_mtime) > ultima_sync_time:
+                shutil.copy2(origen_archivo, destino_archivo)
+
+    # Borrar archivos en destino que no están en origen
+    for destino_archivo in destino_path.rglob('*'):
+        origen_archivo = origen_path / destino_archivo.relative_to(destino_path)
+        if not origen_archivo.exists():
+            if destino_archivo.is_file():
+                destino_archivo.unlink()
+            elif destino_archivo.is_dir():
+                shutil.rmtree(destino_archivo)
+
 def crear_base_datos():
     conn = sqlite3.connect('proyectos.db')
     cursor = conn.cursor()
     cursor.execute("CREATE TABLE IF NOT EXISTS proyectos (id INTEGER PRIMARY KEY, nombre TEXT, descripcion TEXT, lenguaje TEXT, ruta TEXT, repo TEXT)")
+    cursor.execute("CREATE TABLE IF NOT EXISTS estado_proyectos (id_proyecto INTEGER PRIMARY KEY, abierto_editor INTEGER DEFAULT 0, ultima_sincronizacion TEXT)")
     conn.close()
 
 def insertar_proyecto(nombre, descripcion, ruta, repo, lenguaje=None):
@@ -216,14 +365,26 @@ def guardar_configuracion_editores(rutas_editores):
     with open(archivo_configuracion_editores, "w") as archivo_configuracion:
         json.dump(configuracion, archivo_configuracion)
 
-def abrir_proyecto(ruta, editor):
+def abrir_proyecto(id_proyecto, ruta, editor):
     configuracion_editores = cargar_configuracion_editores()
     ruta_editor = configuracion_editores.get(editor) if configuracion_editores and editor in configuracion_editores else None
 
     if not ruta_editor:
         editores_disponibles = detectar_editores_disponibles()
         ruta_editor = editores_disponibles.get(editor)
-    
+
+    # Obtener la ruta de la copia en la carpeta _internal/projects de la app
+    nombre_proyecto = os.path.basename(ruta)
+    ruta_copia = obtener_ruta_copia_proyecto(nombre_proyecto)
+
+    # Sincronización inicial usando la última sincronización registrada
+    ultima_sincronizacion = obtener_ultima_sincronizacion(id_proyecto)
+    sincronizar_diferencial(ruta, ruta_copia, ultima_sincronizacion)
+
+    # Marcar proyecto como abierto en editor
+    actualizar_estado_proyecto(id_proyecto, True)
+
+    # Ejecutar el editor seleccionado
     if ruta_editor:
         subprocess.Popen([ruta_editor, ruta], shell=True)
         subprocess.run(f'Start wt -d "{ruta}"', shell=True)
@@ -236,14 +397,13 @@ def abrir_proyecto(ruta, editor):
     else:
         ms.showerror("ERROR", f"{editor} Not found")
 
-def abrir_threading(ruta, editor):
-    threading.Thread(target=abrir_proyecto, args=(ruta, editor)).start()
+def abrir_threading(id_proyecto, ruta, editor):
+    threading.Thread(target=abrir_proyecto, args=(id_proyecto, ruta, editor)).start()
 
 def abrir_editor_thread(ruta, name):
     threading.Thread(target=abrir_editor_integrado, args=(ruta, name)).start()
 
 def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
-    import time
     global current_file
 
     editor = ThemedTk(theme='')
@@ -739,9 +899,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         
         denpendencies_entry = ttk.Entry(frame, width=40)
         denpendencies_entry.grid_forget()
-        
 
-    
     def change_code_theme(theme_name):
         global selected_theme
         selected_theme = theme_name
@@ -1322,11 +1480,9 @@ def crear_nuevo_proyecto():
 def ejecutar_con_threading(lenguaje, textbox):
     threading.Thread(target=iniciar_new_proyect, args=(lenguaje, textbox)).start()
     
-def crear_repo_github(nombre_repo, descripcion_repo, ruta_local):
-    token_github = cargar_configuracion_github()
-    
-    if token_github:
-        g = Github(token_github)
+def crear_repo_github(nombre_repo, descripcion_repo, ruta_local):    
+    if GITHUB_TOKEN:
+        g = Github(GITHUB_TOKEN)
         
         user = g.get_user()
         
@@ -1794,14 +1950,6 @@ def guardar_configuracion_github(api_key):
     
     with open("configuracion_github.json", "w") as archivo_configuracion:
         json.dump(configuracion, archivo_configuracion)
-        
-def cargar_configuracion_github():
-    try:
-        with open(archivo_confgiguracion_github, "r") as archivo_configuracion:
-            configuracion = json.load(archivo_configuracion)
-            return configuracion.get("api_key_github", None)
-    except FileNotFoundError:
-        return None
     
 def load_config_gpt():
     try:
@@ -2458,7 +2606,6 @@ def setting_window():
     ttktheme_frame = ttk.Frame(main_frame)
     startup_frame = ttk.Frame(main_frame)
     editor_frame = ttk.Frame(main_frame)
-    github_frame = ttk.Frame(main_frame)
     openai_frame = ttk.Frame(main_frame)
     choco_frame = ttk.Frame(main_frame)
     scoop_frame = ttk.Frame(main_frame)
@@ -2466,12 +2613,12 @@ def setting_window():
     lenguajes_frame = ttk.Frame(main_frame)
     terminal_frame = ttk.Frame(main_frame)
     backup_frame = ttk.Frame(main_frame)
+    windows_context = ttk.Frame(main_frame)
     
     list_settings = tk.Listbox(main_frame, height=33, width=40)
     list_settings.grid(row=0, column=0, padx=2, pady=2, sticky="nsew")
     
     list_settings.insert(tk.END, "Editors Configure")
-    list_settings.insert(tk.END, "Github")
     list_settings.insert(tk.END, "Open Ai")
     list_settings.insert(tk.END, "Install Lenguajes")
     list_settings.insert(tk.END, "Install choco")
@@ -2482,13 +2629,13 @@ def setting_window():
     list_settings.insert(tk.END, "Theme")
     list_settings.insert(tk.END, "TTKTheme")
     list_settings.insert(tk.END, "System Startup")
+    list_settings.insert(tk.END, "Context Menu Windows")
     
     def hide_frames():
         theme_frame.grid_forget()
         ttktheme_frame.grid_forget()
         startup_frame.grid_forget()
         editor_frame.grid_forget()
-        github_frame.grid_forget()
         openai_frame.grid_forget()
         choco_frame.grid_forget()
         scoop_frame.grid_forget()
@@ -2496,6 +2643,7 @@ def setting_window():
         lenguajes_frame.grid_forget()
         terminal_frame.grid_forget()
         backup_frame.grid_forget()
+        windows_context.grid_forget()
         
     def select_user_config(event=None):
         selection = list_settings.curselection()
@@ -2505,7 +2653,7 @@ def setting_window():
             
         if item == "Editors Configure":
             hide_frames()
-            editor_frame.grid(row=0, column=1, sticky="nsew")
+            editor_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             rutas_editores = {}
     
             configs_editors = cargar_configuracion_editores()
@@ -2532,30 +2680,10 @@ def setting_window():
 
             aceptar_btn = ttk.Button(editor_frame, text="Confirm", command=guardar_y_cerrar)
             aceptar_btn.grid(row=len(editores_disponibles), column=0, columnspan=3, padx=5, pady=5)
-    
-        
-        elif item == "Github":
-            hide_frames()
-            github_frame.grid(row=0, column=1, sticky="nsew")
-            titulo = ttk.Label(github_frame, text="Github Configuration")
-            titulo.grid(row=0, columnspan=2, pady=5, padx=5)
-            
-            label = ttk.Label(github_frame, text="Github Api Key: ")
-            label.grid(row=1, column=0, pady=5, padx=5)
-            
-            api_entry = ttk.Entry(github_frame, width=50)
-            api_entry.grid(row=1, column=1, pady=5, padx=5)
-            
-            def guardar():
-                api_key = api_entry.get()
-                guardar_configuracion_github(api_key)
-            
-            sub_button = ttk.Button(github_frame, text="Accept", command=guardar)
-            sub_button.grid(row=2, columnspan=2, pady=5, padx=5)
         
         elif item == "Open Ai":
             hide_frames()
-            openai_frame.grid(row=0, column=1, sticky="nsew")
+            openai_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             titulo = ttk.Label(openai_frame, text="OpenAI Configuration")
             titulo.grid(row=0, columnspan=2, pady=5, padx=5)
             
@@ -2574,7 +2702,7 @@ def setting_window():
         
         elif item == "Install Lenguajes":
             hide_frames()
-            lenguajes_frame.grid(row=0, column=1, sticky="nsew")
+            lenguajes_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
             for widget in lenguajes_frame.winfo_children():
                 widget.destroy()
@@ -2589,7 +2717,7 @@ def setting_window():
         
         elif item == "Install choco":
             hide_frames()
-            choco_frame.grid(row=0, column=1, sticky="nsew")
+            choco_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             quest_label = ttk.Label(choco_frame, text="You want install pakage manager Chocolatey in your powersell")
             quest_label.grid(row=0,columnspan=2, sticky="ew")
             
@@ -2602,7 +2730,7 @@ def setting_window():
         
         elif item == "Install scoop":
             hide_frames()
-            scoop_frame.grid(row=0, column=1, sticky="nsew")
+            scoop_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             quest_label = ttk.Label(scoop_frame, text="You want install pakage manager Scoop in your powersell")
             quest_label.grid(row=0,columnspan=2, sticky="ew")
             
@@ -2614,7 +2742,7 @@ def setting_window():
         
         elif item == "Install Editors":
             hide_frames()
-            editors_frame.grid(row=0, column=1, sticky="nsew")
+            editors_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
             for widget in editors_frame.winfo_children():
                 widget.destroy()
@@ -2630,7 +2758,7 @@ def setting_window():
             
         elif item == "Backup Settings":
             hide_frames()
-            backup_frame.grid(row=0, column=1, sticky="nsew")
+            backup_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
             global combo_frequency
             global status_label
@@ -2651,13 +2779,13 @@ def setting_window():
         
         elif item == "Terminal Setting":
             hide_frames()
-            terminal_frame.grid(row=0, column=1, sticky="nsew")
+            terminal_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
             terminal_label = ttk.Label(terminal_frame, text="Select Terminal")
             terminal_label.grid(row=0, columnspan=2, padx=5, pady=5)
             
             selected_terminal = tk.StringVar()
-            terminal_choices = ["Select Terminal", "Command Pormpt", "Windows Terminal", "PowerShell", "Git Bash"]
+            terminal_choices = ["Select Terminal", "Command Pormpt", "Windows Terminal", "PowerShell", "Git Bash", "wezterm", "Kitty", "Alacrity"]
             terminal_menu = ttk.OptionMenu(terminal_frame, selected_terminal, *terminal_choices)
             terminal_menu.grid(row=1, columnspan=2, pady=5, padx=5)
             
@@ -2684,7 +2812,7 @@ def setting_window():
         
         elif item == "Theme":
             hide_frames()
-            theme_frame.grid(row=0, column=1, sticky="nsew")
+            theme_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
             def change_theme1(theme_name):
                 orga.set_theme(theme_name)
@@ -2703,7 +2831,7 @@ def setting_window():
 
         elif item == "TTKTheme":
             hide_frames()
-            ttktheme_frame.grid(row=0, column=1, sticky="nsew")
+            ttktheme_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             def ttk_themes():
                 style = ttk.Style()
                 themes = style.theme_names()
@@ -2730,12 +2858,30 @@ def setting_window():
         
         elif item == "System Startup":
             hide_frames()
-            startup_frame.grid(row=0, column=1, sticky="nsew")
+            startup_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             quest_label = ttk.Label(startup_frame, text="You want this app to start with Windows")
-            quest_label.grid(row=0,column=0, sticky="ew")
+            quest_label.grid(row=0,column=0, padx=2, pady=2, sticky="ew")
             
             check_btn = ttk.Checkbutton(startup_frame, variable=check_var, command=check_state)
             check_btn.grid(row=0, column=1, sticky="ew", padx=2, pady=2)
+            
+        elif item == "Context Menu Windows":
+            hide_frames()
+            windows_context.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+            q_label = ttk.Label(windows_context, text="You want agree the app to windows context menu")
+            q_label.grid(row=0,column=0, padx=2, pady=2, sticky="ew")
+            
+            si = ttk.Button(windows_context, text="Yes", command=lambda: agree_context_menu(menu_name, description_menu, ruta_icono, ruta_db))
+            si.grid(row=1, column=0, padx=2, pady=2, sticky="ew")
+            
+            no = ttk.Button(windows_context, text="No")
+            no.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
+            
+            q_label2 = ttk.Label(windows_context, text="You want delete the app to windows context menu")
+            q_label2.grid(row=2,column=0, padx=2, pady=2, sticky="ew")
+            
+            yes = ttk.Button(windows_context, text="Yes", command=lambda: delete_context_menu(menu_name))
+            yes.grid(row=3, columnspan=2, padx=2, pady=2, sticky="nsew")
     
     list_settings.bind("<Double-1>", select_user_config)
     main_frame.grid_rowconfigure(0, weight=1)
@@ -3154,7 +3300,89 @@ def on_key_release(event):
         # Insertar los resultados de búsqueda en el Treeview
         for proyecto in proyectos:
             tree.insert('', 'end', values=proyecto)
+            
+def agree_context_menu(name, description, ruta_icono=None, ruta_db=None):
+    ruta_exe = os.path.abspath(sys.argv[0])
+    ruta_icono = ruta_exe
+    ruta_db = ruta_exe
+    try:
+        rutas = [
+            r"Software\Classes\*\shell\{}".format(name),
+            r"Software\Classes\Directory\shell\{}".format(name)
+        ]
+        
+        for ruta in rutas:
+            clave_menu = reg.CreateKey(reg.HKEY_CURRENT_USER, ruta)
+            reg.SetValue(clave_menu, "", reg.REG_SZ, description)
+            
+            if ruta_icono:
+                reg.SetValueEx(clave_menu, "Icon", 0, reg.REG_SZ, ruta_icono)
+                
+            if ruta_db:
+                reg.SetValueEx(clave_menu, "db", 0, reg.REG_SZ, ruta_db)
+            
+            clave_comando = reg.CreateKey(clave_menu, r"command")
+            reg.SetValue(clave_comando, "", reg.REG_SZ, f'"{ruta_exe}" "%1"')
+            
+            reg.CloseKey(clave_menu)
+            reg.CloseKey(clave_comando)
+            
+        ms.showinfo("Organizer", f"{description} has been agree to windows context menu")
+    except Exception as e:
+        ms.showerror("ERROR", f"Error to agree on windows context menu: {e}")
+        
+def delete_context_menu(name):
+    try:
+        rutas = [
+            r"Software\Classes\*\shell\{}".format(name),
+            r"Software\Classes\Directory\shell\{}".format(name)
+        ]
+        
+        for ruta in rutas:
 
+            reg.DeleteKey(reg.HKEY_CURRENT_USER, ruta + r"\command")
+            reg.DeleteKey(reg.HKEY_CURRENT_USER, ruta)
+        
+        ms.showinfo("Organizer", f"Removed '{name}' from the Windows context menu for the current user.")
+    except FileNotFoundError:
+        ms.showerror("ERROR", f"The entry '{name}' was not found in the context menu.")
+    except Exception as e:
+        ms.showerror("ERROR", f"Error removing context menu: {e}")
+        
+def show_docu():
+    docu = tk.Toplevel(orga)
+    docu.title("Python Documentation")
+    docu.iconbitmap(path)
+    
+    def load_documentation():
+        topic = m_var.get().strip()
+        url = f"https://docs.python.org/3/library/{topic}.html"
+        response = requests.get(url)
+        if response.status_code == 200:
+            html_content = response.text
+            doc_label.set_html(html_content)
+        else:
+            doc_label.set_html(f"<p>Documentation for {topic} not found.</p>")
+    
+    t_label = ttk.Label(docu, text="Enter module name (e.g., json, os, sys):")
+    t_label.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
+    
+    m_var = tk.StringVar()
+    m_entry = ttk.Entry(docu, width=50, textvariable=m_var)
+    m_entry.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+    
+    doc_label = HTMLLabel(docu, html="<p>Documentation will be shown here.</p>")
+    doc_label.grid(row=2, columnspan=2, padx=2, pady=2, sticky="ew")
+    
+    load_button = ttk.Button(docu, text="Load Documentation", command=load_documentation)
+    load_button.grid(row=5, columnspan=2, padx=2, pady=2, sticky="ew")
+
+
+menu_name = "Organizer"
+description_menu = "Open Organizer"
+ruta_exe = os.path.abspath(sys.argv[0])
+ruta_icono = ruta_exe
+ruta_db = ruta_exe
 orga = ThemedTk()
 orga.title('Proyect Organizer')
 orga.geometry("1230x440")
@@ -3339,7 +3567,7 @@ filas_ocultas = set()
 editores_disponibles = ["Visual Studio Code", "Sublime Text", "Atom", "Vim", "Emacs", 
         "Notepad++", "Brackets", "TextMate", "Geany", "gedit", 
         "Nano", "Kate", "Bluefish", "Eclipse", "IntelliJ IDEA", 
-        "PyCharm", "Visual Studio", "Blend Visual Studio", "Code::Blocks", "NetBeans", 
+        "PyCharm", "Visual Studio", "Code::Blocks", "NetBeans", 
         "Android Studio", "neovim"]
 
 lenguajes = ["Python", "NodeJS", "bun", "React", "Vue", "C++", "C#", "Rust", "Go"]
@@ -3367,6 +3595,7 @@ menu.add_command(label="Settings", command=setting_window)
 help_menu = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label="Help", menu=help_menu)
 help_menu.add_command(label="InfoVersion", command=ver_info)
+help_menu.add_command(label="Documentation", command=show_docu)
 
 nombre_label = ttk.Label(main_frame, text="Name:")
 nombre_label.grid(row=1, column=0, pady=5, padx=5, sticky="nsew")
@@ -3432,7 +3661,7 @@ tree.bind("<Control-1>", abrir_explorador)
 tree.bind("<<TreeviewSelect>>", on_project_select)
 #tree.bind("<Double-Button-1>", previsualizar_proyecto)
 
-btn_abrir = ttk.Button(main_frame, text='Open Proyect', command=lambda: abrir_threading(tree.item(tree.selection())['values'][4], selected_editor.get()))
+btn_abrir = ttk.Button(main_frame, text='Open Proyect', command=lambda: abrir_threading(tree.item(tree.selection())['values'][0],tree.item(tree.selection())['values'][4], selected_editor.get()))
 btn_abrir.grid(row=10, columnspan=2, pady=5, padx=5, sticky="s")
 
 btn_install = ttk.Button(main_frame, text="Install dependencies", command=lambda: install_librarys(tree.item(tree.selection())['values'][3]))
@@ -3449,4 +3678,5 @@ crear_base_datos()
 mostrar_proyectos()
 set_default_theme()
 check_new_version()
+thread_sinc()
 orga.mainloop()
