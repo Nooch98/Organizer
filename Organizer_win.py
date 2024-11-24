@@ -1,12 +1,9 @@
-from concurrent.futures import thread
 import json
 import os
 import shutil
 import sqlite3
-from stat import FILE_ATTRIBUTE_HIDDEN
 import subprocess
 import sys
-from tarfile import PAX_FIELDS
 import threading
 import git
 import time
@@ -14,18 +11,16 @@ import webbrowser
 import tkinter as tk
 import jedi
 import markdown
-from pyparsing import html_comment
+import datetime
 import requests
 import pygments.lexers
 import platform
 import subprocess
-import difflib
 import ttkbootstrap as ttk
 import markdown2
 import glob
 import re
 import xml.etree.ElementTree as ET
-import ctypes
 #--------------------------------------------------------#
 from tkinter import OptionMenu, StringVar, filedialog, simpledialog
 from urllib.parse import urlparse
@@ -46,7 +41,7 @@ main_version = "ver.1.9.4"
 version = str(main_version)
 archivo_configuracion_editores = "configuracion_editores.json"
 archivo_configuracion_gpt = "configuration_gpt.json"
-security_backup = "security_backup.json"
+BACKUP_STATE_FILE = "backup_schedule.json"
 archivo_configuracion_editores = "configuracion_editores.json"
 config_file = "config.json"
 selected_project_path = None
@@ -79,14 +74,6 @@ def is_github_token_valid(token):
     return response.status_code == 200
 
 GITHUB_TOKEN = search_github_key()
-
-def hide_folder_windows(folder_path):
-    FILE_ATTRIBUTE_HIDDEN = 0x02
-    result = ctypes.windll.kernel32.SetFileAttributesW(folder_path, FILE_ATTRIBUTE_HIDDEN)
-    if result:
-        ms.showinfo("COMPLETE", f"Folde '{folder_path}' hidden")
-    else:
-        ms.showerror("ERROR", f"Can't hidde folder: {folder_path}")
     
 def check_new_version():
     try:
@@ -276,7 +263,23 @@ def get_projects_from_database():
 
 def abrir_editor(ruta, ruta_editor):
     subprocess.Popen(f'"{ruta_editor}" "{ruta}"')
-    
+
+def save_backup_schedule(next_backup_time, frequency_seconds):
+    with open(BACKUP_STATE_FILE, "w") as file:
+        json.dump({
+            "next_backup_time": next_backup_time.isoformat(),
+            "frequency_seconds": frequency_seconds
+        }, file)
+
+def load_backup_schedule():
+    if os.path.exists(BACKUP_STATE_FILE):
+        with open(BACKUP_STATE_FILE, "r") as file:
+            data = json.load(file)
+            next_backup_time = datetime.datetime.fromisoformat(data["next_backup_time"])
+            frequency_seconds = data["frequency_seconds"]
+            return next_backup_time, frequency_seconds
+    return None, None
+ 
 def get_selected_frequency():
     selected_option = combo_frequency.get()
     
@@ -288,17 +291,26 @@ def get_selected_frequency():
         frequency_seconds = 30 * 24 * 3600
     else:
         frequency_seconds = 24 * 3600
-        
-    schedule_backup(frequency_seconds)
+    
+    next_backup_time = datetime.datetime.now() + datetime.timedelta(seconds=frequency_seconds)
+    save_backup_schedule(next_backup_time, frequency_seconds)
+    schedule_backup(next_backup_time, frequency_seconds)
     
 def backup_now():
     while True:
-        perform_backup()
+        backup_thread()
 
-def schedule_backup(frequency_seconds):
-    while True:
-        perform_backup()
-        time.sleep(frequency_seconds)
+def schedule_backup(next_backup_time, frequency_seconds):
+    def backup_scheduler():
+        while True:
+            now = datetime.datetime.now()
+            if now >= next_backup_time:
+                backup_thread()
+                next_backup_time = now + datetime.timedelta(seconds=frequency_seconds)
+                save_backup_schedule(next_backup_time, frequency_seconds)
+            time.sleep(5)
+            
+    threading.Thread(target=backup_scheduler, daemon=True).start()
 
 def perform_backup():
     backups_dir = os.path.join(os.getcwd(), 'backups')
@@ -313,13 +325,27 @@ def perform_backup():
         project_path = project['ruta']
         project_backup_dir = os.path.join(backups_dir, project_name)
         
-        if os.path.exists(project_backup_dir):
-            shutil.rmtree(project_backup_dir)
+        if 'status_label' in globals():
+                status_label.config(text=f"Backup -> {project_name} -> {project_path}")
         
-        shutil.copytree(project_path, project_backup_dir)
+        shutil.copytree(project_path, project_backup_dir, dirs_exist_ok=True)
+        
+        if 'status_label' in globals():
+            status_label.config(text="Backup success")
 
-def update_status(file_name):
-    status_label.config(text="Copying: {}".format(file_name))
+def backup_thread():
+    threading.Thread(target=perform_backup, daemon=True).start()
+    
+def initialize_backup_schedule():
+    next_backup_time, frequency_seconds = load_backup_schedule()
+    if next_backup_time and frequency_seconds:
+        now = datetime.datetime.now()
+        if now >= next_backup_time:
+            backup_thread()
+            next_backup_time = now + datetime.timedelta(seconds=frequency_seconds)
+        schedule_backup(next_backup_time, frequency_seconds)
+    else:
+        pass
 
 def detectar_editores_disponibles():
     editores = {
@@ -2766,16 +2792,16 @@ def setting_window():
             frequency_options = ["Daily", "Weekly", "Monthly"]
             combo_frequency = ttk.Combobox(backup_frame, values=frequency_options)
             combo_frequency.set("Daily")
-            combo_frequency.grid(row=0, columnspan=2, padx=5, pady=5)
+            combo_frequency.grid(row=0, columnspan=2, padx=2, pady=2)
             
-            status_label = ttk.Label(backup_frame, text="")
-            status_label.grid(row=1, columnspan=2, padx=5, pady=5)
+            status_label = ttk.Label(backup_frame, text="Backup")
+            status_label.grid(row=2, column=0, padx=2, pady=2)
             
             btn_confirm = ttk.Button(backup_frame, text="Confirm", command=get_selected_frequency)
-            btn_confirm.grid(row=2, column=0, padx=5, pady=5)
+            btn_confirm.grid(row=1, column=0, padx=2, pady=2)
             
-            btn_backup_now = ttk.Button(backup_frame, text="Create Now", command=backup_now)
-            btn_backup_now.grid(row=2, column=1, padx=5, pady=5)
+            btn_backup_now = ttk.Button(backup_frame, text="Create Now", command=backup_thread)
+            btn_backup_now.grid(row=1, column=1, padx=2, pady=2)
         
         elif item == "Terminal Setting":
             hide_frames()
@@ -3679,4 +3705,5 @@ mostrar_proyectos()
 set_default_theme()
 check_new_version()
 thread_sinc()
+initialize_backup_schedule()
 orga.mainloop()
