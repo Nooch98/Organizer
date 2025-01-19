@@ -20,6 +20,7 @@ import ttkbootstrap as ttk
 import markdown2
 import re
 import glob
+import webview
 #--------------------------------------------------------#
 from tkinter import OptionMenu, StringVar, filedialog, simpledialog
 from urllib.parse import urlparse
@@ -34,21 +35,60 @@ from chlorophyll import CodeView
 from pathlib import Path
 from ttkbootstrap.constants import *
 from git import Repo
+from datetime import datetime
+from PIL import Image, ImageTk
 import xml.etree.ElementTree as ET
 
-main_version = "ver.1.9.4"
+main_version = "ver.1.9.5"
 version = str(main_version)
 archivo_configuracion_editores = "configuracion_editores.json"
 archivo_confgiguracion_github = "configuracion_github.json"
 archivo_configuracion_gpt = "configuration_gpt.json"
+BACKUP_STATE_FILE = "backup_schedule.json"
 security_backup = "security_backup.json"
 config_file = "config.json"
 selected_project_path = None
 text_editor = None
 app_name = "./Organizer_linux"
 exe_path = os.path.abspath(sys.argv[0])
-current_version = "v1.9.4"
+current_version = "v1.9.5"
 img = "software.png"
+
+VCS_DIR = ".myvcs"
+vcs_configfile = ".myvcs/config.json"
+vcs_githubconfigfile = ".myvcs/github_config.json"
+selected_file = None
+file_name = None
+
+def search_github_key():
+    posible_name = ["GITHUB", "TOKEN", "API", "KEY", "SECRET"]
+    for name_var, valor in os.environ.items():
+        if any(clave in name_var.upper() for clave in posible_name):
+            if is_github_token_valid(valor):
+                return valor
+            else:
+                ms.showerror("ERROR", f"No github api key found in your environment variables. Please agree github api key to your enviroment variables with the name: {posible_name}")
+                return None
+            
+def is_github_token_valid(token):
+    url = "https://api.github.com/user"
+    headers = {"Authorization": f"Bearer {token}"}
+    response = requests.get(url, headers=headers)
+    return response.status_code == 200
+
+def obtain_github_user():
+    url = "https://api.github.com/user"
+    try:
+        response = requests.get(url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}",
+                                              "Accept": "application/vnd.github.v3+json"})
+        response.raise_for_status()
+        user = response.json()
+        return user["login"]
+    except requests.exceptions.RequestException as e:
+        ms.showerror("ERROR", f"Can't obtain the github user: {str(e)}")
+
+GITHUB_TOKEN = search_github_key()
+GITHUB_USER = obtain_github_user()
 
 def check_new_version():
     try:
@@ -95,6 +135,114 @@ def check_new_version():
     except Exception as e:
         ms.showerror("ERROR", f"Can't verify the version: {str(e)}")
 
+def obtener_carpeta_proyectos_app():
+    # Obtener la ruta de la carpeta _internal/projects en el directorio de instalación de la app
+    ruta_base_app = Path(__file__).parent  # Obtiene la ruta donde está instalada la app
+    carpeta_proyectos = ruta_base_app / "_internal" / "projects"
+    
+    # Crear la carpeta si no existe
+    carpeta_proyectos.mkdir(parents=True, exist_ok=True)
+    
+    return carpeta_proyectos
+
+# Ejemplo de uso en la función de sincronización
+def obtener_ruta_copia_proyecto(nombre_proyecto):
+    carpeta_proyectos = obtener_carpeta_proyectos_app()
+    ruta_copia = carpeta_proyectos / nombre_proyecto
+    ruta_copia.mkdir(parents=True, exist_ok=True)  # Asegurarse de que la carpeta del proyecto existe
+    return ruta_copia
+
+def obtener_info_proyecto(id_proyecto):
+    conn = sqlite3.connect('proyectos.db')
+    cursor = conn.cursor()
+    
+    # Obtener ruta y nombre del proyecto de la tabla de proyectos
+    cursor.execute("SELECT ruta, nombre FROM proyectos WHERE id=?", (id_proyecto,))
+    resultado = cursor.fetchone()
+    if resultado:
+        ruta_usuario, nombre_proyecto = resultado
+        ruta_copia = os.path.join("MisProyectos", nombre_proyecto)
+        
+        # Obtener estado de sincronización de la tabla estado_proyectos
+        cursor.execute("SELECT abierto_editor, ultima_sincronizacion FROM estado_proyectos WHERE id_proyecto=?", (id_proyecto,))
+        estado = cursor.fetchone() or (0, None)  # Estado por defecto si no existe
+        
+        conn.close()
+        return ruta_usuario, ruta_copia, estado[0], estado[1]
+    
+    conn.close()
+    return None, None, None, None
+
+# Función para actualizar el estado de sincronización en la tabla estado_proyectos
+def actualizar_estado_proyecto(id_proyecto, sincronizado):
+    conn = sqlite3.connect('proyectos.db')
+    cursor = conn.cursor()
+    
+    # Crear o actualizar registro en estado_proyectos
+    cursor.execute("""
+        INSERT INTO estado_proyectos (id_proyecto, abierto_editor, ultima_sincronizacion)
+        VALUES (?, ?, ?)
+        ON CONFLICT(id_proyecto) DO UPDATE SET
+            abierto_editor = ?,
+            ultima_sincronizacion = ?
+    """, (id_proyecto, int(sincronizado), datetime.now(), int(sincronizado), datetime.now()))
+    
+    conn.commit()
+    conn.close()
+    
+# Función para sincronizar proyectos que estaban abiertos en un editor al iniciar la app
+def sincronizar_proyectos_abiertos():
+    conn = sqlite3.connect('proyectos.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT id_proyecto FROM estado_proyectos WHERE abierto_editor=1")
+    proyectos_abiertos = cursor.fetchall()
+    conn.close()
+    
+    for (id_proyecto,) in proyectos_abiertos:
+        ruta_usuario, ruta_copia, _, ultima_sincronizacion = obtener_info_proyecto(id_proyecto)
+        if ruta_usuario and ruta_copia:
+            sincronizar_diferencial(ruta_usuario, ruta_copia, ultima_sincronizacion)
+            # Marcar proyecto como cerrado después de la sincronización
+            actualizar_estado_proyecto(id_proyecto, False)
+            
+def thread_sinc():
+    threading.Thread(sincronizar_proyectos_abiertos()).start()
+            
+# Función para obtener la última sincronización desde la tabla estado_proyectos
+def obtener_ultima_sincronizacion(id_proyecto):
+    conn = sqlite3.connect('proyectos.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT ultima_sincronizacion FROM estado_proyectos WHERE id_proyecto=?", (id_proyecto,))
+    resultado = cursor.fetchone()
+    conn.close()
+    return resultado[0] if resultado else None
+        
+# Sincronización diferencial según la última marca de tiempo registrada
+def sincronizar_diferencial(origen, destino, ultima_sincronizacion):
+    origen_path = Path(origen)
+    destino_path = Path(destino)
+
+    # Convertir última sincronización en datetime si existe
+    ultima_sync_time = datetime.fromisoformat(ultima_sincronizacion) if ultima_sincronizacion else None
+
+    for origen_archivo in origen_path.rglob('*'):
+        destino_archivo = destino_path / origen_archivo.relative_to(origen_path)
+
+        if origen_archivo.is_dir():
+            destino_archivo.mkdir(parents=True, exist_ok=True)
+        elif origen_archivo.is_file():
+            if ultima_sync_time is None or datetime.fromtimestamp(origen_archivo.stat().st_mtime) > ultima_sync_time:
+                shutil.copy2(origen_archivo, destino_archivo)
+
+    # Borrar archivos en destino que no están en origen
+    for destino_archivo in destino_path.rglob('*'):
+        origen_archivo = origen_path / destino_archivo.relative_to(destino_path)
+        if not origen_archivo.exists():
+            if destino_archivo.is_file():
+                destino_archivo.unlink()
+            elif destino_archivo.is_dir():
+                shutil.rmtree(destino_archivo)
+
 def crear_base_datos():
     conn = sqlite3.connect('proyectos.db')
     
@@ -108,6 +256,7 @@ def crear_base_datos():
         ruta TEXT,
         repo TEXT
         )''')
+    cursor.execute("CREATE TABLE IF NOT EXISTS estado_proyectos (id_proyecto INTEGER PRIMARY KEY, abierto_editor INTEGER DEFAULT 0, ultima_sincronizacion TEXT)")
     
     conn.close()
     
@@ -138,6 +287,89 @@ def insertar_proyecto(nombre, descripcion, ruta, repo, lenguaje=None):
     conn.commit()
     conn.close()
     mostrar_proyectos()
+
+def save_backup_schedule(next_backup_time, frequency_seconds):
+    with open(BACKUP_STATE_FILE, "w") as file:
+        json.dump({
+            "next_backup_time": next_backup_time.isoformat(),
+            "frequency_seconds": frequency_seconds
+        }, file)
+
+def load_backup_schedule():
+    if os.path.exists(BACKUP_STATE_FILE):
+        with open(BACKUP_STATE_FILE, "r") as file:
+            data = json.load(file)
+            next_backup_time = datetime.datetime.fromisoformat(data["next_backup_time"])
+            frequency_seconds = data["frequency_seconds"]
+            return next_backup_time, frequency_seconds
+    return None, None
+ 
+def get_selected_frequency():
+    selected_option = combo_frequency.get()
+    
+    if selected_option == "Daily":
+        frequency_seconds = 24 * 3600
+    elif selected_option == "Weekly":
+        frequency_seconds = 7 * 24 * 3600
+    elif selected_option == "Monthly":
+        frequency_seconds = 30 * 24 * 3600
+    else:
+        frequency_seconds = 24 * 3600
+    
+    next_backup_time = datetime.datetime.now() + datetime.timedelta(seconds=frequency_seconds)
+    save_backup_schedule(next_backup_time, frequency_seconds)
+    schedule_backup(next_backup_time, frequency_seconds)
+    
+def backup_now():
+    while True:
+        backup_thread()
+
+def schedule_backup(next_backup_time, frequency_seconds):
+    def backup_scheduler():
+        while True:
+            now = datetime.datetime.now()
+            if now >= next_backup_time:
+                backup_thread()
+                next_backup_time = now + datetime.timedelta(seconds=frequency_seconds)
+                save_backup_schedule(next_backup_time, frequency_seconds)
+            time.sleep(5)
+            
+    threading.Thread(target=backup_scheduler, daemon=True).start()
+
+def perform_backup():
+    backups_dir = os.path.join(os.getcwd(), 'backups')
+    if not os.path.exists(backups_dir):
+        os.makedirs(backups_dir)
+    shutil.copyfile("proyectos.db", os.path.join(backups_dir, "proyectos_backup.db"))
+    
+    projects = get_projects_from_database()
+    
+    for project in projects:
+        project_name = project['nombre']
+        project_path = project['ruta']
+        project_backup_dir = os.path.join(backups_dir, project_name)
+        
+        if 'status_label' in globals():
+                status_label.config(text=f"Backup -> {project_name} -> {project_path}")
+        
+        shutil.copytree(project_path, project_backup_dir, dirs_exist_ok=True)
+        
+        if 'status_label' in globals():
+            status_label.config(text="Backup success")
+
+def backup_thread():
+    threading.Thread(target=perform_backup, daemon=True).start()
+    
+def initialize_backup_schedule():
+    next_backup_time, frequency_seconds = load_backup_schedule()
+    if next_backup_time and frequency_seconds:
+        now = datetime.datetime.now()
+        if now >= next_backup_time:
+            backup_thread()
+            next_backup_time = now + datetime.timedelta(seconds=frequency_seconds)
+        schedule_backup(next_backup_time, frequency_seconds)
+    else:
+        pass
 
 def detectar_editores_disponibles():
     # Lista de editores de texto comunes
@@ -1279,7 +1511,8 @@ def agregar_proyecto_existente():
         descripcion_entry.delete(0, tk.END)
         repo_entry.delete(0, tk.END)
 
-def crear_nuevo_proyecto():    
+def crear_nuevo_proyecto():
+    global new_description_entry, new_name_entry, ventana_lenguaje
     ventana_lenguaje = tk.Toplevel(root)
     ventana_lenguaje.title("Selection lenguaje")
     ventana_lenguaje.iconphoto(True, tk.PhotoImage(file=path))
@@ -1287,10 +1520,22 @@ def crear_nuevo_proyecto():
     main_frame = ttk.Frame(ventana_lenguaje)
     main_frame.pack()
     
-    label = ttk.Label(main_frame, text="Select the project language:")
-    label.grid(row=0, columnspan=2, pady=5, padx=5)
+    new_name_label = ttk.Label(main_frame, text="Name")
+    new_name_label.grid(row=0, columnspan=2, padx=2, pady=2, sticky="n")
     
-    lenguaje_options = ["Selection lenguaje", "Python", "NodeJS", "bun", "React", "Vue", "C++", "C#", "Rust", "Go"]
+    new_name_entry = ttk.Entry(main_frame, width=50)
+    new_name_entry.grid(row=2, columnspan=2, padx=2, pady=2, sticky="ew")
+    
+    new_description_label = ttk.Label(main_frame, text="Desciption")
+    new_description_label.grid(row=3, padx=2, pady=2, columnspan=2)
+    
+    new_description_entry = ttk.Entry(main_frame, width=50)
+    new_description_entry.grid(row=4, padx=2, pady=2, columnspan=2, sticky="ew")
+    
+    label = ttk.Label(main_frame, text="Select the project language:")
+    label.grid(row=5, columnspan=2, pady=5, padx=5)
+    
+    lenguaje_options = ["Selection lenguaje", "Python", "NodeJS", "bun", "React", "Vue", "C++", "C#", "Rust", "Go", "flutter"]
     
     global seleccion
     
@@ -1298,25 +1543,23 @@ def crear_nuevo_proyecto():
     seleccion.set(lenguaje_options[0])
     
     menu_lenguaje = ttk.OptionMenu(main_frame, seleccion, *lenguaje_options)
-    menu_lenguaje.grid(row=1, columnspan=2, padx=5, pady=5)
+    menu_lenguaje.grid(row=6, columnspan=2, padx=5, pady=5)
     
     rules_label = ttk.Label(main_frame, text="If you create git repo insert in textbox your rules for the .gitignore")
-    rules_label.grid(row=2, columnspan=2, padx=5, pady=5)
+    rules_label.grid(row=7, columnspan=2, padx=5, pady=5)
     
     textbox = scrolledtext.ScrolledText(main_frame)
-    textbox.grid(row=3, columnspan=2, pady=5, padx=5)
+    textbox.grid(row=8, columnspan=2, pady=5, padx=5)
     
     btn_selec = ttk.Button(main_frame, text="Select", command=lambda: ejecutar_con_threading(seleccion.get(), textbox))
-    btn_selec.grid(row=5, columnspan=2, pady=5, padx=5)
+    btn_selec.grid(row=9, columnspan=2, pady=5, padx=5)
         
 def ejecutar_con_threading(lenguaje, textbox):
     threading.Thread(target=iniciar_new_proyect, args=(lenguaje, textbox)).start()
     
 def crear_repo_github(nombre_repo, descripcion_repo, ruta_local):
-    token_github = cargar_configuracion_github()
-    
-    if token_github:
-        g = Github(token_github)
+    if GITHUB_TOKEN:
+        g = Github(GITHUB_TOKEN)
         
         user = g.get_user()
         
@@ -1334,21 +1577,28 @@ def crear_repo_github(nombre_repo, descripcion_repo, ruta_local):
         ms.showinfo("COMPLETE" ,"Repository created on GitHub and locally.")
     else:
         ms.showerror("ERROR", "Could not retrieve the GitHub API key.")
-        
-def push_actualizaciones_github(ruta_local):
-    repo_local = git.Repo(ruta_local)
 
-    repo_local.index.add('*')
+def github_url_to_api_url_repo(github_url, branch_name='main'):
+    parsed_url = urlparse(github_url)
+    
+    path_parts = parsed_url.path.strip('/').split('/')
+    
+    if len(path_parts) < 2:
+        raise ValueError("URL Github invalid. Check the URL is correct")
+    
+    repo_owner = path_parts[0]
+    repo_name = path_parts[1]
+    
+    api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents?ref={branch_name}"
+    
+    return api_url
 
-    repo_local.index.commit('Updated project')
-
-    origin = repo_local.remote('origin')
-
-    origin.push('master')
+def push_actualizaciones_github(github_url):
+    github_url_to_api_url_repo(github_url)
         
 def iniciar_new_proyect(lenguaje, textbox):
-    nombre = nombre_entry.get()
-    descripcion = descripcion_entry.get()
+    nombre = new_name_entry.get()
+    descripcion = new_description_entry.get()
     ruta_proyecto = filedialog.askdirectory()
     repo = repo_entry.get()
     rules = textbox.get("1.0", "end")
@@ -1362,7 +1612,6 @@ def iniciar_new_proyect(lenguaje, textbox):
                 respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
                 if respuesta:
                     crear_repo_github(nombre, descripcion, ruta_completa)
-                print(f"Este es el lenguaje:{lenguaje}")
                 insertar_proyecto(nombre, descripcion, ruta_completa, repo, lenguaje)
                 git = ms.askyesno("Create Git", "Do you want create Git Repo")
                 if git:
@@ -1479,22 +1728,50 @@ def iniciar_new_proyect(lenguaje, textbox):
             respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
             if respuesta:
                 crear_repo_github(nombre, descripcion, ruta_completa)
-                with open('output.txt', 'r') as f:
-                    output = f.read()
-                    textbox.insert(tk.END, output)
-                insertar_proyecto(nombre, descripcion, ruta_completa, repo, lenguaje)
-                os.remove('output.txt')
-                git = ms.askyesno("Create Git", "Do you want create Git Repo")
-                if git:
-                    with open(os.path.join(ruta_completa, '.gitignore'), 'w') as f:
-                        f.write(rules)
-                        git_init(ruta_completa)
-                        git_add(ruta_completa)
+            with open('output.txt', 'r') as f:
+                output = f.read()
+                textbox.insert(tk.END, output)
+            insertar_proyecto(nombre, descripcion, ruta_completa, repo, lenguaje)
+            os.remove('output.txt')
+            git = ms.askyesno("Create Git", "Do you want create Git Repo")
+            if git:
+                with open(os.path.join(ruta_completa, '.gitignore'), 'w') as f:
+                    f.write(rules)
+                    git_init(ruta_completa)
+                    git_add(ruta_completa)
+        elif lenguaje == "flutter":
+            ruta_completa = os.path.join(ruta_proyecto, nombre)
+            ruta_completa = os.path.normpath(ruta_completa)
+            os.makedirs(ruta_completa, exist_ok=True)
+            try:
+                resultado = subprocess.run(['flutter', 'doctor'], capture_output=True, text=True)
+                if resultado.returncode != 0:
+                    ms.showerror("ERROR", f"Flutter is not configured correctly.\nDetails:\n{resultado.stderr}")
+                    webbrowser.open("https://flutter.dev/docs/get-started/install")
+                else:
+                    pass
+            except FileNotFoundError:
+                pass
+                
+            comando = f'flutter create "{ruta_completa}" > output.txt 2>&1'
+            os.system(comando)
+            
+            respuesta = ms.askyesno("Create Repo", "Do you want create a github repo?")
+            if respuesta:
+                crear_repo_github(nombre, descripcion, ruta_completa)
+            with open('output.txt', 'r') as f:
+                output = f.read()
+                textbox.insert(tk.END, output)
+            insertar_proyecto(nombre, descripcion, ruta_completa, repo, lenguaje)
+            os.remove('output.txt')
+            git = ms.askyesno("Create Git", "Do you want create Git Repo")
+            if git:
+                with open(os.path.join(ruta_completa, '.gitignore'), 'w') as f:
+                    f.write(rules)
+                    git_init(ruta_completa)
+                    git_add(ruta_completa)
     
-    nombre_entry.delete(0, tk.END)
-    descripcion_entry.delete(0, tk.END)
-    repo_entry.delete(0, tk.END)
-    textbox.delete(0, tk.END)
+    mostrar_proyectos()
 
 def eliminar_proyecto(id, ruta):
     try:
@@ -1517,7 +1794,7 @@ def eliminar_proyecto(id, ruta):
         mostrar_proyectos()
     
 def seleccionar_ruta_editor(editor, entry):
-    ruta_editor = filedialog.askopenfilename(title=f"Seleccione el ejecutable de {editor}", filetypes=[("Ejecutables", "*.exe")])
+    ruta_editor = filedialog.askopenfilename(title=f"Seleccione el ejecutable de {editor}", filetypes=[("Ejecutables", "*")])
     if ruta_editor:
         entry.delete(0, tk.END)
         entry.insert(0, ruta_editor)
@@ -1536,20 +1813,6 @@ def save_config_gpt(api_key):
     
     with open(archivo_configuracion_gpt, "w") as archivo_configuracion:
         json.dump(configuration, archivo_configuracion)
-        
-def guardar_configuracion_github(api_key):
-    configuracion = {"api_key_github": api_key}
-    
-    with open("configuracion_github.json", "w") as archivo_configuracion:
-        json.dump(configuracion, archivo_configuracion)
-        
-def cargar_configuracion_github():
-    try:
-        with open(archivo_confgiguracion_github, "r") as archivo_configuracion:
-            configuracion = json.load(archivo_configuracion)
-            return configuracion.get("api_key_github", None)
-    except FileNotFoundError:
-        return None
     
 def load_config_gpt():
     try:
@@ -1594,7 +1857,7 @@ def show_context_menu(event):
         ("Open Explorer", lambda: abrir_explorador(event)),
         ("Open Github", lambda: abrir_repositorio(event)),
         ("Edit", modificar_proyecto),
-        ("Delete", eliminar_proyecto),
+        ("Delete", lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4])),
         ("Version Control", show_controlversion),
         ("Detect Dependencies", detectar_dependencias),
         ("Git Init", lambda: git_init(selected_project_path)),
@@ -1909,6 +2172,14 @@ def abrir_proyecto_github():
         repo_entry.delete(0, tk.END)
         
 def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+        
+    return os.path.join(base_path, relative_path)
+
+def resource_path2(relative_path):
     try:
         base_path = sys._MEIPASS
     except Exception:
@@ -2269,6 +2540,10 @@ def install_lenguaje(lenguaje_selected):
         run_command(f"sudo tar -C /usr/local -xzf {file}")
         os.remove(file)
 
+    elif lenguaje_selected == "flutter":
+        url = "https://docs.flutter.dev/get-started/install"
+        webbrowser.open_new(url)
+
 def detect_distro():
     try:
         with open("/etc/os-release") as f:
@@ -2429,8 +2704,8 @@ def setting_window():
     
     theme_frame = ttk.Frame(main_frame)
     ttktheme_frame = ttk.Frame(main_frame)
+    startup_frame = ttk.Frame(main_frame)
     editor_frame = ttk.Frame(main_frame)
-    github_frame = ttk.Frame(main_frame)
     openai_frame = ttk.Frame(main_frame)
     choco_frame = ttk.Frame(main_frame)
     scoop_frame = ttk.Frame(main_frame)
@@ -2443,7 +2718,6 @@ def setting_window():
     list_settings.grid(row=0, column=0, padx=2, pady=2, sticky="nsew")
     
     list_settings.insert(tk.END, "Editors Configure")
-    list_settings.insert(tk.END, "Github")
     list_settings.insert(tk.END, "Open Ai")
     list_settings.insert(tk.END, "Install Lenguajes")
     list_settings.insert(tk.END, "Install choco")
@@ -2458,7 +2732,6 @@ def setting_window():
         theme_frame.grid_forget()
         ttktheme_frame.grid_forget()
         editor_frame.grid_forget()
-        github_frame.grid_forget()
         openai_frame.grid_forget()
         choco_frame.grid_forget()
         scoop_frame.grid_forget()
@@ -2502,26 +2775,6 @@ def setting_window():
 
             aceptar_btn = ttk.Button(editor_frame, text="Confirm", command=guardar_y_cerrar)
             aceptar_btn.grid(row=len(editores_disponibles), column=0, columnspan=3, padx=5, pady=5)
-    
-        
-        elif item == "Github":
-            hide_frames()
-            github_frame.grid(row=0, column=1, sticky="nsew")
-            titulo = ttk.Label(github_frame, text="Github Configuration")
-            titulo.grid(row=0, columnspan=2, pady=5, padx=5)
-            
-            label = ttk.Label(github_frame, text="Github Api Key: ")
-            label.grid(row=1, column=0, pady=5, padx=5)
-            
-            api_entry = ttk.Entry(github_frame, width=50)
-            api_entry.grid(row=1, column=1, pady=5, padx=5)
-            
-            def guardar():
-                api_key = api_entry.get()
-                guardar_configuracion_github(api_key)
-            
-            sub_button = ttk.Button(github_frame, text="Accept", command=guardar)
-            sub_button.grid(row=2, columnspan=2, pady=5, padx=5)
         
         elif item == "Open Ai":
             hide_frames()
@@ -2544,22 +2797,22 @@ def setting_window():
         
         elif item == "Install Lenguajes":
             hide_frames()
-            lenguajes_frame.grid(row=0, column=1, sticky="nsew")
+            lenguajes_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
             for widget in lenguajes_frame.winfo_children():
                 widget.destroy()
                 
-            num_colums = 3
+            num_columns = 3
             
             for index, lenguaje in enumerate(lenguajes):
-                row = index // num_colums
-                column = index & num_colums
+                row = index // num_columns
+                column = index % num_columns
                 button = ttk.Button(lenguajes_frame, text=lenguaje, command=lambda lenguaje=lenguaje: install_lenguaje(lenguaje))
                 button.grid(row=row, column=column, sticky="ew", padx=2, pady=2)
         
         elif item == "Install choco":
             hide_frames()
-            choco_frame.grid(row=0, column=1, sticky="nsew")
+            choco_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             quest_label = ttk.Label(choco_frame, text="You want install pakage manager Chocolatey in your powersell")
             quest_label.grid(row=0,columnspan=2, sticky="ew")
             
@@ -2584,23 +2837,23 @@ def setting_window():
         
         elif item == "Install Editors":
             hide_frames()
-            editors_frame.grid(row=0, column=1, sticky="nsew")
+            editors_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
             for widget in editors_frame.winfo_children():
                 widget.destroy()
 
-            num_colums = 3
+            num_columns = 3
             
             for index, editor in enumerate(editores_disponibles):
-                row = index // num_colums
-                column = index & num_colums
+                row = index // num_columns
+                column = index % num_columns
                 button = ttk.Button(editors_frame, text=editor, command=lambda editor=editor: install_editor(editor))
                 button.grid(row=row, column=column, sticky="ew", padx=2, pady=2)
             
             
         elif item == "Backup Settings":
             hide_frames()
-            backup_frame.grid(row=0, column=1, sticky="nsew")
+            backup_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
             global combo_frequency
             global status_label
@@ -2608,26 +2861,26 @@ def setting_window():
             frequency_options = ["Daily", "Weekly", "Monthly"]
             combo_frequency = ttk.Combobox(backup_frame, values=frequency_options)
             combo_frequency.set("Daily")
-            combo_frequency.grid(row=0, columnspan=2, padx=5, pady=5)
+            combo_frequency.grid(row=0, columnspan=2, padx=2, pady=2)
             
-            status_label = ttk.Label(backup_frame, text="")
-            status_label.grid(row=1, columnspan=2, padx=5, pady=5)
+            status_label = ttk.Label(backup_frame, text="Backup")
+            status_label.grid(row=2, column=0, padx=2, pady=2)
             
             btn_confirm = ttk.Button(backup_frame, text="Confirm", command=get_selected_frequency)
-            btn_confirm.grid(row=2, column=0, padx=5, pady=5)
+            btn_confirm.grid(row=1, column=0, padx=2, pady=2)
             
-            btn_backup_now = ttk.Button(backup_frame, text="Create Now", command=backup_now)
-            btn_backup_now.grid(row=2, column=1, padx=5, pady=5)
+            btn_backup_now = ttk.Button(backup_frame, text="Create Now", command=backup_thread)
+            btn_backup_now.grid(row=1, column=1, padx=2, pady=2)
         
         elif item == "Terminal Setting":
             hide_frames()
-            terminal_frame.grid(row=0, column=1, sticky="nsew")
+            terminal_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
             terminal_label = ttk.Label(terminal_frame, text="Select Terminal")
             terminal_label.grid(row=0, columnspan=2, padx=5, pady=5)
             
             selected_terminal = tk.StringVar()
-            terminal_choices = ["Select Terminal", "Command Pormpt", "Windows Terminal", "PowerShell", "Git Bash"]
+            terminal_choices = ["Select Terminal", "Command Pormpt", "Windows Terminal", "PowerShell", "Git Bash", "wezterm", "Kitty", "Alacrity"]
             terminal_menu = ttk.OptionMenu(terminal_frame, selected_terminal, *terminal_choices)
             terminal_menu.grid(row=1, columnspan=2, pady=5, padx=5)
             
@@ -2654,7 +2907,7 @@ def setting_window():
         
         elif item == "Theme":
             hide_frames()
-            theme_frame.grid(row=0, column=1, sticky="nsew")
+            theme_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
             def change_theme1(theme_name):
                 root.set_theme(theme_name)
@@ -2673,7 +2926,7 @@ def setting_window():
 
         elif item == "TTKTheme":
             hide_frames()
-            ttktheme_frame.grid(row=0, column=1, sticky="nsew")
+            ttktheme_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             def ttk_themes():
                 style = ttk.Style()
                 themes = style.theme_names()
@@ -2931,7 +3184,220 @@ def instalar_dependencias(ruta_proyecto, comando):
     except subprocess.CalledProcessError:
         ms.showerror("Error", "There was a problem installing the dependencies.")
 
+def obtain_github_repos():
+    url = "https://api.github.com/user/repos"
+    try:
+        response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
+                                              "Accept": "application/vnd.github.v3+json"})
+        response.raise_for_status()
+        repos = response.json()
+        return repos
+    except requests.exceptions.RequestException as e:
+        ms.showerror("ERROR", f"Error loading GitHub repositories: {e}")
+        return []
+    
+def show_github_repos():
+    for item in repostree.get_children():
+        repostree.delete(item)
+    
+    repos = obtain_github_repos()
+    for repo in repos:
+        repostree.insert("", "end", values=(repo["name"], repo["description"], repo["language"], repo["html_url"], repo["visibility"], repo["clone_url"]))
+        
+def open_repository(event):
+    item = repostree.selection()
+    if item:
+        repo_url = repostree.item(item, "values")[3]
+        webbrowser.open_new_tab(repo_url)
+
+def create_repository_github(name, description="", private=False):
+    url = "https://api.github.com/user/repos"
+    data = {
+        "name": name,
+        "description": description,
+        "private": private
+    }
+    
+    try:
+        response = requests.post(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
+                                               "Accept": "application/vnd.github.v3+json"},
+                                 json=data)
+        response.raise_for_status()
+        ms.showinfo("SUCCESS", f"Repository '{name}' created successfully.")
+    except requests.exceptions.RequestException as e:
+        ms.showerror("ERROR", f"Error creating repository: {e}")
+        
+def delete_repository_github(name):
+    user = GITHUB_USER
+    url = f"https://api.github.com/repos/{user}/{name}"
+    
+    try:
+        response = requests.delete(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
+                                                 "Accept": "application/vnd.github.v3+json"})
+        response.raise_for_status()
+        ms.showinfo("SUCCESS", f"Repository '{name}' deleted successfully.")
+    except requests.exceptions.RequestException as e:
+        ms.showerror("ERROR", f"Error deleting repository: {e}")
+
+def edit_repository(name):
+    """
+    Edita un repositorio por su nombre, permitiendo modificar varias propiedades.
+    """
+    user = GITHUB_USER
+    url = f"https://api.github.com/repos/{user}/{name}"
+
+    # Obtener detalles actuales del repositorio para prellenar los valores
+    try:
+        response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+        response.raise_for_status()
+        repo_data = response.json()
+    except requests.exceptions.RequestException as e:
+        ms.showerror("Error", f"No se pudo obtener los datos del repositorio: {e}")
+        return
+
+    # Crear un cuadro de diálogo para editar los campos del repositorio
+    def guardar_cambios():
+        # Recopilar los valores actualizados
+        nuevo_nombre = nombre_var.get().strip()
+        nueva_descripcion = descripcion_var.get().strip()
+        nueva_visibilidad = visibilidad_var.get()
+
+        # Crear el payload con los datos actualizados
+        data = {
+            "name": nuevo_nombre,
+            "description": nueva_descripcion,
+            "private": nueva_visibilidad == "Privado"
+        }
+
+        # Enviar los cambios a la API
+        try:
+            response = requests.patch(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
+                                                    "Accept": "application/vnd.github.v3+json"}, json=data)
+            response.raise_for_status()
+            ms.showinfo("Éxito", f"Repositorio '{name}' actualizado con éxito.")
+            edit_window.destroy()  # Cerrar la ventana de edición
+            show_github_repos()  # Actualizar la lista de repositorios
+        except requests.exceptions.RequestException as e:
+            ms.showerror("Error", f"Error al actualizar el repositorio: {e}")
+
+    # Crear la ventana de edición
+    edit_window = ttk.Toplevel()
+    edit_window.title(f"Editar Repositorio: {name}")
+    edit_repository.iconphoto(True, tk.PhotoImage(file=path))
+
+    # Campos para nombre, descripción y visibilidad
+    ttk.Label(edit_window, text="Nombre del repositorio:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+    nombre_var = tk.StringVar(value=repo_data.get("name", ""))
+    ttk.Entry(edit_window, textvariable=nombre_var, width=40).grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+    ttk.Label(edit_window, text="Descripción:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+    descripcion_var = tk.StringVar(value=repo_data.get("description", ""))
+    ttk.Entry(edit_window, textvariable=descripcion_var, width=40).grid(row=1, column=1, padx=5, pady=5, sticky="w")
+
+    ttk.Label(edit_window, text="Visibilidad:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+    visibilidad_var = tk.StringVar(value="Privado" if repo_data.get("private", False) else "Público")
+    ttk.OptionMenu(edit_window, visibilidad_var, "Público", "Privado").grid(row=2, column=1, padx=5, pady=5, sticky="w")
+
+    # Botón para guardar los cambios
+    ttk.Button(edit_window, text="Guardar Cambios", command=guardar_cambios).grid(row=3, columnspan=2, pady=10)
+
+def clone_respository():
+    try:
+        item = repostree.selection()[0]
+        clone_url = repostree.item(item, "values")[5]
+        path_folder = filedialog.askdirectory(title="Select the folder where you want to clone the repository")
+        
+        if not path_folder:
+            return
+        
+        command = ["git", "clone", clone_url, path_folder]
+        subprocess.Popen(command, shell=True)
+        
+        ms.showinfo("SUCCESS", f"Repository cloned successfully in: {path_folder}.")
+    except IndexError:
+        ms.showerror("ERROR", "Please select a repository to clone.")
+    except subprocess.CalledProcessError as e:
+        ms.showerror("ERROR", f"Error cloning repository:\n{e}")
+    except Exception as e:
+        ms.showerror("ERROR", f"Inesperated error:\n{e}")
+
+def github_profile():
+    mygithub = ttk.Toplevel(root)
+    mygithub.title("My GitHub Profile")
+    mygithub.iconphoto(True, tk.PhotoImage(file=path))
+    
+    global repostree
+    
+    frame = ttk.Frame(mygithub)
+    frame.pack(expand=True, fill="both")
+    
+    columns = ("Name", "Description", "Language", "URL", "Visibility", "Clone URL")
+    repostree = ttk.Treeview(frame, columns=columns, show="headings", height=20)
+    repostree.heading("Name", text="Name")
+    repostree.heading("Description", text="Description")
+    repostree.heading("Language", text="Language")
+    repostree.heading("URL", text="URL")
+    repostree.heading("Visibility", text="Visibility")
+    repostree.heading("Clone URL", text="Clone URL")
+    
+    repostree.pack(expand=True, fill="both")
+    
+    def menu_contextual(event):
+        """Muestra el menú contextual en el Treeview."""
+        # Seleccionar el elemento en el que se hizo clic
+        item = repostree.identify_row(event.y)
+        if item:
+            repostree.selection_set(item)
+            context_menu.post(event.x_root, event.y_root)
+        else:
+            repostree.selection_remove(tree.selection())
+    
+    repostree.bind("<Double-1>", open_repository)
+    repostree.bind("<Button-3>", menu_contextual)
+    
+    context_menu = tk.Menu(mygithub, tearoff=0)
+    context_menu.add_command(label="Delete Repository", command=lambda: delete_repository_github(repostree.item(repostree.selection(), "values")[0]))
+    context_menu.add_command(label="Editr Repository", command=lambda: edit_repository(repostree.item(repostree.selection()[0], "values")[0]))
+    context_menu.add_command(label="Crear Nuevo Repositorio", command=create_repository_github)
+    context_menu.add_command(label="Clone Repository", command=clone_respository)
+    
+    btn_load = ttk.Button(frame, text="Load Repositories", command=show_github_repos)
+    btn_load.pack(pady=5)
+    show_github_repos()
+
+def show_docu():
+    docu = tk.Toplevel(root)
+    docu.title("Python Documentation")
+    docu.iconphoto(True, tk.PhotoImage(file=path))
+    
+    def load_documentation():
+        topic = m_var.get().strip()
+        url = f"https://docs.python.org/3/library/{topic}"
+        
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                url = f"https://docs.python.org/3/library/{topic}"
+                webview.create_window("Python Documentation", url)
+                docu.destroy()
+                webview.start(icon=path2)
+            else:
+                ms.showerror("ERROR", f"Documentation for '{topic}' not found.")
+        except requests.exceptions.RequestException as e:
+            ms.showerror("ERROR",f"Error loading documentation: {e}")
+    
+    t_label = ttk.Label(docu, text="Enter module name (e.g., json, os, sys):")
+    t_label.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
+    
+    m_var = tk.StringVar()
+    m_entry = ttk.Entry(docu, width=50, textvariable=m_var)
+    m_entry.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+    
+    load_button = ttk.Button(docu, text="Load Documentation", command=load_documentation)
+    load_button.grid(row=5, columnspan=2, padx=2, pady=2, sticky="ew")
+
 path = resource_path(img)
+path2 = resource_path2("./software.png")
 root = ThemedTk()
 root.title('Proyect Organizer')
 root.geometry("1550x500")
@@ -3133,6 +3599,9 @@ def install_editor(name=""):
             buy = ms.askyesno("Intellij IDEA", "Free 30-day trial.you want buy a license?")
             if buy:
                 webbrowser.open("https://www.jetbrains.com/idea/buy/?section=personal&billing=monthly")
+    elif name == "Android Studio":
+        ms.showinfo("ANDROID STUDIO", "Android Studio can't be installed automatically. You go to the web for download")
+        webbrowser.open("https://developer.android.com/studio")
         
 
 filas_ocultas = set()
@@ -3143,7 +3612,7 @@ editores_disponibles = ["Visual Studio Code", "Sublime Text", "Atom", "Vim", "Em
         "PyCharm", "Visual Studio", "Code::Blocks", "NetBeans", 
         "Android Studio", "neovim"]
 
-lenguajes = ["Python", "NodeJS", "bun", "React", "Vue", "C++", "C#", "Rust", "Go"]
+lenguajes = ["Python", "NodeJS", "bun", "React", "Vue", "C++", "C#", "Rust", "Go", "flutter"]
 
 menu = tk.Menu(root)
 root.config(menu=menu)
@@ -3152,8 +3621,11 @@ menu_archivo = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label="Proyects", menu=menu_archivo)
 menu_archivo.add_command(label='Agree Proyect', command=agregar_proyecto_existente)
 menu_archivo.add_command(label='Create New', command=crear_nuevo_proyecto)
+#menu_archivo.add_command(label="Create Template", command=crear_plantilla)
+#menu_archivo.add_command(label="Apply template", command=aplicar_plantilla)
+menu_archivo.add_command(label="My Github profile", command=github_profile)
 menu_archivo.add_command(label="New Project Github", command=abrir_proyecto_github)
-menu_archivo.add_command(label="Push Update Github", command=push_actualizaciones_github)
+menu_archivo.add_command(label="Push Update Github", command=lambda: push_actualizaciones_github(tree.item(tree.selection())['values'][5]))
 menu_archivo.add_command(label='Delete Proyect', command=lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4]))
 menu_archivo.add_command(label="Generate Report", command=generar_informe)
 
@@ -3162,6 +3634,7 @@ menu.add_command(label="Settings", command=setting_window)
 help_menu = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label="Help", menu=help_menu)
 help_menu.add_command(label="InfoVersion", command=ver_info)
+help_menu.add_command(label="Documentation", command=show_docu)
 
 nombre_label = ttk.Label(main_frame, text="Name:")
 nombre_label.grid(row=1, column=0, pady=5, padx=5, sticky="nsew")
@@ -3208,7 +3681,7 @@ editor_options = [
         "Visual Studio Code", "Sublime Text", "Atom", "Vim", "Emacs", 
         "Notepad++", "Brackets", "TextMate", "Geany", "gedit", 
         "Nano", "Kate", "Bluefish", "Eclipse", "IntelliJ IDEA", 
-        "PyCharm", "Visual Studio", "Code::Blocks", "NetBeans", 
+        "PyCharm", "Visual Studio", "Blend Visual Studio", "Code::Blocks", "NetBeans", 
         "Android Studio", "Editor Integrated", "neovim"
     ]
 selected_editor.set(editor_options[0])
@@ -3246,4 +3719,6 @@ crear_base_datos()
 mostrar_proyectos()
 set_default_theme()
 check_new_version()
+thread_sinc()
+initialize_backup_schedule()
 root.mainloop()
