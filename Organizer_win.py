@@ -3923,6 +3923,7 @@ def github_profile():
     context_menu.add_command(label="Delete Repository", command=lambda: delete_repository_github(repostree.item(repostree.selection(), "values")[0]))
     context_menu.add_command(label="Editr Repository", command=lambda: edit_repository(repostree.item(repostree.selection()[0], "values")[0]))
     context_menu.add_command(label="Github Releases", command=lambda: manage_github_releases(repostree.item(repostree.selection(), "values")[0]))
+	context_menu.add_command(label="Commits History", command=lambda: show_github_comits(repostree.item(repostree.selection()[0], "values")[0]))
     context_menu.add_command(label="Crear Nuevo Repositorio", command=create_repository_github)
     context_menu.add_command(label="Clone Repository", command=clone_respository)
     context_menu.add_command(label="View Files", command=lambda: open_repo_files(repostree.item(repostree.selection()[0], "values")[0]))
@@ -3930,6 +3931,109 @@ def github_profile():
     btn_load = ttk.Button(frame, text="Load Repositories", command=show_github_repos)
     btn_load.pack(pady=5)
     show_github_repos()
+
+def show_github_comits(repo_name):
+    # Crear una ventana emergente para listar archivos
+    file_window = ttk.Toplevel()
+    file_window.title(f"Files in Repository: {repo_name}")
+    file_window.geometry("800x600")
+    file_window.iconbitmap(path)
+
+    # Marco principal
+    frame = ttk.Frame(file_window)
+    frame.pack(expand=True, fill="both")
+
+    # Treeview para mostrar los archivos
+    columns = ("Path", "Type", "Size")
+    file_tree = ttk.Treeview(frame, columns=columns, show="headings", height=20)
+    file_tree.heading("Path", text="File Path")
+    file_tree.heading("Type", text="Type")
+    file_tree.heading("Size", text="Size (bytes)")
+    file_tree.pack(expand=True, fill="both", padx=5, pady=5)
+
+    # Botón para cargar el historial de commits del archivo seleccionado
+    def load_commit_history():
+        # Obtener el archivo seleccionado
+        selected_item = file_tree.selection()
+        if not selected_item:
+            ms.showerror("Error", "Please select a file to view its commit history.")
+            return
+
+        file_path = file_tree.item(selected_item, "values")[0]
+        fetch_commit_history(repo_name, file_path)
+
+    ttk.Button(frame, text="View Commit History", command=load_commit_history).pack(pady=5)
+
+    # Cargar los archivos del repositorio
+    def load_files():
+        try:
+            url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/contents"
+            headers = {
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github.v3+json"
+            }
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            files = response.json()
+
+            # Poblar el Treeview con los archivos
+            for file in files:
+                file_tree.insert(
+                    "",
+                    "end",
+                    values=(
+                        file.get("path"),
+                        file.get("type"),
+                        file.get("size", "Unknown"),
+                    )
+                )
+        except requests.exceptions.RequestException as e:
+            ms.showerror("Error", f"Unable to fetch files: {e}")
+
+    load_files()
+
+
+def fetch_commit_history(repo_name, file_path):
+    try:
+        url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/commits"
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        params = {"path": file_path}
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        commits = response.json()
+
+        # Crear una ventana emergente para mostrar el historial
+        commit_window = ttk.Toplevel()
+        commit_window.title(f"Commit History for {file_path}")
+        commit_window.geometry("800x600")
+        commit_window.iconbitmap(path)
+
+        # Treeview para los commits
+        columns = ("SHA", "Author", "Date", "Message")
+        commit_tree = ttk.Treeview(commit_window, columns=columns, show="headings", height=20)
+        commit_tree.heading("SHA", text="Commit SHA")
+        commit_tree.heading("Author", text="Author")
+        commit_tree.heading("Date", text="Date")
+        commit_tree.heading("Message", text="Message")
+        commit_tree.pack(expand=True, fill="both", padx=5, pady=5)
+
+        # Poblar el Treeview con los commits
+        for commit in commits:
+            commit_tree.insert(
+                "",
+                "end",
+                values=(
+                    commit.get("sha"),
+                    commit.get("commit", {}).get("author", {}).get("name"),
+                    commit.get("commit", {}).get("author", {}).get("date"),
+                    commit.get("commit", {}).get("message"),
+                )
+            )
+    except requests.exceptions.RequestException as e:
+        ms.showerror("Error", f"Unable to fetch commit history: {e}")
 
 def manage_github_releases(repo_name):
     """
