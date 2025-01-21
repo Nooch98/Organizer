@@ -2189,6 +2189,7 @@ def show_context_menu(event):
         ("Open Github", lambda: abrir_repositorio(event)),
         ("Edit", modificar_proyecto),
         ("Delete", lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4])),
+		("Sync Files Locals", lambda: sync_repo_files(tree.item(tree.selection())['values'][5], tree.item(tree.selection())['values'][4])),
         ("Version Control", mostrar_control_versiones),
         ("Detect Dependencies", detectar_dependencias),
         ("Git Init", lambda: git_init(selected_project_path)),
@@ -4172,6 +4173,102 @@ def manage_github_releases(repo_name):
 
     # Inicializar el árbol
     populate_release_tree()
+
+def sync_repo_files(repo_url, local_path):
+    def list_files_in_repo(repo_owner, repo_name):
+        url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents"
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            ms.showerror("Error", f"Failed to fetch files from the repository: {e}")
+            return []
+
+    def get_last_modified(repo_owner, repo_name, file_path):
+        url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/commits"
+        params = {"path": file_path, "page": 1, "per_page": 1}
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        try:
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            commits = response.json()
+            if commits:
+                return commits[0]["commit"]["committer"]["date"]
+            else:
+                return "No commits"
+        except requests.exceptions.RequestException:
+            return "Unknown"
+
+    def download_file(repo_owner, repo_name, file_path, local_path):
+        url = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/main/{file_path}"
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+        }
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            local_file_path = os.path.join(local_path, file_path)
+            os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+            with open(local_file_path, "w") as local_file:
+                local_file.write(response.text)
+        except requests.exceptions.RequestException as e:
+            ms.showerror("Error", f"Failed to download {file_path}: {e}")
+
+    # Parsear la URL del repositorio para obtener el propietario y el nombre del repo
+    repo_parts = repo_url.replace("https://github.com/", "").strip().split("/")
+    if len(repo_parts) < 2:
+        ms.showerror("Error", "Invalid repository URL.")
+        return
+
+    repo_owner, repo_name = repo_parts[:2]
+
+    # Obtener archivos del repositorio
+    repo_files = list_files_in_repo(repo_owner, repo_name)
+    if not repo_files:
+        return
+
+    # Obtener las fechas de última modificación para cada archivo
+    files_with_dates = []
+    for file in repo_files:
+        if file["type"] == "file":
+            file_path = file["path"]
+            last_modified = get_last_modified(repo_owner, repo_name, file_path)
+            files_with_dates.append({"path": file_path, "last_modified": last_modified})
+
+    # Mostrar ventana emergente para seleccionar archivos
+    window = tk.Toplevel()
+    window.title("Select Files to Sync")
+    window.geometry("600x400")
+
+    files_var = {}
+    for file in files_with_dates:
+        file_path = file["path"]
+        last_modified = file["last_modified"]
+        files_var[file_path] = tk.BooleanVar()
+
+        ttk.Checkbutton(
+            window,
+            text=f"{file_path} (Last Modified: {last_modified})",
+            variable=files_var[file_path],
+        ).pack(anchor="w")
+
+    def sync_selected_files():
+        selected_files = [file for file, var in files_var.items() if var.get()]
+        for file in selected_files:
+            download_file(repo_owner, repo_name, file, local_path)
+        ms.showinfo("Success", "Selected files have been synchronized.")
+        window.destroy()
+
+    ttk.Button(window, text="Sync Selected Files", command=sync_selected_files).pack(pady=5)
+    ttk.Button(window, text="Cancel", command=window.destroy).pack(pady=5)
 
 menu_name = "Organizer"
 description_menu = "Open Organizer"
