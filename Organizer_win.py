@@ -5,6 +5,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+from urllib import response
 import git
 import time
 import webbrowser
@@ -22,6 +23,7 @@ import glob
 import re
 import xml.etree.ElementTree as ET
 import webview
+import base64
 #--------------------------------------------------------#
 from tkinter import OptionMenu, StringVar, filedialog, simpledialog
 from tkinter.simpledialog import askstring 
@@ -37,7 +39,9 @@ from chlorophyll import CodeView
 from pathlib import Path
 from ttkbootstrap.constants import *
 from git import Repo
+from tkinter.colorchooser import askcolor
 from datetime import datetime
+from pygments.lexers.markup import MarkdownLexer
 
 main_version = "ver.1.9.5"
 version = str(main_version)
@@ -950,93 +954,223 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             
             
     def create_code_theme():
-        ruta_new_theme = ".\\_internal\\chlorophyll\\colorschemes\\"
-        def save_theme(name):
-            default_content = "// Add your theme here"
-            with open(f"{ruta_new_theme}{name}.toml", "w+") as file:
-                file.write(default_content)
-            
-            new_theme.destroy()
-            open_theme_editor(name)
+        # Crear la ventana principal de la interfaz
+        new_theme = tk.Toplevel()
+        new_theme.title("Crear Nuevo Tema de Código")
+        new_theme.geometry("900x600")  # Ajustamos el tamaño de la ventana
+        new_theme.iconbitmap(path)  # Establecemos el icono de la ventana
+
+        # Variables para almacenar los colores seleccionados (definir colores predeterminados)
+        selected_colors = {
+            'editor': {'bg': '#232136', 'fg': '#e0def4', 'select_bg': '#393552', 'select_fg': '#e0def4', 'inactive_select_bg': '#393552', 'caret': '#e0def4'},
+            'general': {'comment': '#6e6a86', 'error': '#eb6f92', 'escape': '#908caa', 'keyword': '#eb6f92', 'name': '#f6c177', 'string': '#ea9a97', 'punctuation': '#eb6f92'},
+            'keyword': {'constant': '#c4a7e7', 'declaration': '#eb6f92', 'namespace': '#eb6f92', 'pseudo': '#c4a7e7', 'reserved': '#eb6f92', 'type': '#eb6f92'},
+            'name': {'attr': '#f6c177', 'builtin': '#9ccfd8', 'builtin_pseudo': '#f6c177', 'class': '#f6c177', 'class_variable': '#f6c177', 'constant': '#e0def4', 'decorator': '#9ccfd8', 'entity': '#f6c177', 'exception': '#9ccfd8', 'function': '#f6c177', 'global_variable': '#f6c177', 'instance_variable': '#f6c177', 'label': '#f6c177', 'magic_function': '#9ccfd8', 'magic_variable': '#f6c177', 'namespace': '#e0def4', 'tag': '#eb6f92', 'variable': '#eb6f92'},
+            'operator': {'symbol': '#f83535', 'word': '#eb6f92'},
+            'string': {'affix': '#ea9a97', 'char': '#ea9a97', 'delimeter': '#ea9a97', 'doc': '#ea9a97', 'double': '#ea9a97', 'escape': '#ea9a97', 'heredoc': '#ea9a97', 'interpol': '#ea9a97', 'regex': '#ea9a97', 'single': '#ea9a97', 'symbol': '#ea9a97'},
+            'number': {'binary': '#c4a7e7', 'float': '#c4a7e7', 'hex': '#c4a7e7', 'integer': '#c4a7e7', 'long': '#c4a7e7', 'octal': '#c4a7e7'},
+            'comment': {'hashbang': '#6e6a86', 'multiline': '#6e6a86', 'preproc': '#eb6f92', 'preprocfile': '#ea9a97', 'single': '#6e6a86', 'special': '#6e6a86'}
+        }
+
+        # Crear un diccionario para almacenar las etiquetas de los colores
+        color_labels = {category: {} for category in selected_colors.keys()}
+
+        # Función para elegir un color a través de un selector
+        def choose_color(category, color_name):
+            color = askcolor(initialcolor=selected_colors[category][color_name])[1]
+            if color:
+                selected_colors[category][color_name] = color
+                color_labels[category][color_name].config(bg=color)  # Actualizar el color del label
+                update_preview()  # Actualizar la previsualización
         
-        def guardar_cambios1(text_editors, file_path, event=None):
-            if file_path:
-                with open(file_path, "w", encoding="utf-8") as file:
-                    file.write(text_editors.get(1.0, tk.END))
-                    ms.showinfo("Theme Saved", f"Theme saved successfully")
-                text_editors.edit_modified(False)
-                global builtin_color_schemes
-                code_themes_dir = Path(".\\_internal\\chlorophyll\\colorschemes\\")
-                builtin_color_schemes = set([archivo.stem for archivo in code_themes_dir.glob("*.toml")])
-                
-                theme_code_menu.delete(0, tk.END)
-                theme_code_menu.add_command(label='Create Code Theme', command=create_code_theme)
-                for code_theme in builtin_color_schemes:
-                    theme_code_menu.add_command(label=code_theme, command=lambda theme=code_theme: change_code_theme(theme))
+        def is_valid_color(color):
+            return bool(re.match(r'^#[0-9A-Fa-f]{6}$', color))
+
+        # Función para actualizar el color desde el campo Entry
+        def update_color_from_entry(category, color_name, color_entry):
+            color = color_entry.get()
+            if is_valid_color(color):
+                selected_colors[category][color_name] = color
+                color_labels[category][color_name].config(bg=color)  # Actualizar el color del label
+                update_preview()  # Actualizar la previsualización
             else:
-                ms.showerror("ERROR", "Error: There is no open file to save changes.")
+               pass
+        
+        # Crear un fragmento de código para la previsualización
+        code_sample = """
+            # Este es un comentario simple
+            # Otro comentario más largo que abarca varias líneas
+            # Este comentario tiene una # escapatoria de caracteres
 
-        def example_code_theme():
-            theme_file_path = ".\\_internal\\chlorophyll\\colorschemes\\monokai.toml"
+            def ejemplo_funcion(variable1, variable2):
+                # Comentario dentro de una función
+                if variable1 > 0:
+                    # Comprobamos si el valor es mayor que cero
+                    print('El valor es positivo: ', variable1)
+                else:
+                    print("El valor es negativo o cero")
+                return variable1 + variable2  # Retorno de la suma
 
+            # Este es un bloque de código de prueba con múltiples tipos de datos
+            variable1 = 123  # Número entero
+            variable2 = 3.14  # Número de punto flotante
+            cadena = 'Hola Mundo'  # Cadena de texto
+            booleano = True  # Booleano
+
+            # Operaciones matemáticas con números y strings
+            resultado = variable1 + variable2
+            texto_completo = cadena + " y el número es: " + str(variable1)
+
+            # Clases y funciones de Python
+            class MiClase:
+                def __init__(self):
+                    self.variable_de_instancia = 5  # Atributo de clase
+                def metodo(self):
+                    return self.variable_de_instancia
+
+            # Invocando una función y creando una instancia de clase
+            instancia = MiClase()
+            print(instancia.metodo())  # Llamada a un método de clase
+
+            # Uso de palabras clave y declaraciones
+            for i in range(5):
+                print(i)
+            """
+        
+        # Crear un área de texto para la previsualización del código
+        preview_text = tk.Text(new_theme, height=50, width=70, wrap=tk.WORD, bg=selected_colors['editor']['bg'], fg=selected_colors['editor']['fg'], font=("Courier New", 12))
+        preview_text.insert(tk.END, code_sample)
+        preview_text.config(state=tk.DISABLED)  # Deshabilitar la edición
+        preview_text.grid(row=0, column=3, rowspan=10, padx=10, pady=10)
+
+        # Función para actualizar la previsualización en tiempo real
+        def update_preview():
+            preview_text.config(bg=selected_colors['editor']['bg'], fg=selected_colors['editor']['fg'])
+            preview_text.tag_configure("keyword", foreground=selected_colors['general']['keyword'])
+            preview_text.tag_configure("comment", foreground=selected_colors['general']['comment'])
+            preview_text.tag_configure("string", foreground=selected_colors['general']['string'])
+            preview_text.tag_configure("number", foreground=selected_colors['general']['error'])
+
+            preview_text.delete(1.0, tk.END)
+            preview_text.insert(tk.END, code_sample)
+
+            # Aplicar colores de la previsualización
+            for tag, content in [("comment", "# Comentario de prueba"), ("keyword", "def ejemplo_funcion"), ("string", "'cadena de texto'"), ("number", "123")]:
+                start_idx = '1.0'
+                while start_idx:
+                    start_idx = preview_text.search(content, start_idx, stopindex=tk.END)
+                    if start_idx:
+                        end_idx = f"{start_idx}+{len(content)}c"
+                        preview_text.tag_add(tag, start_idx, end_idx)
+                        start_idx = end_idx
+
+        # Inicializar la previsualización con los colores por defecto
+        update_preview()
+
+        ttk.Label(new_theme, text="Nombre del Tema:").grid(row=11, column=0, padx=10, pady=5, sticky="w")
+        theme_name_entry = ttk.Entry(new_theme)
+        theme_name_entry.grid(row=11, column=1, padx=10, pady=5, sticky="ew")
+        
+        # Crear un Canvas para el desplazamiento
+        canvas = ttk.Canvas(new_theme)
+        canvas.grid(row=0, column=0, rowspan=11, padx=10, pady=10, sticky="nswe")
+
+        # Crear una barra de desplazamiento vertical
+        scrollbar = ttk.Scrollbar(new_theme, orient="vertical", command=canvas.yview)
+        scrollbar.grid(row=0, column=1, rowspan=11, sticky="ns")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Crear un frame dentro del canvas para contener los controles
+        controls_frame = ttk.Frame(canvas)
+        canvas.create_window((0, 0), window=controls_frame, anchor="nw")
+
+        # Etiquetas para cada categoría de colores en el archivo TOML
+        row = 0
+        for category, colors in selected_colors.items():
+            tk.Label(controls_frame, text=f"Colores para {category.capitalize()}").grid(row=row, column=0, columnspan=3, padx=10, pady=5, sticky="w")
+            row += 1
+            for color_name, default_color in colors.items():
+                tk.Label(controls_frame, text=f"{color_name.capitalize()}").grid(row=row, column=0, padx=10, pady=5, sticky="w")
+                color_button = tk.Button(controls_frame, text="Elegir Color", command=lambda category=category, color_name=color_name: choose_color(category, color_name))
+                color_button.grid(row=row, column=1, padx=10, pady=5, sticky="ew")
+                color_labels[category][color_name] = tk.Label(controls_frame, bg=default_color, width=10, height=1)
+                color_labels[category][color_name].grid(row=row, column=2, padx=10, pady=5, sticky="ew")
+                # Campo Entry al lado del botón para personalizar el color (si es necesario)
+                color_entry = tk.Entry(controls_frame)
+                color_entry.grid(row=row, column=3, padx=10, pady=5, sticky="ew")
+                # Asociar la actualización del color al evento de ingreso de texto
+                color_entry.bind("<FocusOut>", lambda event, category=category, color_name=color_name, entry=color_entry: update_color_from_entry(category, color_name, entry))
+                row += 1
+
+        # Asegurarse de que el canvas se pueda redimensionar y los elementos dentro de él también
+        controls_frame.update_idletasks()  # Para actualizar el tamaño del frame
+        canvas.config(scrollregion=canvas.bbox("all"))
+
+        # Función para guardar el tema creado
+        def save_theme():
+            theme_name = theme_name_entry.get()
+            if not theme_name:
+                ms.showerror("Error", "Por favor, ingresa un nombre para el tema.")
+                return
+
+            # Crear el contenido del archivo TOML con todos los colores seleccionados
+            theme_content = f"[editor]\n"
+            for name, color in selected_colors['editor'].items():
+                theme_content += f'{name} = "{color}"\n'
+
+            # Sección [general]
+            theme_content += "\n[general]\n"
+            for name, color in selected_colors['general'].items():
+                theme_content += f'{name} = "{color}"\n'
+
+            # Sección [keyword]
+            theme_content += "\n[keyword]\n"
+            for name, color in selected_colors['keyword'].items():
+                theme_content += f'{name} = "{color}"\n'
+
+            # Sección [name]
+            theme_content += "\n[name]\n"
+            for name, color in selected_colors['name'].items():
+                theme_content += f'{name} = "{color}"\n'
+
+            # Sección [operator]
+            theme_content += "\n[operator]\n"
+            for name, color in selected_colors['operator'].items():
+                theme_content += f'{name} = "{color}"\n'
+
+            # Sección [string]
+            theme_content += "\n[string]\n"
+            for name, color in selected_colors['string'].items():
+                theme_content += f'{name} = "{color}"\n'
+
+            # Sección [number]
+            theme_content += "\n[number]\n"
+            for name, color in selected_colors['number'].items():
+                theme_content += f'{name} = "{color}"\n'
+
+            # Sección [comment]
+            theme_content += "\n[comment]\n"
+            for name, color in selected_colors['comment'].items():
+                theme_content += f'{name} = "{color}"\n'
+
+            # Guardar el tema en un archivo .toml
+            ruta_new_theme = ".\\_internal\\chlorophyll\\colorschemes\\"
             try:
-                with open(theme_file_path, "r") as file:
-                    theme_code = file.read()
-                return theme_code
-            except FileNotFoundError:
-                ms.showerror("ERROR", "Theme file nor found")
-                return ""
-        
-        def open_theme_editor(name):
-            global example_theme
-            new_tab_window = tk.Toplevel(editor)
-            new_tab_window.title(f"New Theme: {name}")
-            new_tab_window.iconbitmap(path)
-            
-            example_view = ttk.Frame(new_tab_window)
-            example_view.pack(side='right', fill="both", expand=True)
-            
-            new_tab_frame = ttk.Frame(new_tab_window)
-            new_tab_frame.pack(side='left', fill="both", expand=True)
-            new_theme_path = f"{ruta_new_theme}{name}.toml"
-            
-            lexer = pygments.lexers.get_lexer_for_filename(new_theme_path)
-                   
-            text_editors = CodeView(new_tab_frame, lexer=lexer, color_scheme=current_theme_get())
-            text_editors.pack(fill="both", expand=True)
-            
-            title_example_theme = ttk.Label(example_view, text="Example Theme: monokai.toml", foreground="purple", font=("Arial", 12))
-            title_example_theme.pack() 
-            
-            example_theme_label = CodeView(example_view, lexer=lexer, color_scheme=current_theme_get(), wrap="none")
-            example_theme_label.pack(fill="both", expand=True)
-    
-            example_theme_content = example_code_theme()
-            example_theme_label.insert("1.0", example_theme_content)
-            with open(new_theme_path, "r") as file:
-                content = file.read()
-                text_editors.insert(tk.END, content)
-            
-            text_editors.bind("<KeyPress>", on_key_press)
-            tabs.bind("<Button-2>", cerrar_pestaña)
-            editor.bind("<Control-w>", cerrar_pestaña_activa)
-            text_editors.bind("<Control-s>", lambda event, te=text_editors, fp=new_theme_path: guardar_cambios1(te, fp))
-        
-        new_theme = tk.Toplevel(editor)
-        new_theme.title("New Code Theme")
-        new_theme.iconbitmap(path)
-        
-        main_frame = ttk.Frame(new_theme)
-        main_frame.pack()
-        
-        title = ttk.Label(main_frame, text="Name of the new theme:")
-        title.grid(row=0, column=0, padx=5, pady=5)
-        
-        name = ttk.Entry(main_frame, width=50)
-        name.grid(row=0, column=1, padx=5, pady=5)
-        
-        save = ttk.Button(main_frame, text="Save", command=lambda: save_theme(name.get()))
-        save.grid(row=1, columnspan=2, padx=5, pady=5)
+                with open(f"{ruta_new_theme}{theme_name}.toml", "w", encoding="utf-8") as file:
+                    file.write(theme_content)
+                ms.showinfo("Tema Guardado", f"El tema '{theme_name}' se ha guardado correctamente.")
+                new_theme.destroy()
+            except Exception as e:
+                ms.showerror("Error", f"No se pudo guardar el tema. Error: {e}")
+
+        # Botón para guardar el tema
+        save_button = tk.Button(new_theme, text="Guardar Tema", command=save_theme)
+        save_button.grid(row=row, column=0, columnspan=3, pady=20)
+
+        # Hacer que la ventana principal se redimensione adecuadamente
+        new_theme.grid_rowconfigure(0, weight=1)
+        new_theme.grid_columnconfigure(0, weight=1)
+        new_theme.grid_columnconfigure(3, weight=1)
     
     def show_plugin_selector(plugins_list):
         plugin_selector = tk.Toplevel()
@@ -1388,6 +1522,8 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     menu_bar.add_cascade(label="File", menu=file_menu)
     file_menu.add_command(label="Save", command=guardar_cambios)
     file_menu.add_command(label="Compiler", command=converter_options)
+    file_menu.add_command(label="Update Github repo files", command=lambda: open_repo_files(nombre_proyecto))
+    file_menu.add_command(label="Github Releases", command=lambda: manage_github_releases(nombre_proyecto))
     
     settings_menu = tk.Menu(menu_bar, tearoff=0)
     menu_bar.add_cascade(label='Settings', menu=settings_menu)
@@ -2016,11 +2152,6 @@ def save_config_gpt(api_key):
     with open(archivo_configuracion_gpt, "w") as archivo_configuracion:
         json.dump(configuration, archivo_configuracion)
         
-def guardar_configuracion_github(api_key):
-    configuracion = {"api_key_github": api_key}
-    
-    with open("configuracion_github.json", "w") as archivo_configuracion:
-        json.dump(configuracion, archivo_configuracion)
     
 def load_config_gpt():
     try:
@@ -2972,88 +3103,91 @@ def setting_window():
     main_frame.grid_rowconfigure(2, weight=1)
     main_frame.grid_columnconfigure(1, weight=1)
     
-"""def previsualizar_proyecto(event=None):
+def previsualizar_proyecto(event=None):
     # Obtener la ruta del proyecto seleccionado desde la pantalla principal
     seleccion = tree.selection()
     if not seleccion:
-        tk.messagebox.showwarning("Advertencia", "Por favor selecciona un proyecto primero.")
+        ms.showwarning("Advertencia", "Por favor selecciona un proyecto primero.")
         return
 
     ruta_proyecto = tree.item(seleccion, "values")[4]  # Tomar la ruta del proyecto desde los valores
-    
-    # Función para cargar la estructura de archivos
-    def cargar_estructura_archivos(treeview, ruta, mostrar_contenido):
-        treeview.delete(*treeview.get_children())  # Limpiar el árbol
 
-        # Recorremos la estructura de carpetas y archivos
-        for carpeta_raiz, carpetas, archivos in os.walk(ruta):
-            carpeta_raiz_id = treeview.insert("", "end", text=f"[Carpeta] {os.path.basename(carpeta_raiz)}", open=False)  # Mantener cerrado inicialmente
+    def cargar_contenido_carpeta(treeview, parent, ruta):
+        """Cargar contenido de una carpeta (carpetas y archivos) de manera diferida."""
+        try:
+            for item in os.listdir(ruta):
+                item_path = os.path.join(ruta, item)
+                if os.path.isdir(item_path):
+                    folder_id = treeview.insert(parent, "end", text=item, values=[item_path], open=False)
+                    treeview.insert(folder_id, "end", text="(Cargando...)", tags=("placeholder",))
+                else:
+                    treeview.insert(parent, "end", text=item, values=[item_path])
+        except PermissionError:
+            ms.showwarning("Acceso denegado", f"No se pudo acceder a la carpeta: {ruta}")
 
-            # Añadir carpetas
-            for carpeta in carpetas:
-                treeview.insert(carpeta_raiz_id, "end", text=f"[Carpeta] {carpeta}", open=False)
+    def expandir_nodo(event):
+        """Cargar contenido cuando se expande un nodo con 'Cargando...'."""
+        nodo = treeview.focus()
+        if not nodo:
+            return
+        if treeview.tag_has("placeholder", treeview.get_children(nodo)):
+            treeview.delete(*treeview.get_children(nodo))
+            ruta_carpeta = treeview.item(nodo, "values")[0]
+            cargar_contenido_carpeta(treeview, nodo, ruta_carpeta)
 
-            # Añadir archivos
-            for archivo in archivos:
-                treeview.insert(carpeta_raiz_id, "end", text=archivo)
-
-        # Asignamos el evento para abrir archivos o carpetas al hacer doble clic
-        treeview.bind("<Double-1>", lambda event: abrir_elemento(treeview, ruta, mostrar_contenido))
-
-    # Función para mostrar el contenido del archivo seleccionado
-    def mostrar_contenido(ruta, archivo, scrolled_text):
-        ruta_archivo = os.path.join(ruta, archivo)
+    def mostrar_contenido_archivo(event):
+        """Mostrar el contenido del archivo seleccionado en el área de texto."""
+        nodo = treeview.focus()
+        if not nodo:
+            return
+        ruta_archivo = treeview.item(nodo, "values")[0]
         if os.path.isfile(ruta_archivo):
-            with open(ruta_archivo, 'r', encoding="utf-8", errors="ignore") as file:
-                contenido = file.read()
-                scrolled_text.delete(1.0, tk.END)
-                scrolled_text.insert(tk.END, contenido)
+            try:
+                with open(ruta_archivo, 'r', encoding="utf-8", errors="ignore") as file:
+                    contenido = file.read()
+                    scrolled_text.delete(1.0, tk.END)
+                    scrolled_text.insert(tk.END, contenido)
+            except Exception as e:
+                ms.showerror("Error", f"No se pudo abrir el archivo: {e}")
 
-    # Función para abrir carpeta o archivo en el TreeView
-    def abrir_elemento(treeview, ruta_proyecto, mostrar_contenido, event):
-        seleccion = treeview.selection()
-        for item in seleccion:
-            item_text = treeview.item(item, "text")
+    def buscar_en_treeview(query):
+        """Buscar archivos en el árbol y mostrar solo los que coincidan."""
+        if not query.strip():
+            _restaurar_treeview()
+            return
+        for item in treeview.get_children():
+            _buscar_recursivo(item, query)
 
-            # Verificar si es una carpeta o un archivo
-            if "[Carpeta]" in item_text:
-                # Expandir o colapsar carpeta
-                if treeview.item(item, "open"):
-                    treeview.item(item, open=False)
-                else:
-                    treeview.item(item, open=True)
-            else:
-                # Llamar a mostrar_contenido con los argumentos correctos
-                mostrar_contenido(ruta_proyecto, item_text, scrolled_text)
+    def _restaurar_treeview():
+        """Restaurar toda la estructura desde la raíz."""
+        treeview.delete(*treeview.get_children())  # Limpiar el árbol actual
+        root_id = treeview.insert("", "end", text=f"[Carpeta] {os.path.basename(ruta_proyecto)}", values=[ruta_proyecto], open=False)
+        treeview.insert(root_id, "end", text="(Cargando...)", tags=("placeholder",))
 
-    # Función de búsqueda para filtrar archivos en el TreeView
-    def buscar_en_treeview(treeview, query):
-            # Expandir todos los elementos para buscar
-            for item in treeview.get_children():
-                treeview.item(item, open=True)
+    def _buscar_recursivo(item, query):
+        """Buscar recursivamente en los hijos del nodo."""
+        text = treeview.item(item, "text").lower()
+        visible = query.lower() in text
+        for child in treeview.get_children(item):
+            visible = _buscar_recursivo(child, query) or visible
+        if not visible:
+            treeview.detach(item)
+        else:
+            parent = treeview.parent(item)
+            treeview.reattach(item, parent, 'end')
+        return visible
 
-            for item in treeview.get_children():
-                text = treeview.item(item, "text")
-                if query.lower() not in text.lower():
-                    treeview.detach(item)  # Ocultar los que no coincidan
-                else:
-                    treeview.reattach(item, '', 'end')  # Mostrar los que coincidan
-    
-    
-                
-    preview_project = tk.Toplevel(orga)
+    preview_project = tk.Toplevel()
     preview_project.title(f"Previsualización del Proyecto: {ruta_proyecto}")
     preview_project.geometry("1000x700")
+    preview_project.iconbitmap(path)
 
-    # Frame para la estructura del proyecto
     estructura_frame = ttk.Frame(preview_project)
     estructura_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 
-    # Scrollbar para el TreeView
     scrollbar_y = ttk.Scrollbar(estructura_frame, orient="vertical")
     scrollbar_x = ttk.Scrollbar(estructura_frame, orient="horizontal")
 
-    # TreeView con Scrollbar
     treeview = ttk.Treeview(estructura_frame, yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
     scrollbar_y.config(command=treeview.yview)
     scrollbar_x.config(command=treeview.xview)
@@ -3062,32 +3196,30 @@ def setting_window():
     scrollbar_y.grid(row=0, column=1, sticky="ns")
     scrollbar_x.grid(row=1, column=0, sticky="ew")
 
-    # Barra de búsqueda justo debajo del TreeView
-    search_label = ttk.Label(estructura_frame, text="Buscar archivo:")
-    search_label.grid(row=2, column=0, sticky="w")
+    treeview.bind("<Double-1>", mostrar_contenido_archivo)
+    treeview.bind("<<TreeviewOpen>>", expandir_nodo)
 
-    search_entry = ttk.Entry(estructura_frame)
-    search_entry.grid(row=3, column=0, sticky="ew", padx=5)
+    estructura_frame.grid_rowconfigure(0, weight=1)
+    estructura_frame.grid_columnconfigure(0, weight=1)
 
-    search_button = ttk.Button(estructura_frame, text="Buscar", command=lambda: buscar_en_treeview(treeview, search_entry.get()))
-    search_button.grid(row=3, column=1, sticky="e", padx=5)
+    search_frame = ttk.Frame(preview_project)
+    search_frame.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky="ew")
+    
+    search_label = ttk.Label(search_frame, text="Buscar:")
+    search_label.pack(side="left", padx=5)
+    search_entry = ttk.Entry(search_frame)
+    search_entry.pack(side="left", fill="x", expand=True, padx=5)
 
-    # Configurar cómo se distribuyen las filas y columnas en el grid
-    estructura_frame.grid_rowconfigure(0, weight=1)  # El TreeView se expande verticalmente
-    estructura_frame.grid_columnconfigure(0, weight=1)  # El TreeView se expande horizontalmente
+    search_entry.bind("<KeyRelease>", lambda event: buscar_en_treeview(search_entry.get()))
 
-    # Frame para el contenido del archivo seleccionado
-    contenido_frame = ttk.Frame(preview_project)
-    contenido_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
+    scrolled_text = scrolledtext.ScrolledText(preview_project)
+    scrolled_text.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
-    scrolled_text = scrolledtext.ScrolledText(contenido_frame)
-    scrolled_text.grid(row=0, column=0, sticky="nsew")
+    preview_project.grid_rowconfigure(0, weight=1)
+    preview_project.grid_columnconfigure(0, weight=1)
 
-    contenido_frame.grid_rowconfigure(0, weight=1)
-    contenido_frame.grid_columnconfigure(0, weight=1)
-
-    # Cargar la estructura de archivos del proyecto
-    cargar_estructura_archivos(treeview, ruta_proyecto, lambda ruta, archivo: mostrar_contenido(ruta, archivo, scrolled_text))"""
+    root_id = treeview.insert("", "end", text=f"[Carpeta] {os.path.basename(ruta_proyecto)}", values=[ruta_proyecto], open=False)
+    treeview.insert(root_id, "end", text="(Cargando...)", tags=("placeholder",))
     
 def mostrar_control_versiones():
     # Obtener la ruta del proyecto seleccionado desde la pantalla principal
@@ -3493,6 +3625,62 @@ def obtain_github_repos():
         ms.showerror("ERROR", f"Error loading GitHub repositories: {e}")
         return []
     
+def list_repo_contents(repo_name):
+    """
+    Lista los contenidos de un repositorio en la raíz.
+    """
+    url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/contents"
+    try:
+        response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+        response.raise_for_status()
+        contents = response.json()
+        return contents
+    except requests.exceptions.RequestException as e:
+        ms.showerror("Error", f"Error al obtener los contenidos del repositorio: {e}")
+        return []
+    
+def view_file_contents(repo_name, file_path):
+    """
+    Obtiene el contenido de un archivo y lo muestra.
+    """
+    url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/contents/{file_path}"
+    try:
+        response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+        response.raise_for_status()
+        file_data = response.json()
+        file_content = base64.b64decode(file_data["content"]).decode("utf-8")
+        return file_content
+    except requests.exceptions.RequestException as e:
+        ms.showerror("Error", f"Error al obtener el contenido del archivo: {e}")
+        return ""
+
+def update_file_content(repo_name, file_path, new_content, commit_message):
+    """
+    Actualiza el contenido de un archivo en el repositorio.
+    """
+    url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/contents/{file_path}"
+    try:
+        # Obtener el SHA actual del archivo
+        response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+        response.raise_for_status()
+        file_data = response.json()
+        sha = file_data["sha"]
+
+        # Crear el payload para actualizar el archivo
+        data = {
+            "message": commit_message,
+            "content": base64.b64encode(new_content.encode("utf-8")).decode("utf-8"),
+            "sha": sha
+        }
+
+        # Enviar la solicitud de actualización
+        response = requests.put(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
+                                              "Accept": "application/vnd.github.v3+json"},
+                                json=data)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        ms.showerror("Error", f"Error al actualizar el archivo: {e}")
+    
 def show_github_repos():
     for item in repostree.get_children():
         repostree.delete(item)
@@ -3617,6 +3805,85 @@ def clone_respository():
     except Exception as e:
         ms.showerror("ERROR", f"Inesperated error:\n{e}")
 
+def open_repo_files(repo_name):
+    """
+    Abre una ventana para listar y editar los archivos de un repositorio.
+    """
+    # Crear la ventana principal
+    repo_window = tk.Toplevel()
+    repo_window.title(f"Archivos del Repositorio: {repo_name}")
+    repo_window.geometry("1000x800")
+
+    # Lista de archivos
+    file_list_frame = ttk.Frame(repo_window)
+    file_list_frame.pack(side="left", fill="y", padx=5, pady=5)
+
+    file_list = ttk.Treeview(file_list_frame, columns=("name", "type"), show="headings")
+    file_list.heading("name", text="Name")
+    file_list.heading("type", text="Type")
+    file_list.pack(expand=True, fill="y")
+
+    # Editor de texto
+    editor_frame = ttk.Frame(repo_window)
+    editor_frame.pack(side="right", expand=True, fill="both", padx=5, pady=5)
+
+    text_editor = CodeView(editor_frame, wrap="word", width=150, height=20)
+    text_editor.pack(expand=True, fill="both", padx=10, pady=10)
+
+    # Campo para mensaje del commit
+    ttk.Label(editor_frame, text="Commit Message:").pack(anchor="w", padx=5)
+    commit_var = tk.StringVar()
+    ttk.Entry(editor_frame, textvariable=commit_var, width=150).pack(padx=5, pady=5)
+
+    # Botón para guardar cambios
+    ttk.Button(editor_frame, text="Guardar Cambios", command=lambda: save_changes(repo_name)).pack(pady=5)
+
+    # Variable para rastrear el archivo actual
+    current_file = tk.StringVar()
+
+    # Función para cargar el contenido del archivo
+    def load_file_content(file_path):
+        content = view_file_contents(repo_name, file_path)
+        if content == "":
+            return
+        text_editor.delete("1.0", "end")
+        lexer = pygments.lexers.get_lexer_for_filename(file_path)
+        text_editor.config(lexer=lexer)  # Opcional: Añadir colores
+        text_editor.insert("1.0", content)
+        current_file.set(file_path)
+
+    # Función para guardar los cambios
+    def save_changes(repo_name):
+        file_path = current_file.get()
+        if not file_path:
+            ms.showerror("Error", "No hay archivo seleccionado para guardar.")
+            return
+        new_content = text_editor.get("1.0", "end-1c")
+        commit_message = commit_var.get().strip()
+        if not commit_message:
+            ms.showerror("Error", "El mensaje del commit no puede estar vacío.")
+            return
+        update_file_content(repo_name, file_path, new_content, commit_message)
+        ms.showinfo("Éxito", f"Archivo '{file_path}' guardado exitosamente.")
+
+    # Llenar la lista de archivos
+    contents = list_repo_contents(repo_name)
+    for item in contents:
+        name = item.get("name", "Unknown")
+        path = item.get("path", "")
+        content_type = item.get("type", "Unknown")
+        if content_type == "file":
+            file_list.insert("", "end", values=(name, content_type))
+
+    # Manejar selección de archivo
+    def on_file_select(event):
+        selected_item = file_list.selection()
+        if selected_item:
+            file_path = file_list.item(selected_item, "values")[0]
+            load_file_content(file_path)
+
+    file_list.bind("<<TreeviewSelect>>", on_file_select)
+
 def github_profile():
     mygithub = ttk.Toplevel(orga)
     mygithub.title("My GitHub Profile")
@@ -3654,13 +3921,257 @@ def github_profile():
     context_menu = tk.Menu(mygithub, tearoff=0)
     context_menu.add_command(label="Delete Repository", command=lambda: delete_repository_github(repostree.item(repostree.selection(), "values")[0]))
     context_menu.add_command(label="Editr Repository", command=lambda: edit_repository(repostree.item(repostree.selection()[0], "values")[0]))
+    context_menu.add_command(label="Github Releases", command=lambda: manage_github_releases(repostree.item(repostree.selection(), "values")[0]))
     context_menu.add_command(label="Crear Nuevo Repositorio", command=create_repository_github)
     context_menu.add_command(label="Clone Repository", command=clone_respository)
+    context_menu.add_command(label="View Files", command=lambda: open_repo_files(repostree.item(repostree.selection()[0], "values")[0]))
     
     btn_load = ttk.Button(frame, text="Load Repositories", command=show_github_repos)
     btn_load.pack(pady=5)
     show_github_repos()
+
+def manage_github_releases(repo_name):
+    """
+    Interfaz para gestionar las releases de GitHub: listar, crear y editar.
+    """
+    def fetch_releases():
+        """
+        Obtiene las releases del repositorio.
+        """
+        url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/releases"
+        try:
+            response = requests.get(url, headers={
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github.v3+json"
+            })
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            ms.showerror("Error", f"Can't fetch releases: {e}")
+            return []
+        
+    def fetch_release_assets(release_id):
+        url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/releases/{release_id}/assets"
+        try:
+            response = requests.get(url, headers={
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github.v3+json"
+            })
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            ms.showerror("Error", f"Can't fetch assets: {e}")
+            return []
+
+    def populate_release_tree():
+        release_tree.delete(*release_tree.get_children())  # Limpia el árbol
+
+        for release in releases:
+            release_tree.insert("", "end", iid=release["id"], text=release["name"],
+                                values=(release["tag_name"], release["draft"], release["prerelease"]))
+
+    def load_release_data(release_id):
+        release = next((r for r in releases if str(r["id"]) == str(release_id)), None)
+        if release:
+            # Actualizar los campos de texto
+            tag_var.set(release["tag_name"])
+            name_var.set(release["name"])
+            description_text.delete("1.0", "end")
+            description_text.insert("1.0", release["body"] or "")
+            draft_var.set(release["draft"])
+            prerelease_var.set(release["prerelease"])
+            current_release_id.set(release_id)
+
+            # Cargar los assets asociados
+            assets = fetch_release_assets(release_id)
+            asset_list.delete(0, tk.END)  # Limpia la lista
+            for asset in assets:
+                asset_list.insert(tk.END, (asset["name"], asset["browser_download_url"]))
+
+            update_preview()
+        else:
+            ms.showerror("Error", f"Release with ID {release_id} not found.")
+
+    def update_preview(event=None):
+        raw_text = description_text.get("1.0", "end-1c")
+        html_content = markdown.markdown(raw_text)  # Convertir a HTML
+        preview_label.set_html(html_content)
+
+    def save_release():
+        tag_name = tag_var.get().strip()
+        release_name = name_var.get().strip()
+        description = description_text.get("1.0", "end-1c").strip()
+        draft = draft_var.get()
+        prerelease = prerelease_var.get()
+
+        if not tag_name or not release_name:
+            ms.showerror("Error", "The tag and release name are required.")
+            return
+
+        payload = {
+            "tag_name": tag_name,
+            "name": release_name,
+            "body": description,
+            "draft": draft,
+            "prerelease": prerelease
+        }
+
+        release_id = current_release_id.get()
+        url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/releases"
+        method = "PATCH" if release_id else "POST"
+        if release_id:
+            url = f"{url}/{release_id}"
+
+        try:
+            response = requests.request(method, url, headers={
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github.v3+json"
+            }, json=payload)
+            response.raise_for_status()
+
+            ms.showinfo("Success", f"Release '{release_name}' saved successfully.")
+            reload_releases()
+        except requests.exceptions.RequestException as e:
+            ms.showerror("Error", f"Can't save the release: {e}")
+
+    def reload_releases():
+        nonlocal releases
+        releases = fetch_releases()
+        populate_release_tree()
+        reset_form()
+
+    def reset_form():
+        tag_var.set("")
+        name_var.set("")
+        description_text.delete("1.0", "end")
+        draft_var.set(False)
+        prerelease_var.set(False)
+        current_release_id.set(None)
     
+    def on_tree_select(event):
+        selected_item = release_tree.focus()  # Obtiene el ID del elemento seleccionado
+        if selected_item:
+            load_release_data(selected_item)
+            
+    def add_files():
+        release_id = current_release_id.get()
+        if not release_id:
+            ms.showerror("Error", "No release selected.")
+            return
+
+        file_paths = filedialog.askopenfilenames(title="Select files for the release", filetypes=[("All Files", "*.*")])
+        if not file_paths:
+            return
+
+        for file_path in file_paths:
+            try:
+                upload_file(file_path, release_id)
+            except Exception as e:
+                ms.showerror("Error", f"Failed to upload {file_path}: {e}")
+
+        # Recargar la lista de archivos
+        load_release_data(release_id)
+
+    def upload_file(file_path, release_id):
+        with open(file_path, "rb") as file:
+            file_name = os.path.basename(file_path)
+            url = f"https://uploads.github.com/repos/{GITHUB_USER}/{repo_name}/releases/{release_id}/assets?name={file_name}"
+            headers = {
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github.v3+json"
+            }
+            response = requests.post(url, headers=headers, files={'file': (file_name, file)})
+            response.raise_for_status()
+
+    def remove_files():
+        selected_items = asset_list.curselection()
+        if not selected_items:
+            ms.showerror("Error", "No file selected.")
+            return
+
+        release_id = current_release_id.get()
+        if not release_id:
+            ms.showerror("Error", "No release selected.")
+            return
+
+        for index in selected_items:
+            file_name, file_url = asset_list.get(index)
+            try:
+                delete_file(file_url)
+            except Exception as e:
+                ms.showerror("Error", f"Failed to delete {file_name}: {e}")
+
+        # Recargar la lista de archivos
+        load_release_data(release_id)
+
+    def delete_file(file_url):
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        response = requests.delete(file_url, headers=headers)
+        response.raise_for_status()
+
+    # Crear la ventana principal
+    release_window = ttk.Toplevel()
+    release_window.title(f"Manage Releases: {repo_name}")
+    release_window.geometry("1200x800")
+
+    # Variables
+    releases = fetch_releases()
+    current_release_id = tk.StringVar()
+    lexer = pygments.lexers.get_lexer_by_name("markdown")
+
+    # Árbol para listar las releases
+    release_tree = ttk.Treeview(release_window, columns=("Tag", "Draft", "Pre-release"), show="headings")
+    release_tree.heading("Tag", text="Tag")
+    release_tree.heading("Draft", text="Draft")
+    release_tree.heading("Pre-release", text="Pre-release")
+    release_tree.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+
+    release_tree.bind("<<TreeviewSelect>>", on_tree_select)
+    
+    asset_list = tk.Listbox(release_window, height=10)
+    asset_list.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+
+    # Botón para crear una nueva release
+    ttk.Button(release_window, text="New Release", command=reset_form).grid(row=2, column=0, pady=5)
+    ttk.Button(release_window, text="Add File(s)", command=add_files).grid(row=3, column=0, pady=5)
+    ttk.Button(release_window, text="Remove Selected File(s)", command=remove_files).grid(row=4, column=0, pady=5)
+
+    # Frame para crear/editar releases
+    editor_frame = ttk.Frame(release_window)
+    editor_frame.grid(row=0, column=1, rowspan=2, sticky="nsew", padx=5, pady=5)
+
+    ttk.Label(editor_frame, text="Tag:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+    tag_var = tk.StringVar()
+    ttk.Entry(editor_frame, textvariable=tag_var, width=100).grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+    ttk.Label(editor_frame, text="Release Name:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+    name_var = tk.StringVar()
+    ttk.Entry(editor_frame, textvariable=name_var, width=100).grid(row=1, column=1, padx=5, pady=5, sticky="w")
+
+    ttk.Label(editor_frame, text="Description:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+    description_text = CodeView(editor_frame, wrap="word", height=20, lexer=lexer)
+    description_text.grid(row=3, columnspan=2, padx=5, pady=5, sticky="nsew")
+    description_text.bind("<KeyRelease>", update_preview)
+
+    # Preview de la descripción
+    preview_label = HTMLLabel(editor_frame, background="white")
+    preview_label.grid(row=4, columnspan=2, padx=5, pady=5, sticky="nsew")
+
+    # Opciones adicionales
+    draft_var = tk.BooleanVar(value=False)
+    ttk.Checkbutton(editor_frame, text="Mark as Draft", variable=draft_var).grid(row=5, column=0, padx=5, pady=5, sticky="w")
+
+    prerelease_var = tk.BooleanVar(value=False)
+    ttk.Checkbutton(editor_frame, text="Mark as Pre-release", variable=prerelease_var).grid(row=5, column=1, padx=5, pady=5, sticky="w")
+
+    # Botones de acción
+    ttk.Button(editor_frame, text="Save Release", command=save_release).grid(row=6, column=0, columnspan=2, pady=10, sticky="ew")
+
+    # Inicializar el árbol
+    populate_release_tree()
 
 menu_name = "Organizer"
 description_menu = "Open Organizer"
@@ -3948,7 +4459,7 @@ tree.bind("<Button-3>", show_context_menu)
 tree.bind("<Double-1>", abrir_repositorio)
 tree.bind("<Control-1>", abrir_explorador)
 tree.bind("<<TreeviewSelect>>", on_project_select)
-#tree.bind("<Double-Button-1>", previsualizar_proyecto)
+tree.bind("<Double-Button-1>", previsualizar_proyecto)
 
 btn_abrir = ttk.Button(main_frame, text='Open Proyect', command=lambda: abrir_threading(tree.item(tree.selection())['values'][0],tree.item(tree.selection())['values'][4], selected_editor.get()))
 btn_abrir.grid(row=10, columnspan=2, pady=5, padx=5, sticky="s")
