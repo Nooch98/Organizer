@@ -3585,34 +3585,93 @@ def delete_context_menu(name):
         
 def show_docu():
     docu = tk.Toplevel(orga)
-    docu.title("Python Documentation")
+    docu.title("Documentation Viewer")
     docu.iconbitmap(path)
     
     def load_documentation():
+        language = lang_var.get().strip().lower()
         topic = m_var.get().strip()
-        url = f"https://docs.python.org/3/library/{topic}"
+        
+        if not language:
+            ms.showerror("ERROR", "Please select a language.")
+            return
+        
+        # Mapeo de lenguajes a sus URLs de documentación
+        doc_urls = {
+            "python": "https://docs.python.org/3/",
+            "javascript": "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
+            "java": "https://docs.oracle.com/javase/8/docs/",
+            "c++": "https://cplusplus.com/reference/",
+            "html": "https://developer.mozilla.org/en-US/docs/Web/HTML",
+            "css": "https://developer.mozilla.org/en-US/docs/Web/CSS",
+            "ruby": "https://ruby-doc.org/",
+            "go": "https://pkg.go.dev/",
+            "rust": "https://doc.rust-lang.org/",
+            "php": "https://www.php.net/docs.php",
+            "kotlin": "https://kotlinlang.org/docs/",
+            "swift": "https://developer.apple.com/documentation/",
+            "mysql": "https://dev.mysql.com/doc/",
+            "postgresql": "https://www.postgresql.org/docs/",
+            "r": "https://cran.r-project.org/manuals.html",
+            "bash": "https://tldp.org/LDP/abs/html/",
+            "typescript": "https://www.typescriptlang.org/docs/",
+            "dart": "https://dart.dev/guides",
+            "perl": "https://perldoc.perl.org/",
+            "c#": "https://learn.microsoft.com/en-us/dotnet/csharp/",
+            "lua": "https://www.lua.org/manual/5.4/",
+            "matlab": "https://www.mathworks.com/help/matlab/",
+            "scala": "https://docs.scala-lang.org/",
+            "haskell": "https://www.haskell.org/documentation/",
+            "elixir": "https://elixir-lang.org/docs.html",
+            "assembly": "https://cs.lmu.edu/~ray/notes/nasmtutorial/"
+        }
+        
+        base_url = doc_urls.get(language)
+        if not base_url:
+            ms.showerror("ERROR", f"Documentation for language '{language}' is not supported.")
+            return
+        
+        url = f"{base_url}{topic}.html" if topic else base_url
         
         try:
             response = requests.get(url)
             if response.status_code == 200:
-                url = f"https://docs.python.org/3/library/{topic}"
-                webview.create_window("Python Documentation", url)
-                docu.destroy()
+                webview.create_window(f"{language.capitalize()} Documentation", url)
                 webview.start(icon=path2)
             else:
-                ms.showerror("ERROR", f"Documentation for '{topic}' not found.")
+                ms.showerror("ERROR", f"Documentation for '{topic}' in {language.capitalize()} not found.")
         except requests.exceptions.RequestException as e:
-            ms.showerror("ERROR",f"Error loading documentation: {e}")
+            ms.showerror("ERROR", f"Error loading documentation: {e}")
     
-    t_label = ttk.Label(docu, text="Enter module name (e.g., json, os, sys):")
-    t_label.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
+    # Etiqueta para seleccionar el lenguaje
+    lang_label = ttk.Label(docu, text="Select Language:")
+    lang_label.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
     
+    # Combobox para seleccionar el lenguaje
+    lang_var = tk.StringVar()
+    lang_combobox = ttk.Combobox(docu, textvariable=lang_var, state="readonly")
+    lang_combobox["values"] = [
+        "Python", "JavaScript", "Java", "C++", "HTML", "CSS", 
+        "Ruby", "Go", "Rust", "PHP", "Kotlin", "Swift", 
+        "MySQL", "PostgreSQL", "R", "Bash", "TypeScript", 
+        "Dart", "Perl", "C#", "Lua", "MATLAB", "Scala", 
+        "Haskell", "Elixir", "Assembly"
+    ]
+    lang_combobox.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+    lang_combobox.current(0)  # Selecciona Python por defecto
+
+    # Etiqueta para ingresar el tema
+    t_label = ttk.Label(docu, text="Enter topic (e.g., json, Array, div):")
+    t_label.grid(row=1, column=0, padx=2, pady=2, sticky="ew")
+    
+    # Campo de entrada para el tema
     m_var = tk.StringVar()
     m_entry = ttk.Entry(docu, width=50, textvariable=m_var)
-    m_entry.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+    m_entry.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
     
+    # Botón para cargar la documentación
     load_button = ttk.Button(docu, text="Load Documentation", command=load_documentation)
-    load_button.grid(row=5, columnspan=2, padx=2, pady=2, sticky="ew")
+    load_button.grid(row=2, columnspan=2, padx=2, pady=2, sticky="ew")
 
 def obtain_github_repos():
     url = "https://api.github.com/user/repos"
