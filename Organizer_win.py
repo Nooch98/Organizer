@@ -43,7 +43,7 @@ from tkinter.colorchooser import askcolor
 from datetime import datetime
 from pygments.lexers.markup import MarkdownLexer
 
-main_version = "ver.1.9.5"
+main_version = "ver.1.9.6"
 version = str(main_version)
 archivo_configuracion_editores = "configuracion_editores.json"
 archivo_configuracion_gpt = "configuration_gpt.json"
@@ -54,7 +54,7 @@ selected_project_path = None
 text_editor = None
 app_name = "Organizer_win.exe"
 exe_path = os.path.abspath(sys.argv[0])
-current_version = "v1.9.5"
+current_version = "v1.9.6"
 
 # Integration with local control version app
 VCS_DIR = ".myvcs"
@@ -4036,9 +4036,6 @@ def fetch_commit_history(repo_name, file_path):
         ms.showerror("Error", f"Unable to fetch commit history: {e}")
 
 def manage_github_releases(repo_name):
-    """
-    Interfaz para gestionar las releases de GitHub: listar, crear y editar.
-    """
     def fetch_releases():
         """
         Obtiene las releases del repositorio.
@@ -4091,16 +4088,19 @@ def manage_github_releases(repo_name):
             assets = fetch_release_assets(release_id)
             asset_list.delete(0, tk.END)  # Limpia la lista
             for asset in assets:
-                asset_list.insert(tk.END, (asset["name"], asset["browser_download_url"]))
+                asset_list.insert(tk.END, (asset["name"], asset["browser_download_url"], asset["id"]))
 
             update_preview()
         else:
             ms.showerror("Error", f"Release with ID {release_id} not found.")
 
     def update_preview(event=None):
-        raw_text = description_text.get("1.0", "end-1c")
-        html_content = markdown.markdown(raw_text)  # Convertir a HTML
-        preview_label.set_html(html_content)
+        try:
+            raw_text = description_text.get("1.0", "end-1c")
+            html_content = markdown.markdown(raw_text)  # Convertir a HTML
+            preview_label.set_html(html_content)
+        except Exception as e:
+            preview_label.set_html(f"<p>Error rendering preview: {e}</p>")
 
     def save_release():
         tag_name = tag_var.get().strip()
@@ -4122,10 +4122,13 @@ def manage_github_releases(repo_name):
         }
 
         release_id = current_release_id.get()
-        url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/releases"
-        method = "PATCH" if release_id else "POST"
-        if release_id:
-            url = f"{url}/{release_id}"
+
+        if release_id:  # Si hay un ID de release, es una edición
+            url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/releases/{release_id}"
+            method = "PATCH"
+        else:  # Si no hay ID de release, es una creación
+            url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/releases"
+            method = "POST"
 
         try:
             response = requests.request(method, url, headers={
@@ -4200,22 +4203,57 @@ def manage_github_releases(repo_name):
             return
 
         for index in selected_items:
-            file_name, file_url = asset_list.get(index)
+            file_name, file_url, asset_id = asset_list.get(index)  # Asegúrate de incluir `asset_id`
             try:
-                delete_file(file_url)
+                delete_file(asset_id)
             except Exception as e:
                 ms.showerror("Error", f"Failed to delete {file_name}: {e}")
 
         # Recargar la lista de archivos
         load_release_data(release_id)
 
-    def delete_file(file_url):
+    def delete_file(asset_id):
+        url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/releases/assets/{asset_id}"
         headers = {
             "Authorization": f"token {GITHUB_TOKEN}",
             "Accept": "application/vnd.github.v3+json"
         }
-        response = requests.delete(file_url, headers=headers)
+        response = requests.delete(url, headers=headers)
         response.raise_for_status()
+        
+    def delete_release():
+        selected_item = release_tree.focus()  # Obtener el ID del elemento seleccionado
+        if not selected_item:
+            ms.showerror("Error", "No release selected.")
+            return
+
+        release = next((r for r in releases if str(r["id"]) == str(selected_item)), None)
+        if not release:
+            ms.showerror("Error", "Release not found.")
+            return
+
+        confirm = ms.askyesno("Confirm Delete", f"Are you sure you want to delete the release '{release['name']}'?")
+        if not confirm:
+            return
+
+        url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/releases/{release['id']}"
+        try:
+            response = requests.delete(url, headers={
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github.v3+json"
+            })
+            response.raise_for_status()
+            ms.showinfo("Success", f"Release '{release['name']}' deleted successfully.")
+            reload_releases()
+        except requests.exceptions.RequestException as e:
+            ms.showerror("Error", f"Can't delete the release: {e}")
+            
+    def open_context_menu(event):
+        try:
+            release_tree.selection_set(release_tree.identify_row(event.y))  # Seleccionar fila
+            context_menu.post(event.x_root, event.y_root)  # Mostrar menú contextual
+        finally:
+            context_menu.grab_release()
 
     # Crear la ventana principal
     release_window = ttk.Toplevel()
@@ -4236,13 +4274,17 @@ def manage_github_releases(repo_name):
 
     release_tree.bind("<<TreeviewSelect>>", on_tree_select)
     
+    context_menu = tk.Menu(release_window, tearoff=0)
+    context_menu.add_command(label="Delete Release", command=delete_release)
+    release_tree.bind("<Button-3>", open_context_menu)
+    
     asset_list = tk.Listbox(release_window, height=10)
     asset_list.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
     # Botón para crear una nueva release
-    ttk.Button(release_window, text="New Release", command=reset_form).grid(row=2, column=0, pady=5)
-    ttk.Button(release_window, text="Add File(s)", command=add_files).grid(row=3, column=0, pady=5)
-    ttk.Button(release_window, text="Remove Selected File(s)", command=remove_files).grid(row=4, column=0, pady=5)
+    ttk.Button(release_window, text="New Release", command=lambda: [reset_form(), release_tree.selection_remove(release_tree.selection())]).grid(row=2, column=0, pady=5)
+    ttk.Button(release_window, text="Add File(s)", command=add_files).grid(row=2, column=1, pady=5)
+    ttk.Button(release_window, text="Remove Selected File(s)", command=remove_files).grid(row=2, columnspan=2, pady=5)
 
     # Frame para crear/editar releases
     editor_frame = ttk.Frame(release_window)
@@ -4259,7 +4301,7 @@ def manage_github_releases(repo_name):
     ttk.Label(editor_frame, text="Description:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
     description_text = CodeView(editor_frame, wrap="word", height=20, lexer=lexer)
     description_text.grid(row=3, columnspan=2, padx=5, pady=5, sticky="nsew")
-    description_text.bind("<KeyRelease>", update_preview)
+    description_text.bind("<KeyRelease>", lambda e: update_preview())
 
     # Preview de la descripción
     preview_label = HTMLLabel(editor_frame, background="white")
