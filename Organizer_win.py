@@ -43,7 +43,7 @@ from tkinter.colorchooser import askcolor
 from datetime import datetime
 from pygments.lexers.markup import MarkdownLexer
 
-main_version = "ver.1.9.7"
+main_version = "ver.1.9.6"
 version = str(main_version)
 archivo_configuracion_editores = "configuracion_editores.json"
 archivo_configuracion_gpt = "configuration_gpt.json"
@@ -54,7 +54,7 @@ selected_project_path = None
 text_editor = None
 app_name = "Organizer_win.exe"
 exe_path = os.path.abspath(sys.argv[0])
-current_version = "v1.9.7"
+current_version = "v1.9.6"
 
 # Integration with local control version app
 VCS_DIR = ".myvcs"
@@ -3675,7 +3675,6 @@ def open_project_file(file_path):
         def execute_project_on_subprocess1():
             try:
                 process = []
-                # Ejecutar el editor seleccionado
                 if ruta_editor:
                     editor_process = subprocess.Popen(
                         [ruta_editor, project_path], 
@@ -3707,12 +3706,13 @@ def open_project_file(file_path):
                 else:
                     ms.showerror("ERROR", f"{editor} Not found")
 
-                # Sincronización de los procesos en segundo plano
                 threading.Thread(target=monitor_processes_and_sync, args=(process, id_project, project_path, ruta_copia), daemon=True).start()
             except Exception as e:
                 ms.showerror("ERROR", f"An error occurred while opening the project: {str(e)}")
             
         threading.Thread(target=execute_project_on_subprocess1, daemon=True).start()
+        time.sleep(2)
+        sys.exit(0)
             
     except Exception as e:
         ms.showerror("ERROR", f"Error to open workstation file: {e}")
@@ -4941,7 +4941,6 @@ orga.grid_columnconfigure(2, weight=1)
 
 if len(sys.argv) > 1:
     open_project_file(sys.argv[1],)
-    sys.exit(0)
 
 crear_base_datos()
 mostrar_proyectos()
