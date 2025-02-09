@@ -22,7 +22,7 @@ import re
 import glob
 import webview
 import base64
-#--------------------------------------------------------#
+#---------------------------------------------------------#
 from tkinter import OptionMenu, StringVar, filedialog, simpledialog
 from urllib.parse import urlparse
 from tkinter import messagebox as ms
@@ -63,16 +63,34 @@ file_name = None
 
 def search_github_key():
     posible_name = ["GITHUB", "TOKEN", "API", "KEY", "SECRET"]
+
     for name_var, valor in os.environ.items():
         if any(clave in name_var.upper() for clave in posible_name):
             if is_github_token_valid(valor):
                 return valor
-            else:
-                ms.showerror("ERROR", f"No github api key found in your environment variables. Please agree github api key to your enviroment variables with the name: {posible_name}")
-                return None
+
+    posibles_archivos = ["~/.bashrc", "~/.profile", "~/.zshrc", "/etc/environment"]
     
+    for archivo in posibles_archivos:
+        ruta_exp = os.path.expanduser(archivo)
+        if os.path.exists(ruta_exp):
+            with open(ruta_exp, "r") as f:
+                for linea in f:
+                    if any(clave in linea.upper() for clave in posible_name):
+                        valor = extraer_variable(linea)
+                        if valor and is_github_token_valid(valor):
+                            return valor
+
+    ms.showerror("ERROR", "No GitHub API key found in environment variables or system files. "
+                          "Please add your GitHub API key to your environment variables.")
     return None
-            
+
+def extraer_variable(linea):
+    partes = linea.strip().split("=")
+    if len(partes) == 2:
+        return partes[1].strip().replace('"', '')  # Elimina comillas en caso de que existan
+    return None
+
 def is_github_token_valid(token):
     url = "https://api.github.com/user"
     headers = {"Authorization": f"Bearer {token}"}
@@ -88,10 +106,10 @@ def obtain_github_user():
         user = response.json()
         return user["login"]
     except requests.exceptions.RequestException as e:
-        ms.showerror("ERROR", f"Can't obtain the github user: {str(e)}")
+        ms.showerror("ERROR", f"Can't obtain the GitHub user: {str(e)}")
 
 GITHUB_TOKEN = search_github_key()
-GITHUB_USER = obtain_github_user()
+GITHUB_USER = obtain_github_user() if GITHUB_TOKEN else None
 
 def check_new_version():
     try:
@@ -1859,6 +1877,7 @@ def show_context_menu(event):
     menu_items = [
         ("Open Explorer", lambda: abrir_explorador(event)),
         ("Open Github", lambda: abrir_repositorio(event)),
+        ("Create Workspace", lambda: save_project_file(tree.item(tree.selection())['values'][0],tree.item(tree.selection())['values'][4], selected_editor.get())),
         ("Edit", modificar_proyecto),
         ("Delete", lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4])),
         ("Version Control", show_controlversion),
@@ -3889,34 +3908,189 @@ def unify_windows():
 
 def show_docu():
     docu = tk.Toplevel(root)
-    docu.title("Python Documentation")
+    docu.title("Documentation Viewer")
     docu.iconphoto(True, tk.PhotoImage(file=path))
     
     def load_documentation():
+        language = lang_var.get().strip().lower()
         topic = m_var.get().strip()
-        url = f"https://docs.python.org/3/library/{topic}"
+        
+        if not language:
+            ms.showerror("ERROR", "Please select a language.")
+            return
+        
+        # Mapeo de lenguajes a sus URLs de documentación
+        doc_urls = {
+            "python": "https://docs.python.org/3/",
+            "javascript": "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
+            "java": "https://docs.oracle.com/javase/8/docs/",
+            "c++": "https://cplusplus.com/reference/",
+            "html": "https://developer.mozilla.org/en-US/docs/Web/HTML",
+            "css": "https://developer.mozilla.org/en-US/docs/Web/CSS",
+            "ruby": "https://ruby-doc.org/",
+            "go": "https://pkg.go.dev/",
+            "rust": "https://doc.rust-lang.org/",
+            "php": "https://www.php.net/docs.php",
+            "kotlin": "https://kotlinlang.org/docs/",
+            "swift": "https://developer.apple.com/documentation/",
+            "mysql": "https://dev.mysql.com/doc/",
+            "postgresql": "https://www.postgresql.org/docs/",
+            "r": "https://cran.r-project.org/manuals.html",
+            "bash": "https://tldp.org/LDP/abs/html/",
+            "typescript": "https://www.typescriptlang.org/docs/",
+            "dart": "https://dart.dev/guides",
+            "perl": "https://perldoc.perl.org/",
+            "c#": "https://learn.microsoft.com/en-us/dotnet/csharp/",
+            "lua": "https://www.lua.org/manual/5.4/",
+            "matlab": "https://www.mathworks.com/help/matlab/",
+            "scala": "https://docs.scala-lang.org/",
+            "haskell": "https://www.haskell.org/documentation/",
+            "elixir": "https://elixir-lang.org/docs.html",
+            "assembly": "https://cs.lmu.edu/~ray/notes/nasmtutorial/"
+        }
+        
+        base_url = doc_urls.get(language)
+        if not base_url:
+            ms.showerror("ERROR", f"Documentation for language '{language}' is not supported.")
+            return
+        
+        url = f"{base_url}{topic}.html" if topic else base_url
         
         try:
             response = requests.get(url)
             if response.status_code == 200:
-                url = f"https://docs.python.org/3/library/{topic}"
-                webview.create_window("Python Documentation", url)
-                docu.destroy()
-                webview.start(icon=path2)
+                webview.create_window(f"{language.capitalize()} Documentation", url)
+                webview.start()
             else:
-                ms.showerror("ERROR", f"Documentation for '{topic}' not found.")
+                ms.showerror("ERROR", f"Documentation for '{topic}' in {language.capitalize()} not found.")
         except requests.exceptions.RequestException as e:
-            ms.showerror("ERROR",f"Error loading documentation: {e}")
+            ms.showerror("ERROR", f"Error loading documentation: {e}")
     
-    t_label = ttk.Label(docu, text="Enter module name (e.g., json, os, sys):")
-    t_label.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
+    # Etiqueta para seleccionar el lenguaje
+    lang_label = ttk.Label(docu, text="Select Language:")
+    lang_label.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
     
+    # Combobox para seleccionar el lenguaje
+    lang_var = tk.StringVar()
+    lang_combobox = ttk.Combobox(docu, textvariable=lang_var, state="readonly")
+    lang_combobox["values"] = [
+        "Python", "JavaScript", "Java", "C++", "HTML", "CSS", 
+        "Ruby", "Go", "Rust", "PHP", "Kotlin", "Swift", 
+        "MySQL", "PostgreSQL", "R", "Bash", "TypeScript", 
+        "Dart", "Perl", "C#", "Lua", "MATLAB", "Scala", 
+        "Haskell", "Elixir", "Assembly"
+    ]
+    lang_combobox.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+    lang_combobox.current(0)  # Selecciona Python por defecto
+
+    # Etiqueta para ingresar el tema
+    t_label = ttk.Label(docu, text="Enter topic (e.g., json, Array, div):")
+    t_label.grid(row=1, column=0, padx=2, pady=2, sticky="ew")
+    
+    # Campo de entrada para el tema
     m_var = tk.StringVar()
     m_entry = ttk.Entry(docu, width=50, textvariable=m_var)
-    m_entry.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+    m_entry.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
     
+    # Botón para cargar la documentación
     load_button = ttk.Button(docu, text="Load Documentation", command=load_documentation)
-    load_button.grid(row=5, columnspan=2, padx=2, pady=2, sticky="ew")
+    load_button.grid(row=2, columnspan=2, padx=2, pady=2, sticky="ew")
+
+def register_linux_integration():
+    exe_path = os.path.abspath(sys.argv[0])
+    icon_path = os.path.join(os.path.dirname(exe_path), 'software.png')
+
+    desktop_entry_path = os.path.expanduser("~/.local/share/applications/organizer.desktop")
+    mime_dir = os.path.expanduser("~/.local/share/mime/packages/")
+    mime_xml_path = os.path.join(mime_dir, "organizer.xml")
+
+    os.makedirs(mime_dir, exist_ok=True)
+
+    desktop_entry_content = f"""[Desktop Entry]
+    Name=Organizer
+    Comment=Open proyect files .orga with organizer
+    Exec="{exe_path}" %f
+    Icon="{icon_path}"
+    Terminal=false
+    Type=Application
+    MimeType=application/x-organizer;
+    Categories=Development;Utility;
+    """
+
+    with open(desktop_entry_path, "w") as desktop_file:
+        desktop_file.write(desktop_entry_content)
+
+    
+    mime_xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+    <mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+        <mime-type type="application/x-organizer">
+            <comment>File of organizer project</comment>
+            <glob pattern="*.orga"/>
+        </mime-type>
+    </mime-info>
+    """
+
+    with open(mime_xml_path, "w") as mime_file:
+        mime_file.write(mime_xml_content)
+
+    subprocess.run(["xdg-mime", "install", "--mode", "user", mime_xml_path], check=True)
+    subprocess.run(["update-mime-database", os.path.expanduser("~/.local/share/mime")], check=True)
+    subprocess.run(["xdg-mime", "default", "organizer.desktop", "application/x-organizer"], check=True)
+
+    ms.showinfo("INTEGRATION COMPLETE", "✅ Integration wiht linux complete. Now .orga files will be opened with Organizer")
+
+def save_project_file(id_project, project_path, editor):
+    project_data = {
+        "id_project": id_project,
+        "project_path": project_path,
+        "editor": editor
+        }
+    
+    file_path = filedialog.asksaveasfilename(
+        defaultextension=".orga",
+        filetypes=[("Project Files", ".orga")],
+        title="Project Save",
+        )
+    
+    if file_path:
+        try:
+            with open(file_path, 'w') as file:
+                json.dump(project_data, file, indent=4)
+            ms.showinfo("Success", f"Project workstation save on: {file_path}")
+        except Exception as e:
+            ms.showerror("ERROR", f"Can't save file: {e}")
+
+def open_project_file(file_path):
+    try:
+        with open(file_path, "r", encoding="utf-8") as file:
+            project_data = json.load(file)
+
+        project_id = project_data.get("id_project")
+        project_path = project_data.get("project_path")
+        editor = project_data.get("editor")
+
+        if not project_id or not project_path or not editor:
+            ms.showerror("ERROR", "The file is invalid or incomplete")
+            return
+        
+        configuracion_editores = cargar_configuracion_editores()
+        ruta_editor = configuracion_editores.get(editor) if configuracion_editores and editor in configuracion_editores else None
+
+        if not ruta_editor:
+            editores_disponibles = detectar_editores_disponibles()
+            ruta_editor = editores_disponibles.get(editor)
+
+        if ruta_editor:
+            subprocess.Popen([ruta_editor, project_path])
+            subprocess.run(f"gnome-terminal -- bash -c 'cd {project_path} && exec bash'", shell=True)
+            sys.exit(0)
+        elif editor == "Editor Integrated":
+            subprocess.Popen(f'gnome-terminal -- bash -c "cd {project_path} && exec bash"', shell=True)
+            abrir_editor_thread(project_path, tree.item(tree.selection())['values'][1])
+            
+
+    except Exception as e:
+        ms.showerror("ERROR", f"Error opening project file: {e}")
 
 path = resource_path(img)
 path2 = resource_path2("./software.png")
@@ -4236,6 +4410,15 @@ root.bind("<Control-q>", lambda e: root.quit())
 root.grid_rowconfigure(5, weight=1)
 root.grid_columnconfigure(0, weight=1)
 root.grid_columnconfigure(2, weight=1)
+
+if not os.path.exists(os.path.expanduser("~/.local/share/applications/organizer.desktop")):
+    register_linux_integration()
+
+if len(sys.argv) > 1:
+    ruta_proyecto = " ".join(sys.argv[1:])
+    threading.Thread(target=open_project_file, args=(ruta_proyecto,), daemon=True).start()
+    
+    
 
 crear_base_datos()
 mostrar_proyectos()
