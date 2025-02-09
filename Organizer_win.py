@@ -43,7 +43,7 @@ from tkinter.colorchooser import askcolor
 from datetime import datetime
 from pygments.lexers.markup import MarkdownLexer
 
-main_version = "ver.1.9.6"
+main_version = "ver.1.9.7"
 version = str(main_version)
 archivo_configuracion_editores = "configuracion_editores.json"
 archivo_configuracion_gpt = "configuration_gpt.json"
@@ -54,7 +54,7 @@ selected_project_path = None
 text_editor = None
 app_name = "Organizer_win.exe"
 exe_path = os.path.abspath(sys.argv[0])
-current_version = "v1.9.6"
+current_version = "v1.9.7"
 
 # Integration with local control version app
 VCS_DIR = ".myvcs"
@@ -1564,8 +1564,6 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     menu_bar.add_cascade(label="File", menu=file_menu)
     file_menu.add_command(label="Save", command=guardar_cambios)
     file_menu.add_command(label="Compiler", command=converter_options)
-    file_menu.add_command(label="Update Github repo files", command=lambda: open_repo_files1(nombre_proyecto))
-    file_menu.add_command(label="Github Releases", command=lambda: manage_github_releases(nombre_proyecto))
     
     settings_menu = tk.Menu(menu_bar, tearoff=0)
     menu_bar.add_cascade(label='Settings', menu=settings_menu)
@@ -2229,6 +2227,7 @@ def show_context_menu(event):
     menu_items = [
         ("Open Explorer", lambda: abrir_explorador(event)),
         ("Open Github", lambda: abrir_repositorio(event)),
+        ("Create Workspace", lambda: save_project_file(tree.item(tree.selection())['values'][0],tree.item(tree.selection())['values'][4], selected_editor.get())),
         ("Edit", modificar_proyecto),
         ("Delete", lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4])),
         ("Sync Files Locals", lambda: sync_repo_files(tree.item(tree.selection())['values'][5], tree.item(tree.selection())['values'][4])),
@@ -3624,7 +3623,132 @@ def delete_context_menu(name):
         ms.showerror("ERROR", f"The entry '{name}' was not found in the context menu.")
     except Exception as e:
         ms.showerror("ERROR", f"Error removing context menu: {e}")
+
+def save_project_file(id_project, project_path, editor):
+    project_data = {
+        "id_project": id_project,
+        "project_path": project_path,
+        "editor": editor
+        }
+    
+    file_path = filedialog.asksaveasfilename(
+        defaultextension=".orga",
+        filetypes=[("Project Files", ".orga")],
+        title="Project Save",
+        )
+    
+    if file_path:
+        try:
+            with open(file_path, 'w') as file:
+                json.dump(project_data, file, indent=4)
+            ms.showinfo("Success", f"Project workstation save on: {file_path}")
+        except Exception as e:
+            ms.showerror("ERROR", f"Can't save file: {e}")
+            
+def open_project_file(file_path):
+    try:
+        with open(file_path, "r", encoding="utf-8") as file:
+            project_data = json.load(file)
         
+        id_project = project_data.get("id_project")
+        project_path = project_data.get("project_path")
+        editor = project_data.get("editor")
+        
+        if not id_project or not project_path or not editor:
+            ms.showerror("ERROR", "The workspace file is invalid")
+            
+        configuracion_editores = cargar_configuracion_editores()
+        ruta_editor = configuracion_editores.get(editor) if configuracion_editores and editor in configuracion_editores else None
+        
+        if not ruta_editor:
+            editores_disponibles = detectar_editores_disponibles()
+            ruta_editor = editores_disponibles.get(editor)
+            
+        nombre_proyecto = os.path.basename(project_path)
+        ruta_copia = obtener_ruta_copia_proyecto(nombre_proyecto)
+        
+        ultima_sincronizacion = obtener_ultima_sincronizacion(id_project)
+        sincronizar_diferencial(project_path, ruta_copia, ultima_sincronizacion)
+        
+        actualizar_estado_proyecto(id_project, True)
+        
+        def execute_project_on_subprocess1():
+            try:
+                process = []
+                # Ejecutar el editor seleccionado
+                if ruta_editor:
+                    editor_process = subprocess.Popen(
+                        [ruta_editor, project_path], 
+                        shell=True, 
+                        start_new_session=True
+                    )
+                    process.append(editor_process)
+                    terminal_process = subprocess.Popen(
+                        f'Start wt -d "{project_path}"', 
+                        shell=True, 
+                        start_new_session=True
+                    )
+                    process.append(terminal_process)
+                elif editor == "neovim":
+                    comando_ps = f"Start-Process nvim '{project_path}' -WorkingDirectory '{project_path}'"
+                    editor_process = subprocess.Popen(
+                        ["powershell", "-Command", comando_ps], 
+                        start_new_session=True
+                    )
+                    process.append(editor_process)
+                elif editor == "Editor Integrated":
+                    terminal_process = subprocess.Popen(
+                        f'Start wt -d "{project_path}"', 
+                        shell=True, 
+                        start_new_session=True
+                    )
+                    process.append(terminal_process)
+                    abrir_editor_thread(project_path, tree.item(tree.selection())['values'][1])
+                else:
+                    ms.showerror("ERROR", f"{editor} Not found")
+
+                # Sincronización de los procesos en segundo plano
+                threading.Thread(target=monitor_processes_and_sync, args=(process, id_project, project_path, ruta_copia), daemon=True).start()
+            except Exception as e:
+                ms.showerror("ERROR", f"An error occurred while opening the project: {str(e)}")
+            
+        threading.Thread(target=execute_project_on_subprocess1, daemon=True).start()
+            
+    except Exception as e:
+        ms.showerror("ERROR", f"Error to open workstation file: {e}")
+        
+def asociate_files_extension():
+    exe_path = os.path.abspath(sys.argv[0])
+    icon_path = exe_path    
+    try:
+        try:
+            with reg.OpenKey(reg.HKEY_CLASSES_ROOT, ".orga", 0, reg.KEY_READ) as key:
+                return
+        except FileNotFoundError:
+            pass
+        # Crear clave para la extensión .myproj
+        reg_key = reg.CreateKey(reg.HKEY_CLASSES_ROOT, ".orga")
+        reg.SetValue(reg_key, "", reg.REG_SZ, "Organizer")
+        reg.CloseKey(reg_key)
+
+        # Crear clave para el tipo de archivo
+        reg_key = reg.CreateKey(reg.HKEY_CLASSES_ROOT, "Organizer")
+        reg.SetValue(reg_key, "", reg.REG_SZ, "Archivo de Proyecto Organizer")
+        
+        reg_key = reg.CreateKey(reg.HKEY_CLASSES_ROOT, r"Organizer\DefaultIcon")
+        reg.SetValue(reg_key, "", reg.REG_SZ, f'"{icon_path}",0')
+        reg.CloseKey(reg_key)
+
+        # Comando para abrir los archivos .myproj con nuestro .exe
+        command = f'"{exe_path}" "%1"'
+        reg_key = reg.CreateKey(reg.HKEY_CLASSES_ROOT, r"Organizer\shell\open\command")
+        reg.SetValue(reg_key, "", reg.REG_SZ, command)
+        reg.CloseKey(reg_key)
+        
+        ms.showinfo("ASOCIATE", "Extension workstations asociate succes")
+    except Exception as e:
+        ms.showerror("ERROR", f"Error to asociate extension file: {e}")
+       
 def show_docu():
     docu = tk.Toplevel(orga)
     docu.title("Documentation Viewer")
@@ -4815,10 +4939,15 @@ orga.grid_rowconfigure(5, weight=1)
 orga.grid_columnconfigure(0, weight=1)
 orga.grid_columnconfigure(2, weight=1)
 
+if len(sys.argv) > 1:
+    open_project_file(sys.argv[1],)
+    sys.exit(0)
+
 crear_base_datos()
 mostrar_proyectos()
 set_default_theme()
 check_new_version()
 thread_sinc()
 initialize_backup_schedule()
+asociate_files_extension()
 orga.mainloop()
