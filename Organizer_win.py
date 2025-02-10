@@ -43,13 +43,16 @@ from tkinter.colorchooser import askcolor
 from datetime import datetime
 from pygments.lexers.markup import MarkdownLexer
 
+
 main_version = "ver.1.9.6"
 version = str(main_version)
-archivo_configuracion_editores = "configuracion_editores.json"
-archivo_configuracion_gpt = "configuration_gpt.json"
-BACKUP_STATE_FILE = "backup_schedule.json"
-archivo_configuracion_editores = "configuracion_editores.json"
-config_file = "config.json"
+base_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+db_path = os.path.join(base_path, "proyectos.db")
+archivo_configuracion_editores = os.path.join(base_path, "configuracion_editores.json")
+archivo_configuracion_gpt = os.path.join(base_path, "configuration_gpt.json")
+BACKUP_STATE_FILE = os.path.join(base_path, "backup_schedule.json")
+archivo_configuracion_editores = os.path.join(base_path, "configuracion_editores.json")
+config_file = os.path.join(base_path, "config.json")
 selected_project_path = None
 text_editor = None
 app_name = "Organizer_win.exe"
@@ -92,7 +95,6 @@ def obtain_github_user():
 
 GITHUB_TOKEN = search_github_key()
 GITHUB_USER = obtain_github_user()
-
     
 def check_new_version():
     try:
@@ -159,7 +161,7 @@ def obtener_ruta_copia_proyecto(nombre_proyecto):
     return ruta_copia
 
 def obtener_info_proyecto(id_proyecto):
-    conn = sqlite3.connect('proyectos.db')
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     # Obtener ruta y nombre del proyecto de la tabla de proyectos
@@ -181,7 +183,7 @@ def obtener_info_proyecto(id_proyecto):
 
 # Función para actualizar el estado de sincronización en la tabla estado_proyectos
 def actualizar_estado_proyecto(id_proyecto, sincronizado):
-    conn = sqlite3.connect('proyectos.db')
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     # Crear o actualizar registro en estado_proyectos
@@ -198,7 +200,7 @@ def actualizar_estado_proyecto(id_proyecto, sincronizado):
     
 # Función para sincronizar proyectos que estaban abiertos en un editor al iniciar la app
 def sincronizar_proyectos_abiertos():
-    conn = sqlite3.connect('proyectos.db')
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("SELECT id_proyecto FROM estado_proyectos WHERE abierto_editor=1")
     proyectos_abiertos = cursor.fetchall()
@@ -216,7 +218,7 @@ def thread_sinc():
             
 # Función para obtener la última sincronización desde la tabla estado_proyectos
 def obtener_ultima_sincronizacion(id_proyecto):
-    conn = sqlite3.connect('proyectos.db')
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("SELECT ultima_sincronizacion FROM estado_proyectos WHERE id_proyecto=?", (id_proyecto,))
     resultado = cursor.fetchone()
@@ -250,14 +252,14 @@ def sincronizar_diferencial(origen, destino, ultima_sincronizacion):
                 shutil.rmtree(destino_archivo)
 
 def crear_base_datos():
-    conn = sqlite3.connect('proyectos.db')
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("CREATE TABLE IF NOT EXISTS proyectos (id INTEGER PRIMARY KEY, nombre TEXT, descripcion TEXT, lenguaje TEXT, ruta TEXT, repo TEXT)")
     cursor.execute("CREATE TABLE IF NOT EXISTS estado_proyectos (id_proyecto INTEGER PRIMARY KEY, abierto_editor INTEGER DEFAULT 0, ultima_sincronizacion TEXT)")
     conn.close()
 
 def insertar_proyecto(nombre, descripcion, ruta, repo, lenguaje=None):
-    conn = sqlite3.connect('proyectos.db')
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("INSERT INTO proyectos (nombre, descripcion, lenguaje, ruta, repo) VALUES (?, ?, ?, ?, ?)", (nombre, descripcion, lenguaje, ruta, repo))
     conn.commit()
@@ -265,7 +267,7 @@ def insertar_proyecto(nombre, descripcion, ruta, repo, lenguaje=None):
    
 def get_projects_from_database():
 
-    conn = sqlite3.connect('proyectos.db')
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
     cursor.execute("SELECT * FROM proyectos")
@@ -399,6 +401,7 @@ def cargar_configuracion_editores():
             configuracion = json.load(archivo_configuracion)
             return configuracion
     except FileNotFoundError:
+        ms.showwarning("WARNING", f"Config file not found")
         return None
 
 def guardar_configuracion_editores(rutas_editores):
@@ -1630,7 +1633,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
 def mostrar_proyectos():
     for row in tree.get_children():
         tree.delete(row)
-    conn = sqlite3.connect('proyectos.db')
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     cursor.execute('SELECT * FROM proyectos')
@@ -2163,7 +2166,7 @@ def iniciar_new_proyect(lenguaje, textbox):
 def eliminar_proyecto(id, ruta):
     try:
         shutil.rmtree(ruta)
-        conn = sqlite3.connect('proyectos.db')
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
         cursor.execute('DELETE FROM proyectos WHERE id = ?', (id,))
@@ -2172,7 +2175,7 @@ def eliminar_proyecto(id, ruta):
         mostrar_proyectos()
     except shutil.Error as e:
         ms.showerror("ERROR", f"Error deleting project: {e}")
-        conn = sqlite3.connect('proyectos.db')
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
         cursor.execute('DELETE FROM proyectos WHERE id = ?', (id,))
@@ -2303,7 +2306,7 @@ def resource_path2(relative_path):
     return os.path.join(base_path, relative_path)
 
 def obtener_informacion_proyectos_desde_bd():
-    conn = sqlite3.connect('proyectos.db')
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
     cursor.execute('SELECT * FROM proyectos')
@@ -2583,7 +2586,7 @@ def modificar_proyecto():
     apply_button.grid(row=9, columnspan=2, padx=5, pady=5)
 
 def update_project(project_id, field_index, new_values):
-    conn = sqlite3.connect('proyectos.db')
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
     set_fields = [f"{field.lower()}=?" for field, value in zip(field_index.keys(), new_values) if value is not None]
@@ -3565,7 +3568,7 @@ def on_key_release(event):
         mostrar_proyectos()
     else:
         # Conectar a la base de datos y buscar los proyectos que coinciden
-        conn = sqlite3.connect('proyectos.db')
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         query = "SELECT * FROM proyectos WHERE nombre LIKE ? OR descripcion LIKE ? OR lenguaje LIKE ?"
         cursor.execute(query, ('%' + search_text + '%', '%' + search_text + '%', '%' + search_text + '%'))
@@ -3663,14 +3666,17 @@ def open_project_file(file_path):
         if not ruta_editor:
             editores_disponibles = detectar_editores_disponibles()
             ruta_editor = editores_disponibles.get(editor)
-            
+        
         nombre_proyecto = os.path.basename(project_path)
         ruta_copia = obtener_ruta_copia_proyecto(nombre_proyecto)
-        
+
+        # Sincronización inicial usando la última sincronización registrada
         ultima_sincronizacion = obtener_ultima_sincronizacion(id_project)
         sincronizar_diferencial(project_path, ruta_copia, ultima_sincronizacion)
-        
+
+        # Marcar proyecto como abierto en editor
         actualizar_estado_proyecto(id_project, True)
+        
         
         def execute_project_on_subprocess1():
             try:
