@@ -4301,17 +4301,18 @@ def unify_windows():
                 ms.showerror("Error", f"Can't fetch assets: {e}")
                 return []
         
-        def populate_release_tree():
-            release_tree.delete(*release_tree.get_children())  # Limpia el árbol
-
-            for release in releases:
-                release_tree.insert("", "end", iid=release["id"], text=release["name"],
-                                    values=(release["tag_name"], release["draft"], release["prerelease"]))
+        def populate_release_combobox():
+            release_combobox["values"] = [
+                f"{release['tag_name']} (Draft: {release['draft']}, Pre-release: {release['prerelease']})"
+                for release in releases
+            ]
+            if releases:
+                release_combobox.current(0)  # Seleccionar la primera opción
+                on_release_select()
                 
         def load_release_data(release_id):
             release = next((r for r in releases if str(r["id"]) == str(release_id)), None)
             if release:
-                # Actualizar los campos de texto
                 tag_var.set(release["tag_name"])
                 name_var.set(release["name"])
                 description_text.delete("1.0", "end")
@@ -4320,21 +4321,27 @@ def unify_windows():
                 prerelease_var.set(release["prerelease"])
                 current_release_id.set(release_id)
 
-                # Cargar los assets asociados
-                assets = fetch_release_assets(release_id)
-                asset_list.delete(0, tk.END)  # Limpia la lista
-                for asset in assets:
-                    asset_list.insert(tk.END, (asset["name"], asset["browser_download_url"], asset["id"]))
-
+                # 📌 Cargar archivos adjuntos en el Treeview
+                populate_asset_tree(release_id)
                 update_preview()
             else:
                 ms.showerror("Error", f"Release with ID {release_id} not found.")
                 
-        def update_preview(event=None):
+        def populate_asset_tree(release_id):
+            asset_tree.delete(*asset_tree.get_children())  # 🔄 Limpiar el Treeview antes de actualizar
+            assets = fetch_release_assets(release_id)
+
+            for asset in assets:
+                asset_tree.insert("", "end", values=(asset["name"], asset["browser_download_url"], asset["id"]))
+
+        def update_preview(event=None, clear=False):
             try:
-                raw_text = description_text.get("1.0", "end-1c")
-                html_content = markdown.markdown(raw_text)  # Convertir a HTML
-                preview_label.set_html(html_content)
+                if clear:
+                    preview_label.set_html("")  # 📌 Deja la vista previa vacía
+                else:
+                    raw_text = description_text.get("1.0", "end-1c")
+                    html_content = markdown.markdown(raw_text)  # Convertir a HTML
+                    preview_label.set_html(html_content)
             except Exception as e:
                 preview_label.set_html(f"<p>Error rendering preview: {e}</p>")
         
@@ -4381,8 +4388,7 @@ def unify_windows():
         def reload_releases():
             nonlocal releases
             releases = fetch_releases()
-            populate_release_tree()
-            reset_form()
+            populate_release_combobox()
 
         def reset_form():
             tag_var.set("")
@@ -4391,11 +4397,14 @@ def unify_windows():
             draft_var.set(False)
             prerelease_var.set(False)
             current_release_id.set(None)
+            asset_tree.delete(*asset_tree.get_children())
+            update_preview(clear=True)
         
-        def on_tree_select(event):
-            selected_item = release_tree.focus()  # Obtiene el ID del elemento seleccionado
-            if selected_item:
-                load_release_data(selected_item)
+        def on_release_select(event=None):
+            selected_index = release_combobox.current()
+            if selected_index >= 0:
+                selected_release = releases[selected_index]
+                load_release_data(selected_release["id"])
                 
         def add_files():
             release_id = current_release_id.get()
@@ -4428,7 +4437,8 @@ def unify_windows():
                 response.raise_for_status()
 
         def remove_files():
-            selected_items = asset_list.curselection()
+            selected_items = asset_tree.selection()  # 📌 Obtiene las filas seleccionadas en el Treeview
+
             if not selected_items:
                 ms.showerror("Error", "No file selected.")
                 return
@@ -4438,10 +4448,11 @@ def unify_windows():
                 ms.showerror("Error", "No release selected.")
                 return
 
-            for index in selected_items:
-                file_name, file_url, asset_id = asset_list.get(index)  # Asegúrate de incluir `asset_id`
+            for item in selected_items:
+                file_name, file_url, asset_id = asset_tree.item(item, "values")  # 📌 Obtiene los valores de la fila seleccionada
                 try:
-                    delete_file(asset_id)
+                    delete_file(asset_id)  # 📌 Eliminar el archivo en GitHub
+                    asset_tree.delete(item)  # 📌 Eliminar la fila del Treeview
                 except Exception as e:
                     ms.showerror("Error", f"Failed to delete {file_name}: {e}")
 
@@ -4458,16 +4469,12 @@ def unify_windows():
             response.raise_for_status()
             
         def delete_release():
-            selected_item = release_tree.focus()  # Obtener el ID del elemento seleccionado
-            if not selected_item:
+            selected_index = release_combobox.current()  # 📌 Obtiene el índice seleccionado
+            if selected_index == -1:
                 ms.showerror("Error", "No release selected.")
                 return
 
-            release = next((r for r in releases if str(r["id"]) == str(selected_item)), None)
-            if not release:
-                ms.showerror("Error", "Release not found.")
-                return
-
+            release = releases[selected_index]  # 📌 Obtiene la release seleccionada
             confirm = ms.askyesno("Confirm Delete", f"Are you sure you want to delete the release '{release['name']}'?")
             if not confirm:
                 return
@@ -4480,76 +4487,101 @@ def unify_windows():
                 })
                 response.raise_for_status()
                 ms.showinfo("Success", f"Release '{release['name']}' deleted successfully.")
-                reload_releases()
+                reload_releases()  # 📌 Recargar el Combobox después de eliminar
             except requests.exceptions.RequestException as e:
                 ms.showerror("Error", f"Can't delete the release: {e}")
-                
-        def open_context_menu(event):
-            try:
-                release_tree.selection_set(release_tree.identify_row(event.y))  # Seleccionar fila
-                context_menu.post(event.x_root, event.y_root)  # Mostrar menú contextual
-            finally:
-                context_menu.grab_release()
                 
         # Variables
         releases = fetch_releases()
         current_release_id = tk.StringVar()
         lexer = pygments.lexers.get_lexer_by_name("markdown")
 
-        # Árbol para listar las releases
-        release_tree = ttk.Treeview(release_frame, columns=("Tag", "Draft", "Pre-release"), show="headings")
-        release_tree.heading("Tag", text="Tag")
-        release_tree.heading("Draft", text="Draft")
-        release_tree.heading("Pre-release", text="Pre-release")
-        release_tree.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        # Configurar `release_frame` para que se expanda correctamente
+        release_frame.grid_columnconfigure(0, weight=2)
+        release_frame.grid_columnconfigure(1, weight=3)
+        release_frame.grid_columnconfigure(2, weight=1)  # Añadido peso para la columna de editor_frame
+        release_frame.grid_rowconfigure(1, weight=1)
+        release_frame.grid_rowconfigure(3, weight=1)  # Añadido peso para la fila de los botones
 
-        release_tree.bind("<<TreeviewSelect>>", on_tree_select)
-        
-        context_menu = tk.Menu(release_frame, tearoff=0)
+        # Frame para seleccionar la release
+        select_frame = ttk.LabelFrame(release_frame, text="Select Release", padding=5)
+        select_frame.grid(row=0, column=0, rowspan=3, sticky="nsew", padx=5, pady=5)
+
+        # Combobox para listar las releases
+        ttk.Label(select_frame, text="Select Release:", font=("Arial", 10, "bold")).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        release_combobox = ttk.Combobox(select_frame, state="readonly", height=20, width=50)
+        release_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        release_combobox.bind("<<ComboboxSelected>>", on_release_select)
+
+        # Menú contextual para eliminar releases
+        context_menu = tk.Menu(select_frame, tearoff=0)
         context_menu.add_command(label="Delete Release", command=delete_release)
-        release_tree.bind("<Button-3>", open_context_menu)
-        
-        asset_list = tk.Listbox(release_frame, height=10)
-        asset_list.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
-        # Botón para crear una nueva release
-        ttk.Button(release_frame, text="New Release", command=lambda: [reset_form(), release_tree.selection_remove(release_tree.selection())]).grid(row=2, column=0, pady=5)
-        ttk.Button(release_frame, text="Add File(s)", command=add_files).grid(row=2, column=1, pady=5)
-        ttk.Button(release_frame, text="Remove Selected File(s)", command=remove_files).grid(row=2, columnspan=2, pady=5)
+        # Treeview para los archivos adjuntos (assets)
+        ttk.Label(select_frame, text="Attached Files:", font=("Arial", 10, "bold")).grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+
+        asset_tree = ttk.Treeview(select_frame, columns=("Name", "URL"), show="headings", height=8)
+        asset_tree.heading("Name", text="File Name")
+        asset_tree.heading("URL", text="Download URL")
+        asset_tree.column("Name", width=250, anchor="w")
+        asset_tree.column("URL", width=400, anchor="w")
+        asset_tree.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+
+        # Botones de acción para releases y archivos
+        button_frame = ttk.Frame(select_frame)
+        button_frame.grid(row=3, column=0, columnspan=2, pady=5, sticky="ew")
+        button_frame.grid_columnconfigure(0, weight=1)
+        button_frame.grid_columnconfigure(1, weight=1)
+        button_frame.grid_columnconfigure(2, weight=1)
+
+        ttk.Button(button_frame, text="New Release", command=lambda: [reset_form(), release_combobox.set('')]).grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+        ttk.Button(button_frame, text="Add File(s)", command=add_files).grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        ttk.Button(button_frame, text="Remove Selected File(s)", command=remove_files).grid(row=0, column=2, padx=5, pady=5, sticky="ew")
 
         # Frame para crear/editar releases
-        editor_frame = ttk.Frame(release_frame)
-        editor_frame.grid(row=0, column=1, rowspan=2, sticky="nsew", padx=5, pady=5)
+        editor_frame = ttk.LabelFrame(release_frame, text="Release Editor", padding=5)
+        editor_frame.grid(row=0, column=2, rowspan=3, sticky="nsew", padx=5, pady=5)
 
-        ttk.Label(editor_frame, text="Tag:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        # Ajustar la estructura del `editor_frame`
+        editor_frame.grid_columnconfigure(1, weight=1)
+        editor_frame.grid_rowconfigure(3, weight=1)
+
+        ttk.Label(editor_frame, text="Tag:", font=("Arial", 10)).grid(row=0, column=0, padx=5, pady=5, sticky="w")
         tag_var = tk.StringVar()
-        ttk.Entry(editor_frame, textvariable=tag_var, width=100).grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        ttk.Entry(editor_frame, textvariable=tag_var, width=40).grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
-        ttk.Label(editor_frame, text="Release Name:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        ttk.Label(editor_frame, text="Release Name:", font=("Arial", 10)).grid(row=1, column=0, padx=5, pady=5, sticky="w")
         name_var = tk.StringVar()
-        ttk.Entry(editor_frame, textvariable=name_var, width=100).grid(row=1, column=1, padx=5, pady=5, sticky="w")
+        ttk.Entry(editor_frame, textvariable=name_var, width=40).grid(row=1, column=1, padx=5, pady=5, sticky="ew")
 
-        ttk.Label(editor_frame, text="Description:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
-        description_text = CodeView(editor_frame, wrap="word", height=20, lexer=lexer)
-        description_text.grid(row=3, columnspan=2, padx=5, pady=5, sticky="nsew")
+        ttk.Label(editor_frame, text="Description:", font=("Arial", 10)).grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        description_text = CodeView(editor_frame, wrap="word", height=10, lexer=lexer)
+        description_text.grid(row=3, column=0, columnspan=2, padx=5, pady=5, sticky="nsew")
         description_text.bind("<KeyRelease>", lambda e: update_preview())
 
         # Preview de la descripción
+        ttk.Label(editor_frame, text="Preview:", font=("Arial", 10)).grid(row=4, column=0, columnspan=2, padx=5, pady=5, sticky="w")
         preview_label = HTMLLabel(editor_frame, background="white")
-        preview_label.grid(row=4, columnspan=2, padx=5, pady=5, sticky="nsew")
+        preview_label.grid(row=5, column=0, columnspan=2, padx=5, pady=5, sticky="nsew")
 
         # Opciones adicionales
+        options_frame = ttk.Frame(editor_frame)
+        options_frame.grid(row=6, column=0, columnspan=2, pady=5, sticky="ew")
+        options_frame.grid_columnconfigure(0, weight=1)
+        options_frame.grid_columnconfigure(1, weight=1)
+
         draft_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(editor_frame, text="Mark as Draft", variable=draft_var).grid(row=5, column=0, padx=5, pady=5, sticky="w")
+        ttk.Checkbutton(options_frame, text="Mark as Draft", variable=draft_var).grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
         prerelease_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(editor_frame, text="Mark as Pre-release", variable=prerelease_var).grid(row=5, column=1, padx=5, pady=5, sticky="w")
+        ttk.Checkbutton(options_frame, text="Mark as Pre-release", variable=prerelease_var).grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
-        # Botones de acción
-        ttk.Button(editor_frame, text="Save Release", command=save_release).grid(row=6, column=0, columnspan=2, pady=10, sticky="ew")
+        # Botón de Guardar
+        ttk.Button(editor_frame, text="Save Release", command=save_release).grid(row=7, column=0, columnspan=2, pady=10, sticky="ew")
 
-        # Inicializar el árbol
-        populate_release_tree()
+        # Inicializar el Combobox
+        populate_release_combobox()
+
         
     def show_github_comits1(repo_name):
         notebook.select(commits_frame)
@@ -4650,7 +4682,7 @@ ruta_exe = os.path.abspath(sys.argv[0])
 ruta_icono = ruta_exe
 ruta_db = ruta_exe
 orga = ThemedTk()
-orga.title('Proyect Organizer')
+orga.title('Project Organizer')
 orga.geometry("1230x440")
 path = resource_path("software.ico")
 path2 = resource_path2("./software.png")
@@ -4661,8 +4693,9 @@ ttkbootstrap_themes = ttk_themes()
 saved_state = load_config()
 check_var = tk.IntVar(value=saved_state if saved_state else (1 if is_in_startup() else 0))
 
+# Cambiar pack por grid para toda la interfaz
 main_frame = ttk.Frame(orga)
-main_frame.pack(side="left")
+main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
 
 def install_editor(name=""):
     if name == "Visual Studio Code":
@@ -4834,106 +4867,94 @@ def install_editor(name=""):
 
 filas_ocultas = set()
 
+# Establecer temas y editor
 editores_disponibles = ["Visual Studio Code", "Sublime Text", "Atom", "Vim", "Emacs", 
-        "Notepad++", "Brackets", "TextMate", "Geany", "gedit", 
-        "Nano", "Kate", "Bluefish", "Eclipse", "IntelliJ IDEA", 
-        "PyCharm", "Visual Studio", "Code::Blocks", "NetBeans", 
-        "Android Studio", "neovim"]
+                        "Notepad++", "Brackets", "TextMate", "Geany", "gedit", 
+                        "Nano", "Kate", "Bluefish", "Eclipse", "IntelliJ IDEA", 
+                        "PyCharm", "Visual Studio", "Code::Blocks", "NetBeans", 
+                        "Android Studio", "neovim"]
 
 lenguajes = ["Python", "NodeJS", "bun", "React", "Vue", "C++", "C#", "Rust", "Go", "flutter"]
 
+# Árbol de proyectos
 tree = ttk.Treeview(main_frame, columns=('ID', 'Nombre', 'Descripcion', 'Lenguaje', 'Ruta', 'Repositorio'), show='headings')
-
-menu = tk.Menu(orga)
-orga.config(menu=menu)
-
-menu_archivo = tk.Menu(menu, tearoff=0)
-menu.add_cascade(label="Proyects", menu=menu_archivo)
-menu_archivo.add_command(label='Agree Proyect', command=agregar_proyecto_existente)
-menu_archivo.add_command(label='Create New', command=crear_nuevo_proyecto)
-#menu_archivo.add_command(label="Create Template", command=crear_plantilla)
-#menu_archivo.add_command(label="Apply template", command=aplicar_plantilla)
-menu_archivo.add_command(label="My Github profile", command=unify_windows)
-menu_archivo.add_command(label="New Project Github", command=abrir_proyecto_github)
-menu_archivo.add_command(label="Push Update Github", command=lambda: push_actualizaciones_github(tree.item(tree.selection())['values'][5]))
-menu_archivo.add_command(label='Delete Proyect', command=lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4]))
-menu_archivo.add_command(label="Generate Report", command=generar_informe)
-
-
-menu_settings = tk.Menu(menu, tearoff=0)
-menu.add_command(label="Settings", command=setting_window)   
-
-help_menu = tk.Menu(menu, tearoff=0)
-menu.add_cascade(label="Help", menu=help_menu)
-help_menu.add_command(label="InfoVersion", command=ver_info)
-help_menu.add_command(label="Documentation", command=show_docu)
-
-nombre_label = ttk.Label(main_frame, text="Name:")
-nombre_label.grid(row=1, column=0, pady=5, padx=5, sticky="nsew")
-
-nombre_entry = ttk.Entry(main_frame, width=100)
-nombre_entry.grid(row=1, column=1, pady=5, padx=5)
-
-descripcion_label = ttk.Label(main_frame, text='Description:')
-descripcion_label.grid(row=2, column=0, padx=5, pady=5, sticky="nsew")
-
-descripcion_entry = ttk.Entry(main_frame, width=100)
-descripcion_entry.grid(row=2, column=1, pady=5, padx=5)
-
-repo_label = ttk.Label(main_frame, text="Repository URL:")
-repo_label.grid(row=3, column=0, padx=5, pady=5, sticky="nsew")
-
-repo_entry = ttk.Entry(main_frame, width=100)
-repo_entry.grid(row=3, column=1, pady=5, padx=5)
-
-depen_label = ttk.Label(main_frame, text="Dependencies:")
-depen_label.grid(row=4, column=0, pady=5, padx=5, sticky="nsew")
-
-depen_entry = ttk.Entry(main_frame, width=100)
-depen_entry.grid(row=4, column=1, pady=5, padx=5)
-
 tree.heading('ID', text='ID')
 tree.heading('Nombre', text='Name')
 tree.heading('Descripcion', text='Description')
 tree.heading('Lenguaje', text='Lenguaje')
 tree.heading('Ruta', text='Path')
 tree.heading('Repositorio', text='Repository')
-tree.grid(row=5, columnspan=2, pady=5, padx=5, sticky="nsew")
 
+# Menú
+menu = tk.Menu(orga)
+orga.config(menu=menu)
+menu_archivo = tk.Menu(menu, tearoff=0)
+menu.add_cascade(label="Proyectos", menu=menu_archivo)
+menu_archivo.add_command(label='Agree Project', command=agregar_proyecto_existente)
+menu_archivo.add_command(label='Create New', command=crear_nuevo_proyecto)
+menu_archivo.add_command(label="My Github Profile", command=unify_windows)
+menu_archivo.add_command(label="New Project Github", command=abrir_proyecto_github)
+menu_archivo.add_command(label="Push Update Github", command=lambda: push_actualizaciones_github(tree.item(tree.selection())['values'][5]))
+menu_archivo.add_command(label='Delete Project', command=lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4]))
+menu_archivo.add_command(label="Generate Report", command=generar_informe)
+menu_settings = tk.Menu(menu, tearoff=0)
+menu.add_command(label="Settings", command=setting_window)   
+help_menu = tk.Menu(menu, tearoff=0)
+menu.add_cascade(label="Help", menu=help_menu)
+help_menu.add_command(label="InfoVersion", command=ver_info)
+help_menu.add_command(label="Documentation", command=show_docu)
 
+# Labels y campos de entrada
+nombre_label = ttk.Label(main_frame, text="Name:")
+nombre_label.grid(row=1, column=0, pady=5, padx=5, sticky="w")
+nombre_entry = ttk.Entry(main_frame, width=100)
+nombre_entry.grid(row=1, column=1, pady=5, padx=5, sticky="ew")
+
+descripcion_label = ttk.Label(main_frame, text='Description:')
+descripcion_label.grid(row=2, column=0, padx=5, pady=5, sticky="w")
+descripcion_entry = ttk.Entry(main_frame, width=100)
+descripcion_entry.grid(row=2, column=1, pady=5, padx=5, sticky="ew")
+
+repo_label = ttk.Label(main_frame, text="Repository URL:")
+repo_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
+repo_entry = ttk.Entry(main_frame, width=100)
+repo_entry.grid(row=3, column=1, pady=5, padx=5, sticky="ew")
+
+depen_label = ttk.Label(main_frame, text="Dependencies:")
+depen_label.grid(row=4, column=0, pady=5, padx=5, sticky="w")
+depen_entry = ttk.Entry(main_frame, width=100)
+depen_entry.grid(row=4, column=1, pady=5, padx=5, sticky="ew")
+
+# Árbol con scroll
+tree.grid(row=5, column=0, columnspan=2, pady=5, padx=5, sticky="nsew")
 scrollbar_y = ttk.Scrollbar(main_frame, orient='vertical', command=tree.yview)
 scrollbar_y.grid(row=5, column=2, sticky='ns')
-
 tree.configure(yscrollcommand=scrollbar_y.set)
+tree.bind("<Button-3>", show_context_menu)
 
+# Selector de editor
 selected_editor = tk.StringVar()
 editor_options = [
-        "Select a Editor",
-        "Visual Studio Code", "Sublime Text", "Atom", "Vim", "Emacs", 
-        "Notepad++", "Brackets", "TextMate", "Geany", "gedit", 
-        "Nano", "Kate", "Bluefish", "Eclipse", "IntelliJ IDEA", 
-        "PyCharm", "Visual Studio", "Blend Visual Studio", "Code::Blocks", "NetBeans", 
-        "Android Studio", "Editor Integrated", "neovim"
-    ]
+    "Select a Editor", "Visual Studio Code", "Sublime Text", "Atom", "Vim", "Emacs", 
+    "Notepad++", "Brackets", "TextMate", "Geany", "gedit", 
+    "Nano", "Kate", "Bluefish", "Eclipse", "IntelliJ IDEA", 
+    "PyCharm", "Visual Studio", "Code::Blocks", "NetBeans", 
+    "Android Studio", "Editor Integrated", "neovim"
+]
 selected_editor.set(editor_options[0])
 editor_menu = ttk.OptionMenu(main_frame, selected_editor, *editor_options)
-editor_menu.grid(row=10, column=0, padx=5, pady=5, sticky="sw")
+editor_menu.grid(row=10, column=0, padx=5, pady=5, sticky="w")
 
+# Campo de búsqueda
 search_label = ttk.Label(main_frame, text="Search Project:")
-search_label.grid(row=9, column=0, padx=2, pady=2, sticky="ew")
-
+search_label.grid(row=9, column=0, padx=2, pady=2, sticky="w")
 search_entry = ttk.Entry(main_frame, width=170)
 search_entry.grid(row=9, column=1, padx=2, pady=2, sticky="ew")
 search_entry.bind("<KeyRelease>", on_key_release)
 
-tree.bind("<Button-3>", show_context_menu)
-tree.bind("<Double-1>", abrir_repositorio)
-tree.bind("<Control-1>", abrir_explorador)
-tree.bind("<<TreeviewSelect>>", on_project_select)
-tree.bind("<Double-Button-1>", previsualizar_proyecto)
-
-btn_abrir = ttk.Button(main_frame, text='Open Proyect', command=lambda: abrir_threading(tree.item(tree.selection())['values'][0],tree.item(tree.selection())['values'][4], selected_editor.get()))
-btn_abrir.grid(row=10, columnspan=2, pady=5, padx=5, sticky="s")
+# Botones de acción
+btn_abrir = ttk.Button(main_frame, text='Open Project', command=lambda: abrir_threading(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4], selected_editor.get()))
+btn_abrir.grid(row=10, column=0, columnspan=2, pady=5, padx=5, sticky="s")
 
 btn_install = ttk.Button(main_frame, text="Install dependencies", command=lambda: install_librarys(tree.item(tree.selection())['values'][3]))
 btn_install.grid(row=4, column=1, padx=5, pady=5, sticky="e")
@@ -4941,9 +4962,11 @@ btn_install.grid(row=4, column=1, padx=5, pady=5, sticky="e")
 version_label = ttk.Label(main_frame, text=version)
 version_label.grid(row=10, column=1, pady=5, padx=5, sticky="se")
 
+# Configuración de peso y distribución
 orga.grid_rowconfigure(5, weight=1)
 orga.grid_columnconfigure(0, weight=1)
 orga.grid_columnconfigure(2, weight=1)
+main_frame.grid_columnconfigure(1, weight=3)
 
 if len(sys.argv) > 1:
     open_project_file(sys.argv[1],)
