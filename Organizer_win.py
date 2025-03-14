@@ -456,7 +456,7 @@ def abrir_proyecto(id_proyecto, ruta, editor):
                     start_new_session=True
                 )
                 process.append(editor_process)
-            elif editor == "Editor Integrated":
+            elif editor == "Integrated Editor":
                 terminal_process = subprocess.Popen(
                     f'Start wt -d "{ruta}"', 
                     shell=True, 
@@ -622,47 +622,61 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                 
             if file_path.endswith(".toml"):
                 libraries = read_rust_dependencies(file_path)
-                show_requiriments(libraries)
+                show_requirements(libraries)
             elif file_path.endswith(".csproj"):
                 libraries = read_csharp_dependencies(file_path)
-                show_requiriments(libraries)
+                show_requirements(libraries)
             elif file_path.endswith("CMakeLists.txt"):
                 libraries = read_cmake_dependencies(file_path)
-                show_requiriments(libraries)
+                show_requirements(libraries)
             elif file_path.endswith(".json"):
                 libraries = read_vcpkg_dependencies(file_path)
-                show_requiriments(libraries)
+                show_requirements(libraries)
             elif file_path.endswith(".txt"):
                 libraries = read_requirements(file_path)
-                show_requiriments(libraries)
+                show_requirements(libraries)
             else:
                 libraries = []
             
     
-    def show_requiriments(libraries):
+    def show_requirements(libraries):
+        # Limpiar los widgets anteriores
         for widget in lib_frame.winfo_children():
             widget.destroy()
 
+        # Número de columnas en la cuadrícula
         num_columns = 4
         row = 0
         col = 0
 
+        # Titulo de la sección
+        title_label = ttk.Label(lib_frame, text="Select Required Libraries", bootstyle=SUCCESS, font=("Helvetica", 16))
+        title_label.grid(row=row, columnspan=num_columns, pady=10, padx=10)
+
         for lib in libraries:
             var = tk.BooleanVar(value=False)
             libraries_vars[lib] = var
-            # Pasar el valor de `lib` a la lambda usando `lib=lib`
+            
+            # Crear Checkbutton para cada librería
             checkbox = ttk.Checkbutton(
                 lib_frame,
                 text=lib,
                 variable=var,
-                command=lambda lib=lib: update_command_label(file_entry.get())
+                bootstyle="secondary",
+                command=lambda lib=lib: update_command_label(file_entry.get())  # Actualizar comando
             )
-            checkbox.grid(row=row, column=col, sticky="ew", padx=2, pady=2)
+            
+            checkbox.grid(row=row + 1, column=col, sticky="ew", padx=5, pady=5)
 
+            # Ajustar la posición de los Checkbuttons en la cuadrícula
             col += 1
             if col >= num_columns:
                 col = 0
                 row += 1
+
+        # Ajustar las columnas para que se expandan y se alineen bien
+        for col in range(num_columns):
+            lib_frame.grid_columnconfigure(col, weight=1)
 
     def get_compiler_command(file_path, libraries):
         if file_path.endswith(".csproj"):
@@ -904,90 +918,105 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     def converter_options():
         global file_entry, lib_frame, libraries_vars, icon_entry, onefile_var, noconsole_var, output_box, output_entry, command_label, open_explorer_button, clear_output, additional_files, progressbar, convert_btn, denpendencies_entry
 
+        # Crear ventana de conversión
         converter = ttk.Toplevel(editor)
         converter.title("Compiler")
         converter.iconbitmap(path)
-        
+
+        # Menú de opciones
         op_menu = tk.Menu(converter)
         converter.config(menu=op_menu)
-        
+
         file_menu = tk.Menu(op_menu, tearoff=0)
         op_menu.add_cascade(label="Files", menu=file_menu)
         file_menu.add_command(label="Import Config", command=import_configuration)
         file_menu.add_command(label="Export Config", command=export_configuration)
         file_menu.add_command(label="Load Requiriments", command=load_dependencies)
-        
+
+        # Crear frames de contenido
         frame = ttk.Frame(converter)
-        frame.grid(row=0, column=0, padx=2, pady=2, sticky="nsew")
+        frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 
         lib_frame = ttk.Frame(converter)
-        lib_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+        lib_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
+        # Variables globales
         libraries_vars = {}
         additional_files = []
 
-        file_label = ttk.Label(frame, text="Main File:")
-        file_label.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
+        # Etiquetas y campos de entrada con estilo mejorado
+        file_label = ttk.Label(frame, text="Main File:", bootstyle="primary", font=("Helvetica", 10))
+        file_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
-        file_entry = ttk.Entry(frame, width=40)
-        file_entry.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+        file_entry = ttk.Entry(frame, width=40, bootstyle="light")
+        file_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
-        file_btn = ttk.Button(frame, text="Select", command=select_file)
-        file_btn.grid(row=0, column=2, padx=2, pady=2, sticky="ew")
+        file_btn = ttk.Button(frame, text="Select", bootstyle="secondary", command=select_file)
+        file_btn.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
 
-        output_label = ttk.Label(frame, text="Output Dir:")
-        output_label.grid(row=1, column=0, padx=2, pady=2, sticky="ew")
+        output_label = ttk.Label(frame, text="Output Dir:", bootstyle="primary", font=("Helvetica", 10))
+        output_label.grid(row=1, column=0, padx=5, pady=5, sticky="w")
 
-        output_entry = ttk.Entry(frame, width=40)
-        output_entry.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
+        output_entry = ttk.Entry(frame, width=40, bootstyle="light")
+        output_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
 
-        output_btn = ttk.Button(frame, text="Select", command=select_output_directory)
-        output_btn.grid(row=1, column=2, padx=2, pady=2, sticky="ew")
+        output_btn = ttk.Button(frame, text="Select", bootstyle="secondary", command=select_output_directory)
+        output_btn.grid(row=1, column=2, padx=5, pady=5, sticky="ew")
 
-        icon_label = ttk.Label(frame, text="Select Icon:")
-        icon_label.grid(row=2, column=0, padx=2, pady=2, sticky="ew")
+        icon_label = ttk.Label(frame, text="Select Icon:", bootstyle="primary", font=("Helvetica", 10))
+        icon_label.grid(row=2, column=0, padx=5, pady=5, sticky="w")
 
-        icon_entry = ttk.Entry(frame, width=40)
-        icon_entry.grid(row=2, column=1, padx=2, pady=2, sticky="ew")
+        icon_entry = ttk.Entry(frame, width=40, bootstyle="light")
+        icon_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
 
-        icon_btn = ttk.Button(frame, text="Select Icon", command=select_icon)
-        icon_btn.grid(row=2, column=2, padx=2, pady=2, sticky="ew")
+        icon_btn = ttk.Button(frame, text="Select Icon", bootstyle="secondary", command=select_icon)
+        icon_btn.grid(row=2, column=2, padx=5, pady=5, sticky="ew")
 
-        add_files_label = ttk.Label(frame, text="Additional Files")
-        add_files_label.grid(row=3, column=0, padx=2, pady=2, sticky="ew")
+        # Agregar archivos adicionales
+        add_files_label = ttk.Label(frame, text="Additional Files", bootstyle="primary", font=("Helvetica", 10))
+        add_files_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
         
-        add_files_btn = ttk.Button(frame, text="Add Files", command=add_additional_files)
-        add_files_btn.grid(row=3, column=1, padx=2, pady=2, sticky="ew")
+        add_files_btn = ttk.Button(frame, text="Add Files", bootstyle="secondary", command=add_additional_files)
+        add_files_btn.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
         
-        add_folder_btn = ttk.Button(frame, text="Add Folder", command=add_additional_folder)
-        add_folder_btn.grid(row=3, column=2, padx=2, pady=2, sticky="ew")
-        
-        command_label = ttk.Label(frame, text="Command: ")  # Corregido el nombre de la variable
-        command_label.grid(row=4, columnspan=3, padx=2, pady=2, sticky="ew")
+        add_folder_btn = ttk.Button(frame, text="Add Folder", bootstyle="secondary", command=add_additional_folder)
+        add_folder_btn.grid(row=3, column=2, padx=5, pady=5, sticky="ew")
 
+        # Command label
+        command_label = ttk.Label(frame, text="Command: ", bootstyle="info", font=("Helvetica", 10))
+        command_label.grid(row=4, columnspan=3, padx=5, pady=5, sticky="w")
+
+        # Checkbuttons para opciones de compilación
         onefile_var = tk.BooleanVar()
-        onefile_check = ttk.Checkbutton(frame, text="Onefile", variable=onefile_var,
+        onefile_check = ttk.Checkbutton(frame, text="Onefile", variable=onefile_var, bootstyle="info",
                                         command=lambda: update_command_label(file_entry.get()))
-        onefile_check.grid(row=5, column=0, padx=2, pady=2, sticky="ew")
+        onefile_check.grid(row=5, column=0, padx=5, pady=5, sticky="ew")
 
         noconsole_var = tk.BooleanVar()
-        noconsole_check = ttk.Checkbutton(frame, text="Noconsole", variable=noconsole_var,
+        noconsole_check = ttk.Checkbutton(frame, text="Noconsole", variable=noconsole_var, bootstyle="info",
                                         command=lambda: update_command_label(file_entry.get()))
-        noconsole_check.grid(row=5, column=1, padx=2, pady=2, sticky="ew")
+        noconsole_check.grid(row=5, column=1, padx=5, pady=5, sticky="ew")
 
+        # Caja de texto para salida
         output_box = tk.Text(frame, height=15, width=80, wrap='word')
-        output_box.grid(row=6, columnspan=3, padx=2, pady=2, sticky="ew")
+        output_box.grid(row=6, columnspan=3, padx=5, pady=5, sticky="ew")
 
-        clear_output = ttk.Button(frame, text="Clear Output", command=clear_all)
+        # Botones de acción
+        clear_output = ttk.Button(frame, text="Clear Output", bootstyle="danger", command=clear_all)
+        clear_output.grid(row=7, column=0, padx=5, pady=5, sticky="ew")
 
-        convert_btn = ttk.Button(frame, text="Compile", command=execute_conversion)
-        convert_btn.grid(row=8, column=1, padx=2, pady=2, sticky="ew")
-        
-        open_explorer_button = ttk.Button(frame, text="Open Folder", command=open_explorer)
-        
-        progressbar = ttk.Progressbar(frame, orient="horizontal", mode='indeterminate', length=500)
-        
-        denpendencies_entry = ttk.Entry(frame, width=40)
+        convert_btn = ttk.Button(frame, text="Compile", bootstyle="success", command=execute_conversion)
+        convert_btn.grid(row=8, column=1, padx=5, pady=5, sticky="ew")
+
+        open_explorer_button = ttk.Button(frame, text="Open Folder", bootstyle="info", command=open_explorer)
+        open_explorer_button.grid(row=8, column=2, padx=5, pady=5, sticky="ew")
+
+        # Barra de progreso
+        progressbar = ttk.Progressbar(frame, orient="horizontal", mode='indeterminate', length=500, bootstyle="primary")
+        progressbar.grid(row=9, columnspan=3, padx=5, pady=10, sticky="ew")
+
+        # Campo para dependencias (oculto inicialmente)
+        denpendencies_entry = ttk.Entry(frame, width=40, bootstyle="light")
         denpendencies_entry.grid_forget()
 
     def change_code_theme(theme_name):
@@ -4012,10 +4041,14 @@ def sync_repo_files(repo_url, local_path):
             last_modified = get_last_modified(repo_owner, repo_name, file_path)
             files_with_dates.append({"path": file_path, "last_modified": last_modified})
 
-    # Mostrar ventana emergente para seleccionar archivos
+    # Crear una ventana emergente para seleccionar archivos
     window = tk.Toplevel()
     window.title("Select Files to Sync")
     window.geometry("600x400")
+    
+    # Titulo con estilo
+    title_label = ttk.Label(window, text="Select Files to Sync", bootstyle=SUCCESS, font=("Helvetica", 16))
+    title_label.pack(pady=10)
 
     files_var = {}
     for file in files_with_dates:
@@ -4027,17 +4060,27 @@ def sync_repo_files(repo_url, local_path):
             window,
             text=f"{file_path} (Last Modified: {last_modified})",
             variable=files_var[file_path],
-        ).pack(anchor="w")
+            bootstyle="secondary",
+            style="Toolbutton",
+        ).pack(anchor="w", padx=20, pady=5)
 
-    def sync_selected_files():
+    # Botón para sincronizar archivos seleccionados con estilo
+    sync_button = ttk.Button(window, text="Sync Selected Files", bootstyle=PRIMARY, command=lambda: sync_selected_files(files_var, repo_owner, repo_name, local_path, window))
+    sync_button.pack(pady=10, padx=10)
+
+    # Botón para cancelar con estilo
+    cancel_button = ttk.Button(window, text="Cancel", bootstyle=SECONDARY, command=window.destroy)
+    cancel_button.pack(pady=10, padx=10)
+
+    def sync_selected_files(files_var, repo_owner, repo_name, local_path, window):
         selected_files = [file for file, var in files_var.items() if var.get()]
+        if not selected_files:
+            ms.showerror("Error", "No files selected for synchronization.")
+            return
         for file in selected_files:
             download_file(repo_owner, repo_name, file, local_path)
         ms.showinfo("Success", "Selected files have been synchronized.")
         window.destroy()
-
-    ttk.Button(window, text="Sync Selected Files", command=sync_selected_files).pack(pady=5)
-    ttk.Button(window, text="Cancel", command=window.destroy).pack(pady=5)
 
 def unify_windows():
     """Unifies all the separate windows into a single window."""
@@ -4046,27 +4089,28 @@ def unify_windows():
     github.iconbitmap(path)
     
     # Create a notebook (tabbed interface)
-    notebook = ttk.Notebook(github)
+    notebook = ttk.Notebook(github, bootstyle='primary')
     notebook.pack(expand=True, fill="both")
 
     # Create frames for each tab
     mygithub_frame = ttk.Frame(notebook)
     commits_frame = ttk.Frame(notebook)
-    history_commits_frame = ttk.Frame(notebook)
     file_frame = ttk.Frame(notebook)
     release_frame = ttk.Frame(notebook)
     edit_frame = ttk.Frame(notebook)
 
     # Add tabs to the notebook
-    notebook.add(mygithub_frame, text="My GitHub")
-    notebook.add(commits_frame, text="Repo Commits")
-    notebook.add(history_commits_frame, text="History Commits")
-    notebook.add(file_frame, text="Files")
-    notebook.add(release_frame, text="Releases")
-    notebook.add(edit_frame, text="Edit Repository")
+    notebook.add(mygithub_frame, text="My GitHub", padding=5)
+    notebook.add(commits_frame, text="Repo Commits", padding=5)
+    notebook.add(file_frame, text="Files", padding=5)
+    notebook.add(release_frame, text="Releases", padding=5)
+    notebook.add(edit_frame, text="Edit Repository", padding=5)
     
+    # Define columns for the repository Treeview
     columns = ("Name", "Description", "Language", "URL", "Visibility", "Clone URL")
-    repostree = ttk.Treeview(mygithub_frame, columns=columns, show="headings", height=20)
+    
+    repostree = ttk.Treeview(mygithub_frame, columns=columns, show="headings", height=20, bootstyle="secondary")
+    
     repostree.heading("Name", text="Name")
     repostree.heading("Description", text="Description")
     repostree.heading("Language", text="Language")
@@ -4074,7 +4118,12 @@ def unify_windows():
     repostree.heading("Visibility", text="Visibility")
     repostree.heading("Clone URL", text="Clone URL")
     
-    repostree.pack(expand=True, fill="both")
+    # Add a scrollbar to the Treeview
+    scrollb = ttk.Scrollbar(mygithub_frame, orient="vertical", command=repostree.yview, bootstyle="info")
+    repostree.configure(yscrollcommand=scrollb.set)
+    scrollb.pack(side=RIGHT, fill=Y, padx=5, pady=5)
+    
+    repostree.pack(expand=True, fill="both", padx=10, pady=10)
     
     def menu_contextual(event):
         """Muestra el menú contextual en el Treeview."""
@@ -4179,20 +4228,20 @@ def unify_windows():
                 ms.showerror("Error", f"Error al actualizar el repositorio: {e}")
                 
         # Campos para nombre, descripción y visibilidad
-        ttk.Label(edit_frame, text="Nombre del repositorio:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        ttk.Label(edit_frame, text="Nombre del repositorio:", style="TLabel").grid(row=0, column=0, padx=10, pady=5, sticky="w")
         nombre_var = tk.StringVar(value=repo_data.get("name", ""))
-        ttk.Entry(edit_frame, textvariable=nombre_var, width=40).grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        ttk.Entry(edit_frame, textvariable=nombre_var, width=40, style="TEntry").grid(row=0, column=1, padx=10, pady=5, sticky="w")
 
-        ttk.Label(edit_frame, text="Descripción:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        ttk.Label(edit_frame, text="Descripción:", style="TLabel").grid(row=1, column=0, padx=10, pady=5, sticky="w")
         descripcion_var = tk.StringVar(value=repo_data.get("description", ""))
-        ttk.Entry(edit_frame, textvariable=descripcion_var, width=40).grid(row=1, column=1, padx=5, pady=5, sticky="w")
+        ttk.Entry(edit_frame, textvariable=descripcion_var, width=40, style="TEntry").grid(row=1, column=1, padx=10, pady=5, sticky="w")
 
-        ttk.Label(edit_frame, text="Visibilidad:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        ttk.Label(edit_frame, text="Visibilidad:", style="TLabel").grid(row=2, column=0, padx=10, pady=5, sticky="w")
         visibilidad_var = tk.StringVar(value="Privado" if repo_data.get("private", False) else "Público")
-        ttk.OptionMenu(edit_frame, visibilidad_var, "Público", "Privado").grid(row=2, column=1, padx=5, pady=5, sticky="w")
+        ttk.OptionMenu(edit_frame, visibilidad_var, "Público", "Privado", style="TMenubutton").grid(row=2, column=1, padx=10, pady=5, sticky="w")
 
-        # Botón para guardar los cambios
-        ttk.Button(edit_frame, text="Guardar Cambios", command=guardar_cambios).grid(row=3, columnspan=2, pady=10)
+        # Botón para guardar los cambios con estilo de ttkbootstrap
+        ttk.Button(edit_frame, text="Guardar Cambios", command=guardar_cambios, style="Success.TButton").grid(row=3, columnspan=2, pady=15)
         
     def open_repo_files1(repo_name):
         for widget in file_frame.winfo_children():
@@ -4200,29 +4249,39 @@ def unify_windows():
             
         notebook.select(file_frame)
         
-        # Lista de archivos
-        file_list_frame = ttk.Frame(file_frame)
+        # Frame para la lista de archivos
+        file_list_frame = ttk.Frame(file_frame, padding=(5, 10))
         file_list_frame.pack(side="left", fill="y", padx=5, pady=5)
 
-        file_list = ttk.Treeview(file_list_frame, columns=("name", "type"), show="headings")
-        file_list.heading("name", text="Name")
-        file_list.heading("type", text="Type")
-        file_list.pack(expand=True, fill="y")
+        # Treeview para listar archivos con estilo
+        file_list = ttk.Treeview(file_list_frame, columns=("name", "type"), show="headings", selectmode="browse", style="success.Treeview")
+        file_list.heading("name", text="Name", anchor="w")
+        file_list.heading("type", text="Type", anchor="w")
+        file_list.column("name", anchor="w", width=250)
+        file_list.column("type", anchor="w", width=100)
+        file_list.pack(expand=True, fill="y", padx=5)
 
-        # Editor de texto
-        editor_frame = ttk.Frame(file_frame)
+        # Separador visual con estilo
+        separator = ttk.Separator(file_frame, orient="vertical")
+        separator.pack(side="left", fill="y", padx=5)
+
+        # Frame para el editor de texto
+        editor_frame = ttk.Frame(file_frame, padding=(10, 5))
         editor_frame.pack(side="right", expand=True, fill="both", padx=5, pady=5)
 
+        # Editor de código (CodeView) con estilo
         text_editor = CodeView(editor_frame, wrap="word", width=150, height=20)
         text_editor.pack(expand=True, fill="both", padx=10, pady=10)
 
-        # Campo para mensaje del commit
-        ttk.Label(editor_frame, text="Commit Message:").pack(anchor="w", padx=5)
+        # Campo para el mensaje del commit con estilo
+        ttk.Label(editor_frame, text="Commit Message:", font=("Arial", 10, "bold")).pack(anchor="w", padx=5)
         commit_var = tk.StringVar()
-        ttk.Entry(editor_frame, textvariable=commit_var, width=150).pack(padx=5, pady=5)
+        commit_entry = ttk.Entry(editor_frame, textvariable=commit_var, width=150, bootstyle=PRIMARY)
+        commit_entry.pack(padx=5, pady=5)
 
-        # Botón para guardar cambios
-        ttk.Button(editor_frame, text="Guardar Cambios", command=lambda: save_changes1(repo_name)).pack(pady=5)
+        # Botón para guardar cambios con estilo mejorado
+        save_button = ttk.Button(editor_frame, text="Guardar Cambios", command=lambda: save_changes1(repo_name), width=20, bootstyle=SUCCESS)
+        save_button.pack(pady=10)
 
         # Variable para rastrear el archivo actual
         current_file = tk.StringVar()
@@ -4233,8 +4292,11 @@ def unify_windows():
             if content == "":
                 return
             text_editor.delete("1.0", "end")
-            lexer = pygments.lexers.get_lexer_for_filename(file_path)
-            text_editor.config(lexer=lexer)  # Opcional: Añadir colores
+            try:
+                lexer = pygments.lexers.get_lexer_for_filename(file_path)
+            except Exception:
+                lexer = pygments.lexers.get_lexer_by_name("text")
+            text_editor.config(lexer=lexer)
             text_editor.insert("1.0", content)
             current_file.set(file_path)
 
@@ -4496,20 +4558,19 @@ def unify_windows():
         current_release_id = tk.StringVar()
         lexer = pygments.lexers.get_lexer_by_name("markdown")
 
-        # Configurar `release_frame` para que se expanda correctamente
         release_frame.grid_columnconfigure(0, weight=2)
         release_frame.grid_columnconfigure(1, weight=3)
-        release_frame.grid_columnconfigure(2, weight=1)  # Añadido peso para la columna de editor_frame
+        release_frame.grid_columnconfigure(2, weight=2)  # Ajuste para editor_frame
         release_frame.grid_rowconfigure(1, weight=1)
-        release_frame.grid_rowconfigure(3, weight=1)  # Añadido peso para la fila de los botones
+        release_frame.grid_rowconfigure(3, weight=1) 
 
         # Frame para seleccionar la release
-        select_frame = ttk.LabelFrame(release_frame, text="Select Release", padding=5)
+        select_frame = ttk.LabelFrame(release_frame, text="Select Release", padding=10, bootstyle=INFO)
         select_frame.grid(row=0, column=0, rowspan=3, sticky="nsew", padx=5, pady=5)
 
         # Combobox para listar las releases
         ttk.Label(select_frame, text="Select Release:", font=("Arial", 10, "bold")).grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        release_combobox = ttk.Combobox(select_frame, state="readonly", height=20, width=50)
+        release_combobox = ttk.Combobox(select_frame, state="readonly", width=50)
         release_combobox.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
         release_combobox.bind("<<ComboboxSelected>>", on_release_select)
 
@@ -4534,12 +4595,12 @@ def unify_windows():
         button_frame.grid_columnconfigure(1, weight=1)
         button_frame.grid_columnconfigure(2, weight=1)
 
-        ttk.Button(button_frame, text="New Release", command=lambda: [reset_form(), release_combobox.set('')]).grid(row=0, column=0, padx=5, pady=5, sticky="ew")
-        ttk.Button(button_frame, text="Add File(s)", command=add_files).grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-        ttk.Button(button_frame, text="Remove Selected File(s)", command=remove_files).grid(row=0, column=2, padx=5, pady=5, sticky="ew")
+        ttk.Button(button_frame, text="New Release", command=lambda: [reset_form(), release_combobox.set('')], bootstyle=PRIMARY).grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+        ttk.Button(button_frame, text="Add File(s)", command=add_files, bootstyle=PRIMARY).grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        ttk.Button(button_frame, text="Remove Selected File(s)", command=remove_files, bootstyle=DANGER).grid(row=0, column=2, padx=5, pady=5, sticky="ew")
 
         # Frame para crear/editar releases
-        editor_frame = ttk.LabelFrame(release_frame, text="Release Editor", padding=5)
+        editor_frame = ttk.LabelFrame(release_frame, text="Release Editor", padding=10, bootstyle=SUCCESS)
         editor_frame.grid(row=0, column=2, rowspan=3, sticky="nsew", padx=5, pady=5)
 
         # Ajustar la estructura del `editor_frame`
@@ -4571,48 +4632,97 @@ def unify_windows():
         options_frame.grid_columnconfigure(1, weight=1)
 
         draft_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(options_frame, text="Mark as Draft", variable=draft_var).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        ttk.Checkbutton(options_frame, text="Mark as Draft", variable=draft_var, bootstyle=INFO).grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
         prerelease_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(options_frame, text="Mark as Pre-release", variable=prerelease_var).grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        ttk.Checkbutton(options_frame, text="Mark as Pre-release", variable=prerelease_var, bootstyle=INFO).grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
         # Botón de Guardar
-        ttk.Button(editor_frame, text="Save Release", command=save_release).grid(row=7, column=0, columnspan=2, pady=10, sticky="ew")
+        ttk.Button(release_frame, text="✅ Save Release", command=save_release).grid(row=7, column=0, columnspan=2, pady=10, sticky="ew")
 
         # Inicializar el Combobox
         populate_release_combobox()
-
-        
+      
     def show_github_comits1(repo_name):
         notebook.select(commits_frame)
         
         # Marco principal
         frame = ttk.Frame(commits_frame)
         frame.pack(expand=True, fill="both")
+        
+        paned_window = ttk.Panedwindow(frame, orient="horizontal")
+        paned_window.pack(expand=True, fill="both")
 
+        files_frame = ttk.Labelframe(paned_window, text="Repository Files", padding=10, bootstyle=INFO)
+        paned_window.add(files_frame, weight=2)
+        
+        commits1_frame = ttk.Labelframe(paned_window, text="Commit History", padding=10, bootstyle=SUCCESS)
+        paned_window.add(commits1_frame, weight=3)
+        
         # Treeview para mostrar los archivos
         columns = ("Path", "Type", "Size")
-        file_tree = ttk.Treeview(frame, columns=columns, show="headings", height=20)
+        file_tree = ttk.Treeview(files_frame, columns=columns, show="headings", height=15)
         file_tree.heading("Path", text="File Path")
         file_tree.heading("Type", text="Type")
         file_tree.heading("Size", text="Size (bytes)")
+        file_tree.column("Path", width=300)
+        file_tree.column("Type", width=100)
+        file_tree.column("Size", width=100)
         file_tree.pack(expand=True, fill="both", padx=5, pady=5)
+        
+        columns = ("SHA", "Author", "Date", "Message")
+        commit_tree = ttk.Treeview(commits1_frame, columns=columns, show="headings", height=15)
+        commit_tree.heading("SHA", text="Commit SHA")
+        commit_tree.heading("Author", text="Author")
+        commit_tree.heading("Date", text="Date")
+        commit_tree.heading("Message", text="Message")
+        commit_tree.column("SHA", width=100)
+        commit_tree.column("Author", width=150)
+        commit_tree.column("Date", width=150)
+        commit_tree.column("Message", width=300)
+        commit_tree.pack(expand=True, fill="both", padx=5, pady=5)
 
         # Botón para cargar el historial de commits del archivo seleccionado
-        def load_commit_history():
-            # Obtener el archivo seleccionado
+        def load_commit_history(event=None):
+            commit_tree.delete(*commit_tree.get_children())  # Limpiar lista anterior
             selected_item = file_tree.selection()
+            
             if not selected_item:
                 ms.showerror("Error", "Please select a file to view its commit history.")
                 return
 
             file_path = file_tree.item(selected_item, "values")[0]
-            fetch_comit_history1(repo_name, file_path)
 
-        ttk.Button(frame, text="View Commit History", command=load_commit_history).pack(pady=5)
+            try:
+                url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/commits"
+                headers = {
+                    "Authorization": f"token {GITHUB_TOKEN}",
+                    "Accept": "application/vnd.github.v3+json"
+                }
+                params = {"path": file_path}
+                response = requests.get(url, headers=headers, params=params)
+                response.raise_for_status()
+                commits = response.json()
+
+                for commit in commits:
+                    commit_tree.insert(
+                        "",
+                        "end",
+                        values=(
+                            commit.get("sha"),
+                            commit.get("commit", {}).get("author", {}).get("name"),
+                            commit.get("commit", {}).get("author", {}).get("date"),
+                            commit.get("commit", {}).get("message"),
+                        )
+                    )
+            except requests.exceptions.RequestException as e:
+                ms.showerror("Error", f"Unable to fetch commit history: {e}")
+
+        file_tree.bind("<Double-Button-1>",load_commit_history)
 
         # Cargar los archivos del repositorio
-        def load_files():
+        def load_files(repo_name):
+            file_tree.delete(*file_tree.get_children())  # Limpiar lista anterior
             try:
                 url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/contents"
                 headers = {
@@ -4623,58 +4733,12 @@ def unify_windows():
                 response.raise_for_status()
                 files = response.json()
 
-                # Poblar el Treeview con los archivos
                 for file in files:
-                    file_tree.insert(
-                        "",
-                        "end",
-                        values=(
-                            file.get("path"),
-                            file.get("type"),
-                            file.get("size", "Unknown"),
-                        )
-                    )
+                    file_tree.insert("", "end", values=(file.get("path"), file.get("type"), file.get("size", "Unknown")))
             except requests.exceptions.RequestException as e:
                 ms.showerror("Error", f"Unable to fetch files: {e}")
 
-        load_files()
-        
-    def fetch_comit_history1(repo_name, file_path):
-        notebook.select(history_commits_frame)
-        try:
-            url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/commits"
-            headers = {
-                "Authorization": f"token {GITHUB_TOKEN}",
-                "Accept": "application/vnd.github.v3+json"
-            }
-            params = {"path": file_path}
-            response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            commits = response.json()
-
-            # Treeview para los commits
-            columns = ("SHA", "Author", "Date", "Message")
-            commit_tree = ttk.Treeview(history_commits_frame, columns=columns, show="headings", height=20)
-            commit_tree.heading("SHA", text="Commit SHA")
-            commit_tree.heading("Author", text="Author")
-            commit_tree.heading("Date", text="Date")
-            commit_tree.heading("Message", text="Message")
-            commit_tree.pack(expand=True, fill="both", padx=5, pady=5)
-
-            # Poblar el Treeview con los commits
-            for commit in commits:
-                commit_tree.insert(
-                    "",
-                    "end",
-                    values=(
-                        commit.get("sha"),
-                        commit.get("commit", {}).get("author", {}).get("name"),
-                        commit.get("commit", {}).get("author", {}).get("date"),
-                        commit.get("commit", {}).get("message"),
-                    )
-                )
-        except requests.exceptions.RequestException as e:
-            ms.showerror("Error", f"Unable to fetch commit history: {e}")
+        load_files(repo_name)
         
 menu_name = "Organizer"
 description_menu = "Open Organizer"
