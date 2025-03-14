@@ -2854,7 +2854,7 @@ def load_config():
     return 0
 
 def setting_window():
-    config_window = tk.Toplevel(orga)
+    config_window = ttk.Toplevel(orga)
     config_window.title("Settings")
     config_window.iconbitmap(path)
     
@@ -4683,7 +4683,8 @@ ruta_icono = ruta_exe
 ruta_db = ruta_exe
 orga = ThemedTk()
 orga.title('Project Organizer')
-orga.geometry("1230x440")
+orga.geometry("1230x500")
+orga.resizable(True, True)
 path = resource_path("software.ico")
 path2 = resource_path2("./software.png")
 orga.iconbitmap(path)
@@ -4694,8 +4695,11 @@ saved_state = load_config()
 check_var = tk.IntVar(value=saved_state if saved_state else (1 if is_in_startup() else 0))
 
 # Cambiar pack por grid para toda la interfaz
-main_frame = ttk.Frame(orga)
+main_frame = ttk.Frame(orga, bootstyle="default")
 main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+orga.grid_rowconfigure(0, weight=1)
+orga.grid_columnconfigure(0, weight=1)
+main_frame.grid_columnconfigure(1, weight=3)
 
 def install_editor(name=""):
     if name == "Visual Studio Code":
@@ -4876,15 +4880,6 @@ editores_disponibles = ["Visual Studio Code", "Sublime Text", "Atom", "Vim", "Em
 
 lenguajes = ["Python", "NodeJS", "bun", "React", "Vue", "C++", "C#", "Rust", "Go", "flutter"]
 
-# Árbol de proyectos
-tree = ttk.Treeview(main_frame, columns=('ID', 'Nombre', 'Descripcion', 'Lenguaje', 'Ruta', 'Repositorio'), show='headings')
-tree.heading('ID', text='ID')
-tree.heading('Nombre', text='Name')
-tree.heading('Descripcion', text='Description')
-tree.heading('Lenguaje', text='Lenguaje')
-tree.heading('Ruta', text='Path')
-tree.heading('Repositorio', text='Repository')
-
 # Menú
 menu = tk.Menu(orga)
 orga.config(menu=menu)
@@ -4905,32 +4900,42 @@ help_menu.add_command(label="InfoVersion", command=ver_info)
 help_menu.add_command(label="Documentation", command=show_docu)
 
 # Labels y campos de entrada
-nombre_label = ttk.Label(main_frame, text="Name:")
-nombre_label.grid(row=1, column=0, pady=5, padx=5, sticky="w")
+ttk.Label(main_frame, text="Name:", bootstyle='info').grid(row=0, column=0, padx=5, pady=5, sticky="w")
 nombre_entry = ttk.Entry(main_frame, width=100)
-nombre_entry.grid(row=1, column=1, pady=5, padx=5, sticky="ew")
+nombre_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
-descripcion_label = ttk.Label(main_frame, text='Description:')
-descripcion_label.grid(row=2, column=0, padx=5, pady=5, sticky="w")
+ttk.Label(main_frame, text="Description:", bootstyle='info').grid(row=1, column=0, padx=5, pady=5, sticky="w")
 descripcion_entry = ttk.Entry(main_frame, width=100)
-descripcion_entry.grid(row=2, column=1, pady=5, padx=5, sticky="ew")
+descripcion_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
 
-repo_label = ttk.Label(main_frame, text="Repository URL:")
-repo_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
+ttk.Label(main_frame, text="Repository URL:", bootstyle='info').grid(row=2, column=0, padx=5, pady=5, sticky="w")
 repo_entry = ttk.Entry(main_frame, width=100)
-repo_entry.grid(row=3, column=1, pady=5, padx=5, sticky="ew")
+repo_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
 
-depen_label = ttk.Label(main_frame, text="Dependencies:")
-depen_label.grid(row=4, column=0, pady=5, padx=5, sticky="w")
+ttk.Label(main_frame, text="Dependencies:", bootstyle='info').grid(row=3, column=0, padx=5, pady=5, sticky="w")
 depen_entry = ttk.Entry(main_frame, width=100)
-depen_entry.grid(row=4, column=1, pady=5, padx=5, sticky="ew")
+depen_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
 
-# Árbol con scroll
-tree.grid(row=5, column=0, columnspan=2, pady=5, padx=5, sticky="nsew")
-scrollbar_y = ttk.Scrollbar(main_frame, orient='vertical', command=tree.yview)
-scrollbar_y.grid(row=5, column=2, sticky='ns')
+btn_install = ttk.Button(main_frame, text="Install dependencies", command=lambda: install_librarys(tree.item(tree.selection())['values'][3]), bootstyle='success')
+btn_install.grid(row=3, column=2, padx=5, pady=5)
+
+# Árbol de proyectos
+tree = ttk.Treeview(main_frame, columns=('ID', 'Name', 'Description', 'Language', 'Path', 'Repository'), show='headings', bootstyle='primary')
+for col in ('ID', 'Name', 'Description', 'Language', 'Path', 'Repository'):
+    tree.heading(col, text=col)
+    tree.column(col, width=150)
+tree.grid(row=4, column=0, columnspan=2, padx=5, pady=5, sticky="nsew")
+
+scrollbar_y = ttk.Scrollbar(main_frame, orient='vertical', command=tree.yview, bootstyle='round-primary')
+scrollbar_y.grid(row=4, columnspan=2, padx=5, pady=5, sticky='nse')
 tree.configure(yscrollcommand=scrollbar_y.set)
 tree.bind("<Button-3>", show_context_menu)
+
+# Campo de búsqueda
+ttk.Label(main_frame, text="Search Project:", bootstyle='info').grid(row=5, column=0, padx=5, pady=5, sticky="w")
+search_entry = ttk.Entry(main_frame, width=100)
+search_entry.grid(row=5, column=1, padx=5, pady=5, sticky="ew")
+search_entry.bind("<KeyRelease>", on_key_release)
 
 # Selector de editor
 selected_editor = tk.StringVar()
@@ -4939,34 +4944,23 @@ editor_options = [
     "Notepad++", "Brackets", "TextMate", "Geany", "gedit", 
     "Nano", "Kate", "Bluefish", "Eclipse", "IntelliJ IDEA", 
     "PyCharm", "Visual Studio", "Code::Blocks", "NetBeans", 
-    "Android Studio", "Editor Integrated", "neovim"
+    "Android Studio", "Integrated Editor", "neovim"
 ]
 selected_editor.set(editor_options[0])
-editor_menu = ttk.OptionMenu(main_frame, selected_editor, *editor_options)
-editor_menu.grid(row=10, column=0, padx=5, pady=5, sticky="w")
 
-# Campo de búsqueda
-search_label = ttk.Label(main_frame, text="Search Project:")
-search_label.grid(row=9, column=0, padx=2, pady=2, sticky="w")
-search_entry = ttk.Entry(main_frame, width=170)
-search_entry.grid(row=9, column=1, padx=2, pady=2, sticky="ew")
-search_entry.bind("<KeyRelease>", on_key_release)
+ttk.Label(main_frame, text="Editor:", bootstyle='info').grid(row=6, column=0, padx=5, pady=5, sticky="w")
+editor_menu = ttk.OptionMenu(main_frame, selected_editor, *editor_options, bootstyle='secondary')
+editor_menu.grid(row=6, column=1, padx=5, pady=5, sticky="ew")
 
 # Botones de acción
-btn_abrir = ttk.Button(main_frame, text='Open Project', command=lambda: abrir_threading(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4], selected_editor.get()))
-btn_abrir.grid(row=10, column=0, columnspan=2, pady=5, padx=5, sticky="s")
+btn_abrir = ttk.Button(main_frame, text='Open Project', command=lambda: abrir_threading(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4], selected_editor.get()), bootstyle='success')
+btn_abrir.grid(row=7, column=0, columnspan=2, pady=10, padx=5, sticky="s")
 
-btn_install = ttk.Button(main_frame, text="Install dependencies", command=lambda: install_librarys(tree.item(tree.selection())['values'][3]))
-btn_install.grid(row=4, column=1, padx=5, pady=5, sticky="e")
-
-version_label = ttk.Label(main_frame, text=version)
-version_label.grid(row=10, column=1, pady=5, padx=5, sticky="se")
+version_label = ttk.Label(main_frame, text=f'{version}', bootstyle='info')
+version_label.grid(row=7, column=1, pady=5, padx=5, sticky="se")
 
 # Configuración de peso y distribución
-orga.grid_rowconfigure(5, weight=1)
-orga.grid_columnconfigure(0, weight=1)
-orga.grid_columnconfigure(2, weight=1)
-main_frame.grid_columnconfigure(1, weight=3)
+main_frame.grid_rowconfigure(4, weight=1)
 
 if len(sys.argv) > 1:
     open_project_file(sys.argv[1],)
