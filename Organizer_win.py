@@ -1286,7 +1286,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         return content
     
     def open_selected_file(event=None):
-        global current_file
+        global current_file, new_tab_frame
         item = tree.focus()
         if item:
             item_path = get_item_path(item)
@@ -1306,7 +1306,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                     
                     lexer = pygments.lexers.get_lexer_for_filename(item_path)
                     text_editor = CodeView(new_tab_frame, lexer=lexer, color_scheme=current_theme_get())
-                    text_editor.pack(fill="both", expand=True)
+                    text_editor.pack(fill="both", padx=5, pady=5, expand=True)
                     text_editor.insert(tk.END, content)
                     text_editors.append(text_editor)
                     text_editor.bind("<KeyPress>", on_key_press)
@@ -1549,7 +1549,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         if gpt_frame.winfo_ismapped():
             gpt_frame.pack_forget()
         else:
-            gpt_frame.pack(side="right", fill="both")
+            gpt_frame.pack(side="right", fill="both", expand=True)
             
     def toggle_tree_visibility(event=None):
         if tree_frame.winfo_ismapped():
@@ -1589,6 +1589,57 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     
     def tree_popup(event):
         tree_menu.post(event.x_root, event.y_root)
+        
+    def actualizar_powerline(event=None):
+        try:
+            global current_file
+
+            # Verificar si hay un editor de texto asociado
+            index = tabs.index(tabs.select())
+            text_editor = text_editors[index] if text_editors else None
+
+            if text_editor is None:
+                file_label.config(text="No file opened")
+                line_info.config(text="Ln 0, Col 0")
+                modified_label.config(text="✔")
+                lang_label.config(text="Plain Text")
+                return
+
+            if isinstance(current_file, str):
+                current_file = tk.StringVar(value=current_file)
+                
+            # Si current_file no está definido, inicializarlo correctamente
+            if "current_file" not in globals():
+                current_file = tk.StringVar(value="")
+
+            file_name = current_file.get() if isinstance(current_file, tk.StringVar) else current_file
+            file_size = os.path.getsize(file_name) if os.path.exists(file_name) else 0
+            file_size_kb = f"{file_size / 1024:.1f} KB" if file_size > 1024 else f"{file_size} B"
+
+            # Verificar que text_editor no sea None antes de obtener la posición del cursor
+            if text_editor is not None:
+                row, col = text_editor.index("insert").split(".")
+                line_info.config(text=f"Ln {row}, Col {col}")
+
+            modified_status = "●" if text_editor.edit_modified() else "✔"
+            modified_label.config(text=modified_status)
+
+            lexer = os.path.splitext(file_name)[1]
+            language = lexer.replace(".", "") if lexer else "Plain Text"
+            lang_label.config(text=language)
+
+            file_label.config(text=f"{os.path.basename(file_name)} ({file_size_kb})")
+
+        except Exception as e:
+            ms.showerror("POWERLINE ERROR", f"Error in Powerline: {e}")
+    
+    main_frame = ttk.Frame(editor)
+    main_frame.pack(fill="both", expand=True)
+    
+    main_frame.grid_rowconfigure(0, weight=1)
+    main_frame.grid_rowconfigure(1, weight=0)
+    main_frame.grid_columnconfigure(0, weight=1)
+    main_frame.grid_columnconfigure(1, weight=3)
        
     builtin_color_schemes = set(tom_files)
     menu_bar = tk.Menu(editor)
@@ -1611,24 +1662,13 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     for code_theme in builtin_color_schemes:
         theme_code_menu.add_command(label=code_theme, command=lambda theme=code_theme: change_code_theme(theme))
     editor.config(menu=menu_bar)
-
-    gpt_frame = ttk.Frame(editor)
     
-    gpt_response = CodeView(gpt_frame, color_scheme=current_theme_get())
-    gpt_response.pack(fill='both', expand=True)
-    
-    send_quest = ttk.Button(gpt_frame, text="Submit", command=answer_question)
-    send_quest.pack(side='bottom')
-    
-    user_quest = ttk.Entry(gpt_frame, width=50)
-    user_quest.pack(fill='x', side='bottom')
-    
-    tree_frame = ttk.Frame(editor)
-    tree_frame.pack(side="left", fill="both")
+    tree_frame = ttk.Frame(main_frame, bootstyle="dark")
+    tree_frame.pack(side="left", fill="y")
 
     tree_scroll = ttk.Scrollbar(tree_frame)
     tree_scroll.pack(side="right", fill="y")
-
+    
     tree_menu = tk.Menu(editor, tearoff=0)
     tree_menu.add_command(label="New File", command=name_new_file)
     tree_menu.add_command(label='New Folder', command=name_new_folder)
@@ -1640,6 +1680,29 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     tree.bind("<<TreeviewSelect>>", open_selected_file)
     tree.heading("#0", text=nombre_proyecto)
     
+    gpt_frame = ttk.Frame(main_frame, bootstyle="dark")
+    
+    gpt_response = CodeView(gpt_frame, color_scheme=current_theme_get())
+    gpt_response.pack(fill='both', expand=True)
+    
+    send_quest = ttk.Button(gpt_frame, text="Submit", command=answer_question)
+    send_quest.pack(side='bottom')
+    
+    user_quest = ttk.Entry(gpt_frame, width=50)
+    user_quest.pack(fill='x', side='bottom')
+    
+    
+    file_label = ttk.Label(editor, text="Untitled", bootstyle="info", padding=5)
+    file_label.pack(side="right")
+
+    lang_label = ttk.Label(editor, text="Plain Text", bootstyle="primary", padding=5)
+    lang_label.pack(side="right")
+
+    line_info = ttk.Label(editor, text="Ln 1, Col 0", bootstyle="warning", padding=5)
+    line_info.pack(side="right")
+
+    modified_label = ttk.Label(editor, text="✔", bootstyle="success", padding=5)
+    modified_label.pack(side="right")
     
     editor.bind("<Control-b>", toggle_tree_visibility)
     editor.bind("<Control-Tab>", lambda event: tabs.select((tabs.index(tabs.select()) + 1) % tabs.index("end")))
@@ -1647,7 +1710,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     tree.bind("<<TreeviewOpen>>", expand_folder)
     editor.bind("<Control-q>", lambda event: editor.destroy())
     editor.bind("<Control-g>", toggle_gpt_visibility)
-    tree.bind("<Button-3>", tree_popup)
+    tree.bind("<Button-3>", lambda event: tree_menu.post(event.x_root, event.y_root))
     
     for item in os.listdir(ruta_proyecto):
         item_path = os.path.join(ruta_proyecto, item)
@@ -1656,6 +1719,10 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         elif os.path.isdir(item_path):
             folder_id = tree.insert("", "end", text=item, open=False)
             tree.insert(folder_id, "end", text="")
+    
+            
+    editor.bind("<KeyRelease>", actualizar_powerline)
+    editor.bind("<<Modified>>", actualizar_powerline)
 
     editor.mainloop()
    
@@ -4965,23 +5032,17 @@ help_menu.add_command(label="Documentation", command=show_docu)
 
 # Labels y campos de entrada
 ttk.Label(main_frame, text="Name:", bootstyle='info').grid(row=0, column=0, padx=5, pady=5, sticky="w")
-nombre_entry = ttk.Entry(main_frame, width=100)
+nombre_entry = ttk.Entry(main_frame, width=170)
 nombre_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
 ttk.Label(main_frame, text="Description:", bootstyle='info').grid(row=1, column=0, padx=5, pady=5, sticky="w")
-descripcion_entry = ttk.Entry(main_frame, width=100)
+descripcion_entry = ttk.Entry(main_frame, width=170)
 descripcion_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
 
 ttk.Label(main_frame, text="Repository URL:", bootstyle='info').grid(row=2, column=0, padx=5, pady=5, sticky="w")
-repo_entry = ttk.Entry(main_frame, width=100)
+repo_entry = ttk.Entry(main_frame, width=170)
 repo_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
 
-ttk.Label(main_frame, text="Dependencies:", bootstyle='info').grid(row=3, column=0, padx=5, pady=5, sticky="w")
-depen_entry = ttk.Entry(main_frame, width=100)
-depen_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
-
-btn_install = ttk.Button(main_frame, text="Install dependencies", command=lambda: install_librarys(tree.item(tree.selection())['values'][3]), bootstyle='success')
-btn_install.grid(row=3, column=2, padx=5, pady=5)
 
 # Árbol de proyectos
 tree = ttk.Treeview(main_frame, columns=('ID', 'Name', 'Description', 'Language', 'Path', 'Repository'), show='headings', bootstyle='primary')
@@ -4997,7 +5058,7 @@ tree.bind("<Button-3>", show_context_menu)
 
 # Campo de búsqueda
 ttk.Label(main_frame, text="Search Project:", bootstyle='info').grid(row=5, column=0, padx=5, pady=5, sticky="w")
-search_entry = ttk.Entry(main_frame, width=100)
+search_entry = ttk.Entry(main_frame, width=170)
 search_entry.grid(row=5, column=1, padx=5, pady=5, sticky="ew")
 search_entry.bind("<KeyRelease>", on_key_release)
 
@@ -5013,7 +5074,7 @@ editor_options = [
 selected_editor.set(editor_options[0])
 
 ttk.Label(main_frame, text="Editor:", bootstyle='info').grid(row=6, column=0, padx=5, pady=5, sticky="w")
-editor_menu = ttk.OptionMenu(main_frame, selected_editor, *editor_options, bootstyle='secondary')
+editor_menu = ttk.Combobox(main_frame, textvariable=selected_editor, values=editor_options, state="readonly", bootstyle='secondary')
 editor_menu.grid(row=6, column=1, padx=5, pady=5, sticky="ew")
 
 # Botones de acción
