@@ -1,5 +1,6 @@
 import json
 import os
+from pydoc import text
 import shutil
 import sqlite3
 import subprocess
@@ -38,6 +39,7 @@ from ttkthemes import ThemedTk
 from chlorophyll import CodeView
 from pathlib import Path
 from ttkbootstrap.constants import *
+from ttkbootstrap.widgets import Progressbar
 from git import Repo
 from tkinter.colorchooser import askcolor
 from datetime import datetime
@@ -1781,7 +1783,7 @@ def crear_nuevo_proyecto():
     seleccion = tk.StringVar()
     seleccion.set(lenguaje_options[0])
     
-    menu_lenguaje = ttk.OptionMenu(main_frame, seleccion, *lenguaje_options)
+    menu_lenguaje = ttk.Combobox(main_frame, textvariable=seleccion, values=lenguaje_options, state="readonly", bootstyle='secondary')
     menu_lenguaje.grid(row=6, columnspan=2, padx=5, pady=5)
     
     rules_label = ttk.Label(main_frame, text="If you create git repo insert in textbox your rules for the .gitignore")
@@ -2594,42 +2596,6 @@ def generar_informe():
     ms.showinfo("Report Generate", "The report has been successfully generated. You can find it in the 'informe.html' file.")
     
     os.system('informe.html')
-    
-def install_librarys(lenguaje):
-    global selected_project_path
-    
-    
-    if selected_project_path is None:
-        ms.showerror("ERROR", "No project selected")
-        return
-    
-    libreria = depen_entry.get()
-    librerias = libreria.split()
-    
-    if lenguaje == "Python":
-        env_activate_script = os.path.join(selected_project_path, "app", "Scripts", "activate")
-        if os.path.exists(env_activate_script):
-            cmd = [env_activate_script, "&&", "python", "-m", "pip", "install"] + librerias
-            subprocess.run(cmd, shell=True)
-            ms.showinfo("Complete", f"{librerias} Has been installed.")
-        else:
-            ms.showerror("ERROR", "No virtual environment found in the project.")
-    else:
-        if lenguaje.lower() == "nodejs":
-            subprocess.run(["npm", "install", librerias], cwd=selected_project_path, shell=True)
-            ms.showinfo("Complete", f"{librerias} Has been installed.")
-        elif lenguaje.lower() == "react":
-            subprocess.run(["npm", "install", librerias], cwd=selected_project_path, shell=True)
-            ms.showinfo("Complete", f"{librerias} Has been installed.")
-        elif lenguaje.lower() == "vue":
-            subprocess.run(["npm", "install", librerias], cwd=selected_project_path, shell=True)
-            ms.showinfo("Complete", f"{librerias} Has been installed.")
-        elif lenguaje.lower() == "rust":
-            subprocess.run(["cargo", "install", librerias], cwd=selected_project_path, shell=True)
-            ms.showinfo("Complete", f"{librerias} Has been installed.")
-        elif lenguaje.lower() == "go":
-            subprocess.run(["go", "get", librerias], cwd=selected_project_path, shell=True)
-            ms.showinfo("Complete", f"{libreria} Has been installed.")
            
 def modificar_proyecto():
     selected_row = tree.selection()
@@ -4165,6 +4131,8 @@ def unify_windows():
     file_frame = ttk.Frame(notebook)
     release_frame = ttk.Frame(notebook)
     edit_frame = ttk.Frame(notebook)
+    issues_frame = ttk.Frame(notebook)
+    stats_frame = ttk.Frame(notebook)
 
     # Add tabs to the notebook
     notebook.add(mygithub_frame, text="My GitHub", padding=5)
@@ -4172,6 +4140,8 @@ def unify_windows():
     notebook.add(file_frame, text="Files", padding=5)
     notebook.add(release_frame, text="Releases", padding=5)
     notebook.add(edit_frame, text="Edit Repository", padding=5)
+    notebook.add(issues_frame, text="Issues", padding=5)
+    notebook.add(stats_frame, text="Stats", padding=5)
     
     # Define columns for the repository Treeview
     columns = ("Name", "Description", "Language", "URL", "Visibility", "Clone URL")
@@ -4191,6 +4161,21 @@ def unify_windows():
     scrollb.pack(side=RIGHT, fill=Y, padx=5, pady=5)
     
     repostree.pack(expand=True, fill="both", padx=10, pady=10)
+    
+    def filter_repositories(event):
+        query = search_var.get().lower()
+        for item in repostree.get_children():
+            repo_name = repostree.item(item, "values")[0].lower()
+            if query in repo_name:
+                repostree.item(item, open=True)
+                repostree.selection_set(item)
+            else:
+                repostree.selection_remove(item)
+    
+    search_var = tk.StringVar()
+    search_entry = ttk.Entry(mygithub_frame, textvariable=search_var, width=40)
+    search_entry.pack(pady=5)
+    search_entry.bind("<KeyRelease>", filter_repositories)
     
     def menu_contextual(event):
         """Muestra el menú contextual en el Treeview."""
@@ -4222,6 +4207,67 @@ def unify_windows():
         except Exception as e:
             ms.showerror("ERROR", f"Inesperated error:\n{e}")
             
+    def backup_repository(repo_name):
+        try:
+            url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/zipball"
+            headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+            response = requests.get(url, headers=headers, stream=True)
+            response.raise_for_status()
+
+            save_path = filedialog.asksaveasfilename(initialfile=f"{repo_name}.zip", defaultextension=".zip", filetypes=[("ZIP Files", "*.zip")])
+            if not save_path:
+                return
+
+            # 🔹 Crear ventana con Progressbar
+            progress_window = tk.Toplevel(orga)
+            progress_window.title("Creating Backup...")
+            ttk.Label(progress_window, text=f"Creating backup of {repo_name}...").pack(pady=5)
+            progress = Progressbar(progress_window, mode="determinate", length=300)
+            progress.pack(padx=10, pady=10)
+
+            total_size = int(response.headers.get("content-length", 0))
+            downloaded_size = 0
+
+            with open(save_path, "wb") as f:
+                for chunk in response.iter_content(1024):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded_size += len(chunk)
+                        if total_size > 0:  # Evitar división por cero
+                            progress["value"] = (downloaded_size / total_size) * 100
+                        else:
+                            progress["value"] = 100  # Completar el progreso si no hay tamaño total
+                        progress_window.update_idletasks()
+
+            progress["value"] = 100
+            progress_window.destroy()
+            ms.showinfo("Éxito", f"Backup of '{repo_name}' save on {save_path}")
+
+        except requests.exceptions.RequestException as e:
+            ms.showerror("Error", f"Cant't create the backup: {e}")
+            
+    def show_repo_issues(repo_name):
+        notebook.select(issues_frame)
+
+        for widget in issues_frame.winfo_children():
+            widget.destroy()
+
+        ttk.Label(issues_frame, text=f"🐞 Issues of {repo_name}", font=("Arial", 14, "bold")).pack(pady=10)
+
+        try:
+            url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/issues"
+            headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            issues = response.json()
+
+            for issue in issues:
+                ttk.Label(issues_frame, text=f"#{issue['number']} - {issue['title']}", font=("Arial", 12, "bold")).pack(anchor="w")
+                ttk.Label(issues_frame, text=issue["body"], wraplength=600, justify="left").pack(anchor="w", padx=10, pady=5)
+
+        except requests.exceptions.RequestException as e:
+            ms.showerror("Error", f"cant't obtain the issues: {e}")
+            
     def open_repository(event):
         item = repostree.selection()
         if item:
@@ -4232,13 +4278,16 @@ def unify_windows():
     repostree.bind("<Button-3>", menu_contextual)
     
     context_menu = tk.Menu(github, tearoff=0)
-    context_menu.add_command(label="Delete Repository", command=lambda: delete_repository_github(repostree.item(repostree.selection(), "values")[0]))
-    context_menu.add_command(label="Editr Repository", command=lambda: edit_repository1(repostree.item(repostree.selection()[0], "values")[0]))
-    context_menu.add_command(label="Github Releases", command=lambda: manage_github_release1(repostree.item(repostree.selection(), "values")[0]))
-    context_menu.add_command(label="Commits History", command=lambda: show_github_comits1(repostree.item(repostree.selection()[0], "values")[0]))
-    context_menu.add_command(label="Crear Nuevo Repositorio", command=create_repository_github)
-    context_menu.add_command(label="Clone Repository", command=clone_respository)
-    context_menu.add_command(label="View Files", command=lambda: open_repo_files1(repostree.item(repostree.selection()[0], "values")[0]))
+    context_menu.add_command(label="🗑️Delete Repository", command=lambda: delete_repository_github(repostree.item(repostree.selection(), "values")[0]))
+    context_menu.add_command(label="✏️ Edit Repository", command=lambda: edit_repository1(repostree.item(repostree.selection()[0], "values")[0]))
+    context_menu.add_command(label="🚀 Github Releases", command=lambda: manage_github_release1(repostree.item(repostree.selection(), "values")[0]))
+    context_menu.add_command(label="🔄 Commits History", command=lambda: show_github_comits1(repostree.item(repostree.selection()[0], "values")[0]))
+    context_menu.add_command(label="➕ Create New Repository", command=create_repository_github)
+    context_menu.add_command(label="📂 Clone Repository", command=clone_respository)
+    context_menu.add_command(label="🗂️View Files", command=lambda: open_repo_files1(repostree.item(repostree.selection()[0], "values")[0]))
+    context_menu.add_command(label="📊 Show Statistics", command=lambda: show_repo_stats(repostree.item(repostree.selection()[0], "values")[0]))
+    context_menu.add_command(label="📦 Create Backup", command=lambda: backup_repository(repostree.item(repostree.selection()[0], "values")[0]))
+    context_menu.add_command(label="🐞 Show Issues", command=lambda: show_repo_issues(repostree.item(repostree.selection()[0], "values")[0]))
     
     def show_github_repos():
         for item in repostree.get_children():
@@ -4250,10 +4299,87 @@ def unify_windows():
     
     show_github_repos()
     
+    def show_repo_stats(repo_name):
+        notebook.select(stats_frame)  # Cambia a la pestaña de estadísticas
+        
+        # Limpiar la pestaña antes de cargar nuevas estadísticas
+        for widget in stats_frame.winfo_children():
+            widget.destroy()
+
+        ttk.Label(stats_frame, text=f"📊 Estadísticas de {repo_name}", font=("Arial", 16, "bold")).pack(pady=10)
+
+        try:
+            url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}"
+            headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            repo_data = response.json()
+
+            description = repo_data.get("description", "Este repositorio no tiene descripción.")
+
+            # 🔹 Intentamos obtener el README.md
+            readme_url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/readme"
+            response_readme = requests.get(readme_url, headers=headers)
+
+            if response_readme.status_code == 200:
+                readme_data = response_readme.json()
+                readme_content = base64.b64decode(readme_data.get("content", "")).decode("utf-8")
+                readme_html = markdown.markdown(readme_content)  # Convertimos el README a HTML
+            else:
+                readme_html = f"<p>{description}</p>"  # Si no hay README, mostramos la descripción
+                
+            def get_total_downloads(repo_name, headers):
+                total_downloads = 0
+                releases_url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/releases"
+                response_releases = requests.get(releases_url, headers=headers)
+                if response_releases.status_code == 200:
+                    releases = response_releases.json()
+                    for release in releases:
+                        for asset in release.get("assets", []):
+                            total_downloads += asset.get("download_count", 0)
+                return total_downloads
+
+            # 🔹 Función auxiliar para obtener clones del repo
+            def get_total_clones(repo_name, headers):
+                clones_url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/traffic/clones"
+                response_clones = requests.get(clones_url, headers=headers)
+                if response_clones.status_code == 200:
+                    clone_data = response_clones.json()
+                    return clone_data.get("count", 0)  # Suma de clones en los últimos 14 días
+                return 0
+
+            # 🔹 Agregar un Frame para el README / Descripción
+            readme_frame = ttk.LabelFrame(stats_frame, text="📖 README / Description", padding=10, bootstyle="info")
+            readme_frame.pack(fill="both", padx=10, pady=5)
+
+            readme_label = HTMLLabel(readme_frame, html=readme_html, background="white", padx=5, pady=5)
+            readme_label.pack(expand=True, fill="both")
+
+            # 🔹 Separador visual
+            ttk.Separator(stats_frame, orient="horizontal").pack(fill="x", padx=10, pady=5)
+
+            # 🔹 Sección de Estadísticas
+            popularity_frame = ttk.LabelFrame(stats_frame, text="🌟 Popularity", padding=10, bootstyle="primary")
+            popularity_frame.pack(fill="x", padx=10, pady=5)
+
+            ttk.Label(popularity_frame, text=f"⭐ Estrellas: {repo_data.get('stargazers_count', 0)}", font=("Arial", 12, "bold")).pack(anchor="w")
+            ttk.Label(popularity_frame, text=f"🍴 Forks: {repo_data.get('forks_count', 0)}", font=("Arial", 12, "bold")).pack(anchor="w")
+            ttk.Label(popularity_frame, text=f"👀 Watchers: {repo_data.get('watchers_count', 0)}", font=("Arial", 12, "bold")).pack(anchor="w")
+
+            # 🔹 Separador
+            ttk.Separator(stats_frame, orient="horizontal").pack(fill="x", padx=10, pady=5)
+
+            # 🔹 Sección de Tráfico
+            traffic_frame = ttk.LabelFrame(stats_frame, text="📈 Tráfic", padding=10, bootstyle="success")
+            traffic_frame.pack(fill="x", padx=10, pady=5)
+
+            ttk.Label(traffic_frame, text=f"📥 Releases Downloads: {get_total_downloads(repo_name, headers)}", font=("Arial", 12, "bold")).pack(anchor="w")
+            ttk.Label(traffic_frame, text=f"🔄 Repo Clones (Last 14 days): {get_total_clones(repo_name, headers)}", font=("Arial", 12, "bold")).pack(anchor="w")
+
+        except requests.exceptions.RequestException as e:
+            ms.showerror("Error", f"Can't obtain the statistics of the repository: {e}")
+    
     def edit_repository1(name):
-        """
-        Edita un repositorio por su nombre, permitiendo modificar varias propiedades.
-        """
         notebook.select(edit_frame)
         user = GITHUB_USER
         url = f"https://api.github.com/repos/{user}/{name}"
@@ -4264,7 +4390,7 @@ def unify_windows():
             response.raise_for_status()
             repo_data = response.json()
         except requests.exceptions.RequestException as e:
-            ms.showerror("Error", f"No se pudo obtener los datos del repositorio: {e}")
+            ms.showerror("Error", f"cant't obtain the repository data: {e}")
             return
 
         # Crear un cuadro de diálogo para editar los campos del repositorio
@@ -4286,29 +4412,29 @@ def unify_windows():
                 response = requests.patch(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
                                                         "Accept": "application/vnd.github.v3+json"}, json=data)
                 response.raise_for_status()
-                ms.showinfo("Éxito", f"Repositorio '{name}' actualizado con éxito.")
+                ms.showinfo("Success", f"Repositorio '{name}' updated successfully.")
                 for widget in edit_frame.winfo_children():
                     widget.destroy()
                 notebook.select(mygithub_frame)# Cerrar la ventana de edición
                 show_github_repos()  # Actualizar la lista de repositorios
             except requests.exceptions.RequestException as e:
-                ms.showerror("Error", f"Error al actualizar el repositorio: {e}")
+                ms.showerror("Error", f"Error updating the repository: {e}")
                 
         # Campos para nombre, descripción y visibilidad
-        ttk.Label(edit_frame, text="Nombre del repositorio:", style="TLabel").grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        ttk.Label(edit_frame, text="Name of repository:", style="TLabel").grid(row=0, column=0, padx=10, pady=5, sticky="w")
         nombre_var = tk.StringVar(value=repo_data.get("name", ""))
         ttk.Entry(edit_frame, textvariable=nombre_var, width=40, style="TEntry").grid(row=0, column=1, padx=10, pady=5, sticky="w")
 
-        ttk.Label(edit_frame, text="Descripción:", style="TLabel").grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        ttk.Label(edit_frame, text="Description:", style="TLabel").grid(row=1, column=0, padx=10, pady=5, sticky="w")
         descripcion_var = tk.StringVar(value=repo_data.get("description", ""))
         ttk.Entry(edit_frame, textvariable=descripcion_var, width=40, style="TEntry").grid(row=1, column=1, padx=10, pady=5, sticky="w")
 
-        ttk.Label(edit_frame, text="Visibilidad:", style="TLabel").grid(row=2, column=0, padx=10, pady=5, sticky="w")
-        visibilidad_var = tk.StringVar(value="Privado" if repo_data.get("private", False) else "Público")
-        ttk.OptionMenu(edit_frame, visibilidad_var, "Público", "Privado", style="TMenubutton").grid(row=2, column=1, padx=10, pady=5, sticky="w")
+        ttk.Label(edit_frame, text="Visibility:", style="TLabel").grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        visibilidad_var = tk.StringVar(value="Private" if repo_data.get("private", False) else "Públic")
+        ttk.OptionMenu(edit_frame, visibilidad_var, "Públic", "Private", style="TMenubutton").grid(row=2, column=1, padx=10, pady=5, sticky="w")
 
         # Botón para guardar los cambios con estilo de ttkbootstrap
-        ttk.Button(edit_frame, text="Guardar Cambios", command=guardar_cambios, style="Success.TButton").grid(row=3, columnspan=2, pady=15)
+        ttk.Button(edit_frame, text="Save Changes", command=guardar_cambios, style="Success.TButton").grid(row=3, columnspan=2, pady=15)
         
     def open_repo_files1(repo_name):
         for widget in file_frame.winfo_children():
@@ -4347,7 +4473,7 @@ def unify_windows():
         commit_entry.pack(padx=5, pady=5)
 
         # Botón para guardar cambios con estilo mejorado
-        save_button = ttk.Button(editor_frame, text="Guardar Cambios", command=lambda: save_changes1(repo_name), width=20, bootstyle=SUCCESS)
+        save_button = ttk.Button(editor_frame, text="Save Changes", command=lambda: save_changes1(repo_name), width=20, bootstyle=SUCCESS)
         save_button.pack(pady=10)
 
         # Variable para rastrear el archivo actual
@@ -4371,15 +4497,15 @@ def unify_windows():
         def save_changes1(repo_name):
             file_path = current_file.get()
             if not file_path:
-                ms.showerror("Error", "No hay archivo seleccionado para guardar.")
+                ms.showerror("Error", "Don't have selected file to save.")
                 return
             new_content = text_editor.get("1.0", "end-1c")
             commit_message = commit_var.get().strip()
             if not commit_message:
-                ms.showerror("Error", "El mensaje del commit no puede estar vacío.")
+                ms.showerror("Error", "The commit message can't be empty.")
                 return
             update_file_content(repo_name, file_path, new_content, commit_message)
-            ms.showinfo("Éxito", f"Archivo '{file_path}' guardado exitosamente.")
+            ms.showinfo("Success", f"File '{file_path}' saved successfully.")
 
         # Llenar la lista de archivos
         contents = list_repo_contents(repo_name)
@@ -4402,9 +4528,6 @@ def unify_windows():
     def manage_github_release1(repo_name):
         notebook.select(release_frame)
         def fetch_releases():
-            """
-            Obtiene las releases del repositorio.
-            """
             url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/releases"
             try:
                 response = requests.get(url, headers={
@@ -4712,23 +4835,18 @@ def unify_windows():
       
     def show_github_comits1(repo_name):
         notebook.select(commits_frame)
-        
-        # Marco principal
+
         frame = ttk.Frame(commits_frame)
         frame.pack(expand=True, fill="both")
-        
+
         paned_window = ttk.Panedwindow(frame, orient="horizontal")
         paned_window.pack(expand=True, fill="both")
 
+        # Panel izquierdo - Archivos del repo
         files_frame = ttk.Labelframe(paned_window, text="Repository Files", padding=10, bootstyle=INFO)
         paned_window.add(files_frame, weight=2)
-        
-        commits1_frame = ttk.Labelframe(paned_window, text="Commit History", padding=10, bootstyle=SUCCESS)
-        paned_window.add(commits1_frame, weight=3)
-        
-        # Treeview para mostrar los archivos
-        columns = ("Path", "Type", "Size")
-        file_tree = ttk.Treeview(files_frame, columns=columns, show="headings", height=15)
+
+        file_tree = ttk.Treeview(files_frame, columns=("Path", "Type", "Size"), show="headings", height=15)
         file_tree.heading("Path", text="File Path")
         file_tree.heading("Type", text="Type")
         file_tree.heading("Size", text="Size (bytes)")
@@ -4737,8 +4855,24 @@ def unify_windows():
         file_tree.column("Size", width=100)
         file_tree.pack(expand=True, fill="both", padx=5, pady=5)
         
-        columns = ("SHA", "Author", "Date", "Message")
-        commit_tree = ttk.Treeview(commits1_frame, columns=columns, show="headings", height=15)
+        def menu_contextual_file(event):
+            item = file_tree.identify_row(event.y)
+            if item:
+                file_tree.selection_set(item)
+                context_menu_file.post(event.x_root, event.y_root)
+            else:
+                file_tree.selection_remove(file_tree.selection())
+                
+        file_tree.bind("<Button-3>", menu_contextual_file)
+        
+        context_menu_file = tk.Menu(orga, tearoff=0)
+        context_menu_file.add_command(label="⬇️ Descargar Archivo", command=lambda: download_file(repo_name, file_tree.item(file_tree.selection(), "values")[0]))
+        
+        # Panel derecho - Historial de commits
+        commits1_frame = ttk.Labelframe(paned_window, text="Commit History", padding=10, bootstyle=SUCCESS)
+        paned_window.add(commits1_frame, weight=3)
+
+        commit_tree = ttk.Treeview(commits1_frame, columns=("SHA", "Author", "Date", "Message"), show="headings", height=15)
         commit_tree.heading("SHA", text="Commit SHA")
         commit_tree.heading("Author", text="Author")
         commit_tree.heading("Date", text="Date")
@@ -4749,53 +4883,55 @@ def unify_windows():
         commit_tree.column("Message", width=300)
         commit_tree.pack(expand=True, fill="both", padx=5, pady=5)
 
-        # Botón para cargar el historial de commits del archivo seleccionado
-        def load_commit_history(event=None):
-            commit_tree.delete(*commit_tree.get_children())  # Limpiar lista anterior
-            selected_item = file_tree.selection()
-            
-            if not selected_item:
-                ms.showerror("Error", "Please select a file to view its commit history.")
-                return
+        # Panel inferior - CodeView para mostrar cambios
+        changes_frame = ttk.Labelframe(commits1_frame, text="Code Changes", padding=10, bootstyle=INFO)
+        changes_frame.pack(expand=True, fill="both", padx=5, pady=5)
 
-            file_path = file_tree.item(selected_item, "values")[0]
+        diff_viewer = CodeView(changes_frame, wrap="word", height=10)
+        diff_viewer.pack(expand=True, fill="both", padx=10, pady=10)
 
+        def download_file(repo_name, file_path):
             try:
-                url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/commits"
-                headers = {
-                    "Authorization": f"token {GITHUB_TOKEN}",
-                    "Accept": "application/vnd.github.v3+json"
-                }
-                params = {"path": file_path}
-                response = requests.get(url, headers=headers, params=params)
+                url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/contents/{file_path}"
+                headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+                response = requests.get(url, headers=headers)
                 response.raise_for_status()
-                commits = response.json()
+                file_data = response.json()
 
-                for commit in commits:
-                    commit_tree.insert(
-                        "",
-                        "end",
-                        values=(
-                            commit.get("sha"),
-                            commit.get("commit", {}).get("author", {}).get("name"),
-                            commit.get("commit", {}).get("author", {}).get("date"),
-                            commit.get("commit", {}).get("message"),
-                        )
-                    )
+                file_content = base64.b64decode(file_data["content"])
+                save_path = filedialog.asksaveasfilename(initialfile=file_path.split("/")[-1])
+
+                if not save_path:
+                    return
+
+                # 🔹 Mostrar Progressbar
+                progress_window = tk.Toplevel(orga)
+                progress_window.title("Downloading...")
+                ttk.Label(progress_window, text=f"Downloading {file_path}...").pack(pady=5)
+                progress = Progressbar(progress_window, mode="determinate", length=300)
+                progress.pack(padx=10, pady=10)
+
+                with open(save_path, "wb") as f:
+                    chunk_size = 1024
+                    total_size = len(file_content)
+                    for i in range(0, total_size, chunk_size):
+                        f.write(file_content[i:i+chunk_size])
+                        progress["value"] = (i / total_size) * 100
+                        progress_window.update_idletasks()
+
+                progress["value"] = 100
+                progress_window.destroy()
+                ms.showinfo("Success", f"File '{file_path}' downloaded successfully.")
+
             except requests.exceptions.RequestException as e:
-                ms.showerror("Error", f"Unable to fetch commit history: {e}")
-
-        file_tree.bind("<Double-Button-1>",load_commit_history)
-
-        # Cargar los archivos del repositorio
-        def load_files(repo_name):
-            file_tree.delete(*file_tree.get_children())  # Limpiar lista anterior
+                ms.showerror("Error", f"Can't download the file: {e}")
+        
+        # Función para obtener los archivos del repositorio
+        def load_files():
+            file_tree.delete(*file_tree.get_children())
             try:
                 url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/contents"
-                headers = {
-                    "Authorization": f"token {GITHUB_TOKEN}",
-                    "Accept": "application/vnd.github.v3+json"
-                }
+                headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
                 response = requests.get(url, headers=headers)
                 response.raise_for_status()
                 files = response.json()
@@ -4805,7 +4941,71 @@ def unify_windows():
             except requests.exceptions.RequestException as e:
                 ms.showerror("Error", f"Unable to fetch files: {e}")
 
-        load_files(repo_name)
+        # Función para obtener el historial de commits de un archivo
+        def load_commit_history(event=None):
+            commit_tree.delete(*commit_tree.get_children())
+            selected_item = file_tree.selection()
+            if not selected_item:
+                return
+
+            file_path = file_tree.item(selected_item, "values")[0]
+
+            try:
+                url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/commits"
+                headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+                params = {"path": file_path}
+                response = requests.get(url, headers=headers, params=params)
+                response.raise_for_status()
+                commits = response.json()
+
+                for commit in commits:
+                    commit_tree.insert("", "end", values=(
+                        commit.get("sha"),
+                        commit.get("commit", {}).get("author", {}).get("name"),
+                        commit.get("commit", {}).get("author", {}).get("date"),
+                        commit.get("commit", {}).get("message"),
+                    ))
+            except requests.exceptions.RequestException as e:
+                ms.showerror("Error", f"Unable to fetch commit history: {e}")
+
+        # Función para obtener los cambios en un commit específico de un archivo
+        def load_commit_changes(event=None):
+            selected_commit = commit_tree.selection()
+            selected_file = file_tree.selection()
+
+            if not selected_commit or not selected_file:
+                return
+
+            commit_sha = commit_tree.item(selected_commit, "values")[0]
+            file_path = file_tree.item(selected_file, "values")[0]
+
+            diff_viewer.delete("1.0", "end")
+
+            try:
+                url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/commits/{commit_sha}"
+                headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+                response = requests.get(url, headers=headers)
+                response.raise_for_status()
+                commit_data = response.json()
+
+                files = commit_data.get("files", [])
+                for file in files:
+                    if file.get("filename") == file_path:
+                        patch = file.get("patch", "No changes found.")
+                        lexer = pygments.lexers.get_lexer_for_filename(file_path)
+                        diff_viewer.config(lexer=lexer)
+                        diff_viewer.insert("1.0", patch)
+
+            except requests.exceptions.RequestException as e:
+                ms.showerror("Error", f"Unable to fetch commit changes: {e}")
+
+        # Bind para seleccionar un archivo y ver su historial de commits
+        file_tree.bind("<Double-Button-1>", load_commit_history)
+
+        # Bind para seleccionar un commit y ver los cambios en el archivo
+        commit_tree.bind("<Double-Button-1>", load_commit_changes)
+
+        load_files()
         
 menu_name = "Organizer"
 description_menu = "Open Organizer"
@@ -4825,7 +5025,6 @@ ttkbootstrap_themes = ttk_themes()
 saved_state = load_config()
 check_var = tk.IntVar(value=saved_state if saved_state else (1 if is_in_startup() else 0))
 
-# Cambiar pack por grid para toda la interfaz
 main_frame = ttk.Frame(orga, bootstyle="default")
 main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
 orga.grid_rowconfigure(0, weight=1)
