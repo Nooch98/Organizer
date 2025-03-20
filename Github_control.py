@@ -8,6 +8,8 @@ import subprocess
 import markdown
 import pygments.lexers
 import base64
+import markdown2
+import json
 
 from ttkbootstrap.constants import *
 from tkinter import messagebox as ms, filedialog, simpledialog
@@ -21,33 +23,69 @@ main_version = "Version: 0.0.1"
 title_version = "_V.0.0.1"
 str_title_version = str(title_version)
 version = str(main_version)
+issue_list = None
+
+CONFIG_FILE = "config.json"
+
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_config(data):
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
 
 def search_github_key():
-    posible_name = ["GITHUB", "TOKEN", "API", "KEY", "SECRET"]
+    config = load_config()
+
+    if "GITHUB_TOKEN" in config and is_github_token_valid(config["GITHUB_TOKEN"]):
+        return config["GITHUB_TOKEN"]
+
+    posible_names = ["GITHUB", "TOKEN", "API", "KEY", "SECRET"]
     for name_var, valor in os.environ.items():
-        if any(clave in name_var.upper() for clave in posible_name):
+        if any(clave in name_var.upper() for clave in posible_names):
             if is_github_token_valid(valor):
+                config["GITHUB_TOKEN"] = valor
+                save_config(config)
                 return valor
-            else:
-                ms.showerror("ERROR", "No github api key found in your environment variables. Please agree github api key to your environment variables with the name: GITHUB, TOKEN, API, KEY or SECRET")
-                return None
+    
+    ms.showwarning("⚠️ GitHub API Key Not Found", 
+                   "No API Key found. Please enter one to continue.")
+
+    while True:
+        token = simpledialog.askstring("🔑 Enter GitHub API Key", 
+                                       "Enter your GitHub API Key:", show="*")
+
+        if not token:
+            ms.showerror("❌ Error", "No API Key entered.")
+            return None
+
+        if is_github_token_valid(token):
+            config["GITHUB_TOKEN"] = token
+            save_config(config)
+            return token
+        else:
+            ms.showerror("❌ Error", "Invalid API Key. Try again.")
 
 def is_github_token_valid(token):
+
     url = "https://api.github.com/user"
     headers = {"Authorization": f"Bearer {token}"}
     response = requests.get(url, headers=headers)
     return response.status_code == 200
- 
+
 def obtain_github_repos():
     url = "https://api.github.com/user/repos"
     try:
-        response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
+        response = requests.get(url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}",
                                               "Accept": "application/vnd.github.v3+json"})
         response.raise_for_status()
-        repos = response.json()
-        return repos
+        return response.json()
     except requests.exceptions.RequestException as e:
-        ms.showerror("ERROR", f"Can't obtain the github user: {str(e)}")
+        ms.showerror("❌ Error", f"No se pudieron obtener los repositorios: {str(e)}")
+        return []
 
 def obtain_github_user():
     url = "https://api.github.com/user"
@@ -55,13 +93,13 @@ def obtain_github_user():
         response = requests.get(url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}",
                                               "Accept": "application/vnd.github.v3+json"})
         response.raise_for_status()
-        user = response.json()
-        return user["login"]
+        return response.json()["login"]
     except requests.exceptions.RequestException as e:
-        ms.showerror("ERROR", f"Can't obtain the github user: {str(e)}")
+        ms.showerror("❌ Error", f"No se pudo obtener el usuario de GitHub: {str(e)}")
+        return None
 
 GITHUB_TOKEN = search_github_key()
-GITHUB_USER = obtain_github_user()
+GITHUB_USER = obtain_github_user() if GITHUB_TOKEN else None
 
 def obtain_starred_repos():
     url = "https://api.github.com/user/starred"
@@ -846,12 +884,75 @@ def get_total_clones(repo_name, headers):
     return 0
 
 def show_repo_issues(repo_name):
+    global issue_list
     notebook.select(issues_frame)
 
     for widget in issues_frame.winfo_children():
         widget.destroy()
 
     ttk.Label(issues_frame, text=f"🐞 Issues de {repo_name}", font=("Arial", 14, "bold")).pack(pady=10)
+
+    if not issue_list:
+        issue_list = ttk.Treeview(issues_frame, columns=("Number", "Title", "State", "URL"), show="headings")
+        issue_list.heading("Number", text="#")
+        issue_list.heading("Title", text="Title")
+        issue_list.heading("State", text="State")
+        issue_list.heading("URL", text="URL")
+
+        issue_list.column("Number", width=50)
+        issue_list.column("Title", width=300)
+        issue_list.column("State", width=100)
+        issue_list.column("URL", width=250)
+
+        issue_list.pack(expand=True, fill="both", padx=5, pady=5)
+        issue_context_menu = tk.Menu(root, tearoff=0)
+        issue_context_menu.add_command(label="✅ Close Issue", command=lambda: close_selected_issue(issue_list, repo_name))
+        issue_context_menu.add_command(label="💬 Add Comment", command=lambda: comment_selected_issue(issue_list, repo_name))
+
+        issue_list.bind("<Button-3>", lambda event: issue_context_menu.post(event.x_root, event.y_root))
+        
+    def comment_selected_issue(issue_list, repo_name):
+        selected_item = issue_list.selection()
+        if selected_item:
+            issue_number = issue_list.item(selected_item, "values")[0]
+            comment_on_issue(repo_name, issue_number)
+            
+    def close_selected_issue(issue_list, repo_name):
+        selected_item = issue_list.selection()
+        if selected_item:
+            issue_number = issue_list.item(selected_item, "values")[0]
+            close_issue(repo_name, issue_number)
+            issue_list.delete(selected_item)
+
+    show_issues(repo_name)
+
+def close_issue(repo_name, issue_number):
+    url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/issues/{issue_number}"
+    response = requests.patch(url, json={"state": "closed"},
+                              headers={"Authorization": f"token {GITHUB_TOKEN}"})
+
+    if response.status_code == 200:
+        ms.showinfo("✅ Success", f"Issue #{issue_number} closed successfully!")
+    else:
+        ms.showerror("❌ Error", "Failed to close issue.")
+
+def comment_on_issue(repo_name, issue_number):
+    comment_text = simpledialog.askstring("💬 Add Comment", "Enter your comment:")
+
+    if not comment_text:
+        return
+
+    url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/issues/{issue_number}/comments"
+    response = requests.post(url, json={"body": comment_text},
+                             headers={"Authorization": f"token {GITHUB_TOKEN}"})
+
+    if response.status_code == 201:
+        ms.showinfo("✅ Success", "Comment added successfully!")
+    else:
+        ms.showerror("❌ Error", "Failed to add comment.")
+    
+def show_issues(repo_name):
+    global issue_list
 
     try:
         url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/issues"
@@ -860,12 +961,70 @@ def show_repo_issues(repo_name):
         response.raise_for_status()
         issues = response.json()
 
-        for issue in issues:
-            ttk.Label(issues_frame, text=f"#{issue['number']} - {issue['title']}", font=("Arial", 12, "bold")).pack(anchor="w")
-            ttk.Label(issues_frame, text=issue["body"], wraplength=600, justify="left").pack(anchor="w", padx=10, pady=5)
+        # Limpiar el Treeview antes de mostrar nuevos resultados
+        for item in issue_list.get_children():
+            issue_list.delete(item)
+
+        # Verificar si no hay issues
+        if not issues:
+            # Si no hay issues, mostrar un mensaje y un botón para crear uno nuevo
+            ttk.Label(issues_frame, text="No hay issues en este repositorio. ¿Quieres crear uno?", font=("Arial", 12)).pack(pady=10)
+            create_issue_button = ttk.Button(issues_frame, text="Crear nuevo issue", command=lambda: create_new_issue(repo_name))
+            create_issue_button.pack(pady=10)
+        else:
+            # Si hay issues, agregarlos al Treeview
+            for issue in issues:
+                issue_list.insert("", "end", values=(
+                    issue['number'],
+                    issue['title'],
+                    issue['state'],
+                    issue['html_url']
+                ))
 
     except requests.exceptions.RequestException as e:
         ms.showerror("Error", f"No se pudieron obtener los issues: {e}")
+        
+def create_new_issue(repo_name):
+    # Crear un cuadro de entrada para el título del issue
+    def submit_new_issue():
+        title = title_entry.get()
+        description = description_entry.get("1.0", "end-1c")  # Obtener texto de la caja de descripción
+
+        if title and description:
+            # Crear un issue usando la API de GitHub
+            url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/issues"
+            headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+            data = {
+                "title": title,
+                "body": description
+            }
+            response = requests.post(url, headers=headers, json=data)
+
+            if response.status_code == 201:
+                ms.showinfo("Éxito", "Issue creado exitosamente.")
+                # Recargar los issues después de crear uno nuevo
+                show_issues(repo_name)
+                create_issue_window.destroy()
+            else:
+                ms.showerror("Error", "No se pudo crear el issue.")
+        else:
+            ms.showerror("Error", "El título y la descripción son obligatorios.")
+
+    # Crear una ventana para ingresar el título y la descripción
+    create_issue_window = tk.Toplevel(root)
+    create_issue_window.title("Crear Nuevo Issue")
+    create_issue_window.geometry("400x300")
+
+    ttk.Label(create_issue_window, text="Título del Issue").pack(pady=5)
+    title_entry = ttk.Entry(create_issue_window, width=50)
+    title_entry.pack(pady=5)
+
+    ttk.Label(create_issue_window, text="Descripción del Issue").pack(pady=5)
+    description_entry = tk.Text(create_issue_window, width=50, height=6)
+    description_entry.pack(pady=5)
+
+    submit_button = ttk.Button(create_issue_window, text="Crear Issue", command=submit_new_issue)
+    submit_button.pack(pady=10)
 
 def filter_repositories(event):
     query = search_var.get().lower()
@@ -1229,10 +1388,49 @@ def search_code_on_github():
     results_frame = ttk.Frame(scrollable_frame)
     results_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
+def create_issue(repo_name):
+    issue_title = simpledialog.askstring("🐞 New Issue", "Enter issue title:")
+    issue_body = simpledialog.askstring("🐞 Issue Description", "Enter issue description:")
+
+    url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/issues"
+    response = requests.post(url, json={"title": issue_title, "body": issue_body},
+                             headers={"Authorization": f"token {GITHUB_TOKEN}"})
+
+    if response.status_code == 201:
+        ms.showinfo("✅ Success", "Issue created successfully!")
+    else:
+        ms.showerror("❌ Error", "Failed to create issue.")
+   
+def show_help():
+    help_window = tk.Toplevel(root)
+    help_window.iconbitmap(path)
+    
+    ttk.Label(help_window, text="📖 Ayuda - Cómo Usar la Aplicación", font=("Arial", 14, "bold")).pack(pady=5)
+
+    # Verificar si el archivo existe
+    if os.path.exists("Help.md"):
+        with open("Help.md", "r", encoding="utf-8") as f:
+            md_content = f.read()
+    else:
+        md_content = "# ❌ Error\nNo se encontró el archivo 'Help.md'."
+
+    # Convertir Markdown a HTML
+    html_content = markdown2.markdown(md_content)
+
+    # Mostrar el contenido en un Label HTML
+    html_label = HTMLLabel(help_window, html=html_content, background="white", padx=10, pady=10)
+    html_label.pack(expand=True, fill="both", padx=10, pady=10)
+
 path = resource_path("github_control.ico")
 root = ttk.Window(title=f"Github Control{str_title_version}", themename="darkly")
 root.iconbitmap(path)
 root.resizable(True, True)
+
+menu = tk.Menu(root, tearoff=0)
+root.config(menu=menu)
+help_menu = tk.Menu(menu, tearoff=0)
+menu.add_cascade(label='help', menu=help_menu)
+help_menu.add_cascade(label='Help', command=show_help)
 
 notebook = ttk.Notebook(root)
 notebook.pack(expand=True, fill="both")
