@@ -61,9 +61,17 @@ def save_config(data):
 
 def search_github_key():
     config = load_config()
-
+    
     if "GITHUB_TOKEN" in config and is_github_token_valid(config["GITHUB_TOKEN"]):
         return config["GITHUB_TOKEN"]
+
+    if not check_network():
+        ms.showwarning("⚠️ No Network Connection", "No network connection. Unable to validate the API Key.")
+        token = config.get("GITHUB_TOKEN") or os.getenv("GITHUB_TOKEN")
+        if token:
+            return token
+        else:
+            return None
 
     posible_names = ["GITHUB", "TOKEN", "API", "KEY", "SECRET"]
     for name_var, valor in os.environ.items():
@@ -73,8 +81,7 @@ def search_github_key():
                 save_config(config)
                 return valor
     
-    ms.showwarning("⚠️ GitHub API Key Not Found", 
-                   "No API Key found. Please enter one to continue.")
+    ms.showwarning("⚠️ GitHub API Key Not Found", "No API Key found. Please enter one to continue.")
 
     while True:
         token = simpledialog.askstring("🔑 Enter GitHub API Key", 
@@ -92,11 +99,14 @@ def search_github_key():
             ms.showerror("❌ Error", "Invalid API Key. Try again.")
 
 def is_github_token_valid(token):
-
     url = "https://api.github.com/user"
     headers = {"Authorization": f"Bearer {token}"}
-    response = requests.get(url, headers=headers)
-    return response.status_code == 200
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return response.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
 
 def obtain_github_repos():
     cache = load_cache()
@@ -129,9 +139,6 @@ def obtain_github_user():
         ms.showerror("❌ Error", f"No se pudo obtener el usuario de GitHub: {str(e)}")
         return None
 
-GITHUB_TOKEN = search_github_key()
-GITHUB_USER = obtain_github_user() if GITHUB_TOKEN else None
-
 def obtain_starred_repos():
     url = "https://api.github.com/user/starred"
     try:
@@ -143,6 +150,9 @@ def obtain_starred_repos():
     except requests.exceptions.RequestException as e:
         ms.showerror("ERROR", f"No se pueden obtener los repositorios con estrella: {e}")
         return []
+
+GITHUB_TOKEN = search_github_key()
+GITHUB_USER = obtain_github_user() if GITHUB_TOKEN else None
 
 def unstar_repository(repo_name, repo_owner):
     url = f"https://api.github.com/user/starred/{repo_owner}/{repo_name}"
@@ -1564,7 +1574,7 @@ def check_github_status():
             status_label.config(text="Github Connection Status: ❌ Error", bootstyle='danger')
     except requests.exceptions.RequestException as e:
 
-        status_label.config(text="Error checking GitHub status: " + str(e), bootstyle='danger')
+        status_label.config(text="Error checking GitHub status: ❗No internet connection", bootstyle='danger')
         
 def security_check(owner, repo, token):
     def show_security_alerts(owner, repo, token):
