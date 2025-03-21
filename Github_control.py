@@ -11,6 +11,7 @@ import base64
 import markdown2
 import json
 import pylint.lint
+import threading
 
 from ttkbootstrap.constants import *
 from tkinter import messagebox as ms, filedialog, simpledialog
@@ -1282,6 +1283,9 @@ def search_repositories():
 
         except requests.exceptions.RequestException as e:
             ms.showerror("Error", f"No se pudo buscar en GitHub: {e}")
+            
+    def thread_search_repositories():
+        threading.Thread(target=search_repositories_global).start()
     
     def star_repository(repo_name, repo_owner):
         url = f"https://api.github.com/user/starred/{repo_owner}/{repo_name}"
@@ -1313,7 +1317,7 @@ def search_repositories():
 
     search_var = tk.StringVar()
     ttk.Entry(search_frame, textvariable=search_var, width=50).pack(pady=5, padx=10)
-    ttk.Button(search_frame, text="🔍 Search", command=search_repositories_global).pack(pady=5)
+    ttk.Button(search_frame, text="🔍 Search", command=thread_search_repositories).pack(pady=5)
 
     columns = ("Name", "Owner", "Stars", "URL", "Clone URL")
     search_tree = ttk.Treeview(search_frame, columns=columns, show="headings", height=15)
@@ -1452,15 +1456,19 @@ def search_code_on_github():
         if not query:
             ms.showerror("Error", "Please enter something to search for code on GitHub.")
             return
+        
+        loading_bar.pack(pady=10)
+        loading_bar.start(10)
 
         url = f"https://api.github.com/search/code?q={query}"
 
         try:
             response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
-                                                "Accept": "application/vnd.github.v3+json"})
+                                                  "Accept": "application/vnd.github.v3+json"})
             response.raise_for_status()
             results = response.json()["items"]
 
+            # Limpiar resultados anteriores
             for widget in results_frame.winfo_children():
                 widget.destroy()
 
@@ -1470,6 +1478,14 @@ def search_code_on_github():
         except requests.exceptions.RequestException as e:
             ms.showerror("Error", f"Could not search for code on GitHub: {e}")
 
+        finally:
+            # Detener y ocultar la barra de carga
+            loading_bar.stop()
+            loading_bar.pack_forget()
+
+    def thread_search_code():
+        threading.Thread(target=search_code).start()
+    
     def display_file_result(item):
         file_name, repo_full_name, file_path, file_url = item["name"], item["repository"]["full_name"], item["path"], item["html_url"]
         repo_owner, repo_name = repo_full_name.split("/")
@@ -1503,10 +1519,11 @@ def search_code_on_github():
 
         except requests.exceptions.RequestException as e:
             ms.showerror("Error", f"Could not get the code file: {e}")
-            
+
     def open_link(url):
         webbrowser.open(url)
 
+    # Frame principal
     canvas = tk.Canvas(search_code_frame)
     canvas.pack(side="left", fill="both", expand=True)
 
@@ -1518,15 +1535,19 @@ def search_code_on_github():
     scrollable_frame = ttk.Frame(canvas)
     canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
 
-    scrollable_frame.bind(
-        "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-    )
+    scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
 
     search_code_var = tk.StringVar()
     search_box = ttk.Entry(scrollable_frame, textvariable=search_code_var, width=60)
     search_box.pack(pady=5, padx=10)
-    search_button = ttk.Button(scrollable_frame, text="Search Code on GitHub", command=search_code)
+
+    search_button = ttk.Button(scrollable_frame, text="Search Code on GitHub", command=thread_search_code)
     search_button.pack(pady=5)
+
+    # Indicador de carga (Progressbar)
+    loading_bar = ttk.Progressbar(scrollable_frame, mode="indeterminate", bootstyle="info")
+    loading_bar.pack(pady=10)
+    loading_bar.pack_forget()  # Se oculta hasta que se inicie la búsqueda
 
     results_frame = ttk.Frame(scrollable_frame)
     results_frame.pack(fill="both", expand=True, padx=10, pady=10)
