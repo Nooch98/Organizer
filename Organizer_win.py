@@ -44,6 +44,8 @@ from git import Repo
 from tkinter.colorchooser import askcolor
 from datetime import datetime
 from pygments.lexers.markup import MarkdownLexer
+from pygments.lexers import get_lexer_for_filename
+from pygments.util import ClassNotFound
 
 
 main_version = "ver.1.9.6"
@@ -55,6 +57,7 @@ archivo_configuracion_gpt = os.path.join(base_path, "configuration_gpt.json")
 BACKUP_STATE_FILE = os.path.join(base_path, "backup_schedule.json")
 archivo_configuracion_editores = os.path.join(base_path, "configuracion_editores.json")
 config_file = os.path.join(base_path, "config.json")
+cache_file = os.path.join(base_path, "cache.json")
 selected_project_path = None
 text_editor = None
 app_name = "Organizer_win.exe"
@@ -69,20 +72,53 @@ selected_file = None
 file_name = None
 
 def search_github_key():
-    posible_name = ["GITHUB", "TOKEN", "API", "KEY", "SECRET"]
+    config = load_config()
+    
+    if "GITHUB_TOKEN" in config and is_github_token_valid(config["GITHUB_TOKEN"]):
+        return config["GITHUB_TOKEN"]
+
+    if not check_network():
+        ms.showwarning("⚠️ No Network Connection", "No network connection. Unable to validate the API Key.")
+        token = config.get("GITHUB_TOKEN") or os.getenv("GITHUB_TOKEN")
+        if token:
+            return token
+        else:
+            return None
+
+    posible_names = ["GITHUB", "TOKEN", "API", "KEY", "SECRET"]
     for name_var, valor in os.environ.items():
-        if any(clave in name_var.upper() for clave in posible_name):
+        if any(clave in name_var.upper() for clave in posible_names):
             if is_github_token_valid(valor):
+                config["GITHUB_TOKEN"] = valor
+                save_config(config)
                 return valor
-            else:
-                ms.showerror("ERROR", "No github api key found in your environment variables. Please agree github api key to your environment variables with the name: GITHUB, TOKEN, API, KEY or SECRET")
-                return None
+    
+    ms.showwarning("⚠️ GitHub API Key Not Found", "No API Key found. Please enter one to continue.")
+
+    while True:
+        token = simpledialog.askstring("🔑 Enter GitHub API Key", 
+                                       "Enter your GitHub API Key:", show="*")
+
+        if not token:
+            ms.showerror("❌ Error", "No API Key entered.")
+            return None
+
+        if is_github_token_valid(token):
+            config["GITHUB_TOKEN"] = token
+            save_config(config)
+            return token
+        else:
+            ms.showerror("❌ Error", "Invalid API Key. Try again.")
 
 def is_github_token_valid(token):
     url = "https://api.github.com/user"
     headers = {"Authorization": f"Bearer {token}"}
-    response = requests.get(url, headers=headers)
-    return response.status_code == 200
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return response.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
 
 def obtain_github_user():
     url = "https://api.github.com/user"
@@ -90,10 +126,37 @@ def obtain_github_user():
         response = requests.get(url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}",
                                               "Accept": "application/vnd.github.v3+json"})
         response.raise_for_status()
-        user = response.json()
-        return user["login"]
+        return response.json()["login"]
     except requests.exceptions.RequestException as e:
-        ms.showerror("ERROR", f"Can't obtain the github user: {str(e)}")
+        ms.showerror("❌ Error", f"No se pudo obtener el usuario de GitHub: {str(e)}")
+        return None
+
+def check_network():
+    try:
+        requests.get("https://api.github.com", timeout=5)
+        return True
+    except requests.exceptions.RequestException:
+        return False
+
+def load_cache():
+    if os.path.exists(cache_file):
+        with open(cache_file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_cache(data):
+    with open(cache_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+        
+def load_config():
+    if os.path.exists(config_file):
+        with open(config_file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_config(data):
+    with open(config_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
 
 GITHUB_TOKEN = search_github_key()
 GITHUB_USER = obtain_github_user()
@@ -4133,6 +4196,10 @@ def unify_windows():
     edit_frame = ttk.Frame(notebook)
     issues_frame = ttk.Frame(notebook)
     stats_frame = ttk.Frame(notebook)
+    search_frame = ttk.Frame(notebook)
+    repo_view_frame = ttk.Frame(notebook)
+    search_code_frame = ttk.Frame(notebook)
+    security_frame = ttk.Frame(notebook)
 
     # Add tabs to the notebook
     notebook.add(mygithub_frame, text="My GitHub", padding=5)
@@ -4140,8 +4207,12 @@ def unify_windows():
     notebook.add(file_frame, text="Files", padding=5)
     notebook.add(release_frame, text="Releases", padding=5)
     notebook.add(edit_frame, text="Edit Repository", padding=5)
+    notebook.add(security_frame, text="Security", padding=5)
     notebook.add(issues_frame, text="Issues", padding=5)
     notebook.add(stats_frame, text="Stats", padding=5)
+    notebook.add(search_frame, text="Search Repos", padding=5)
+    notebook.add(repo_view_frame, text="Repos View", padding=5)
+    notebook.add(search_code_frame, text="Gtihub Search", padding=5)
     
     # Define columns for the repository Treeview
     columns = ("Name", "Description", "Language", "URL", "Visibility", "Clone URL")
@@ -4161,6 +4232,42 @@ def unify_windows():
     scrollb.pack(side=RIGHT, fill=Y, padx=5, pady=5)
     
     repostree.pack(expand=True, fill="both", padx=10, pady=10)
+    
+    columns = ("Package", "Severity", "Description", "Fix Version")
+    security_tree = ttk.Treeview(security_frame, columns=columns, show="headings", height=20, bootstyle='primary')
+    security_tree.pack(padx=10, pady=10, fill="both", expand=True)
+
+    security_tree.heading("Package", text="Package")
+    security_tree.heading("Severity", text="Severity")
+    security_tree.heading("Description", text="Description")
+    security_tree.heading("Fix Version", text="Fix Version")
+
+    scrollb_security = ttk.Scrollbar(security_frame, orient="vertical", command=security_tree.yview)
+    scrollb_security.pack(side=RIGHT, fill=Y, padx=5)
+    security_tree.configure(yscrollcommand=scrollb_security.set)
+
+    fix_security_btn = ttk.Button(security_frame, text="Fix Vulnerability", bootstyle=SUCCESS)
+    fix_security_btn.pack(side='bottom', pady=5, fill='x', expand=True)
+    
+    version_label = ttk.Label(github, text=f'{version}', bootstyle='info')
+    version_label.pack(side='right', fill='x', padx=5, pady=5)
+
+    status_label = ttk.Label(github, text=f'Github Connection Status: 🔵 Checking...', bootstyle='info')
+    status_label.pack(side='left', fill='x', padx=5, pady=5)
+    
+    def check_github_status():
+        try:
+            response = requests.get("https://www.githubstatus.com/api/v2/status.json")
+            response.raise_for_status()
+
+            status = response.json()
+
+            if status['status']['indicator'] == 'none':
+                status_label.config(text="Github Connection Status: 🟢", bootstyle='success')
+            else:
+                status_label.config(text="Github Connection Status: 🔴", bootstyle='danger')
+        except requests.exceptions.RequestException as e:
+            status_label.config(text="Error checking GitHub status: 🔴 No internet connection", bootstyle='danger')
     
     def filter_repositories(event):
         query = search_var.get().lower()
@@ -4282,6 +4389,8 @@ def unify_windows():
     context_menu.add_command(label="✏️ Edit Repository", command=lambda: edit_repository1(repostree.item(repostree.selection()[0], "values")[0]))
     context_menu.add_command(label="🚀 Github Releases", command=lambda: manage_github_release1(repostree.item(repostree.selection(), "values")[0]))
     context_menu.add_command(label="🔄 Commits History", command=lambda: show_github_comits1(repostree.item(repostree.selection()[0], "values")[0]))
+    context_menu.add_command(label="⭐ Quit Star", command=lambda: unstar_repository(repostree.item(repostree.selection()[0], "values")[0], repostree.item(repostree.selection()[0], "values")[3].split('/')[-2]))
+    context_menu.add_command(label="🔐 Security Alerts", command=lambda: on_security_analysis_button_click())
     context_menu.add_command(label="➕ Create New Repository", command=create_repository_github)
     context_menu.add_command(label="📂 Clone Repository", command=clone_respository)
     context_menu.add_command(label="🗂️View Files", command=lambda: open_repo_files1(repostree.item(repostree.selection()[0], "values")[0]))
@@ -4289,15 +4398,389 @@ def unify_windows():
     context_menu.add_command(label="📦 Create Backup", command=lambda: backup_repository(repostree.item(repostree.selection()[0], "values")[0]))
     context_menu.add_command(label="🐞 Show Issues", command=lambda: show_repo_issues(repostree.item(repostree.selection()[0], "values")[0]))
     
+    def unstar_repository(repo_name, repo_owner):
+        url = f"https://api.github.com/user/starred/{repo_owner}/{repo_name}"
+        try:
+            response = requests.delete(url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+            if response.status_code == 204:
+                ms.showinfo("Éxito", f"Has quitado la estrella del repositorio '{repo_name}'.")
+                show_github_repos()
+            else:
+                ms.showerror("Error", f"No se pudo quitar la estrella: {response.status_code}")
+        except requests.exceptions.RequestException as e:
+            ms.showerror("Error", f"Error al quitar la estrella: {e}")
+    
+    def on_security_analysis_button_click():
+        selected_item = repostree.selection()
+        
+        if not selected_item:
+            ms.showwarning("No selection", "Please select a repository first.")
+            return
+        
+        selected_repo = repostree.item(selected_item, "values")
+        repo_name = selected_repo[0]
+        owner_name = selected_repo[3].split('/')[-2]
+        
+        token = GITHUB_TOKEN
+        
+        notebook.select(security_frame)
+        
+        security_check(owner_name, repo_name, token)
+    
+    def security_check(owner, repo, token):
+        def show_security_alerts(owner, repo, token):
+            url = f"https://api.github.com/repos/{owner}/{repo}/dependabot/alerts"
+        
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json"
+            }
+            
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code == 200:
+                alerts = response.json()
+                
+                for row in security_tree.get_children():
+                    security_tree.delete(row)
+                
+                if alerts:
+                    for alert in alerts:
+                        if alert.get('state') == 'open':
+                            package = alert['dependency']['package']['name']
+                            severity = alert.get('severity', 'Unknown')
+                            description = alert.get('description', 'No description available')
+                            fix_version = alert.get('fixed_in', 'Not fixed')
+                            
+
+                            if severity == "high":
+                                tag = "high_severity"
+                            elif severity == "medium":
+                                tag = "medium_severity"
+                            elif severity == "low":
+                                tag = "low_severity"
+                            else:
+                                tag = "unknown_severity"
+                            
+                            security_tree.insert("", "end", values=(package, severity, description, fix_version), tags=(tag,))
+                
+                else:
+                    security_tree.insert("", "end", values=("No open security vulnerabilities found.", "", "", ""), tags=("no_vulnerabilities",))
+                
+                security_tree.tag_configure("high_severity", background="red", foreground="white")
+                security_tree.tag_configure("medium_severity", background="yellow", foreground="black")
+                security_tree.tag_configure("low_severity", background="green", foreground="white")
+                security_tree.tag_configure("unknown_severity", background="gray", foreground="black")
+                security_tree.tag_configure("no_vulnerabilities", background="lightgray", foreground="black")
+            
+            else:
+                ms.showerror("Error", f"Error fetching security alerts: {response.status_code}")
+            
+        def fix_all_security_issues(owner, repo, token):
+            vulnerabilities = []
+            for item in security_tree.get_children():
+                selected_values = security_tree.item(item, "values")
+                if selected_values:
+                    package = selected_values[0]
+                    fix_version = selected_values[3]
+                    
+                    if fix_version and fix_version != "Not fixed":
+                        vulnerabilities.append((package, fix_version))
+
+            if not vulnerabilities:
+                ms.showinfo("No vulnerabilities", "No vulnerabilities with fix versions available.")
+                return
+
+            for vulnerable_package, fix_version in vulnerabilities:
+                fix_dependency(owner, repo, token, vulnerable_package, fix_version)
+
+            ms.showinfo("Success", "All vulnerabilities with fix versions have been corrected.")
+        
+        fix_security_btn.config(command=lambda: fix_all_security_issues(owner, repo, token))    
+            
+        show_security_alerts(owner, repo, token)
+    
+    def fix_dependency(owner, repo, token, vulnerable_package, fix_version, branch="main"):
+        file_paths = ["requirements.txt", "package.json", "pom.xml", "composer.json"]
+        file_to_update = None
+        
+        for file_path in file_paths:
+            url = f"https://api.github.com/repos/{owner}/{repo}/contents/{file_path}"
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json"
+            }
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code == 200:
+                file_to_update = file_path
+                content_data = response.json()
+                sha = content_data['sha']
+                content = content_data['content']
+                break
+        
+        if not file_to_update:
+            ms.showerror("Error", "No dependency file found.")
+            return
+        
+        decoded_content = base64.b64decode(content).decode('utf-8')
+
+        updated_content = update_dependency_in_file(decoded_content, vulnerable_package, fix_version, file_to_update)
+
+        commit_message = f"Update {vulnerable_package} to version {fix_version} in {file_to_update}"
+        commit_data = {
+            "message": commit_message,
+            "sha": sha,
+            "content": base64.b64encode(updated_content.encode('utf-8')).decode('utf-8')
+        }
+
+        commit_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{file_to_update}"
+        commit_response = requests.put(commit_url, headers=headers, data=json.dumps(commit_data))
+
+        if commit_response.status_code == 200:
+            ms.showinfo("Success", f"Dependency {vulnerable_package} updated successfully in {file_to_update}!")
+            
+            pr_data = {
+                "title": f"Update {vulnerable_package} to {fix_version} in {file_to_update}",
+                "head": branch,
+                "base": "main",
+                "body": f"This PR updates {vulnerable_package} to the latest secure version {fix_version} in {file_to_update}"
+            }
+
+            pr_url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
+            pr_response = requests.post(pr_url, headers=headers, data=json.dumps(pr_data))
+
+            if pr_response.status_code == 201:
+                ms.showinfo("Pull Request Created", "A pull request has been created for review.")
+            else:
+                ms.showerror("Error", "Failed to create pull request.")
+        else:
+            ms.showerror("Error", "Failed to commit the updated dependency.")
+    
+    def update_dependency_in_file(file_content, vulnerable_package, fix_version, file_type):
+        if file_type == "requirements.txt":
+            updated_content = file_content.replace(f"{vulnerable_package}==", f"{vulnerable_package}=={fix_version}")
+        elif file_type == "package.json":
+            updated_content = file_content.replace(f'"{vulnerable_package}": "', f'"{vulnerable_package}": "{fix_version}",')
+        elif file_type == "pom.xml":
+            updated_content = file_content.replace(f"<version>{vulnerable_package}</version>", f"<version>{fix_version}</version>")
+        elif file_type == "composer.json":
+            updated_content = file_content.replace(f'"{vulnerable_package}": "', f'"{vulnerable_package}": "{fix_version}",')
+        else:
+            updated_content = file_content
+        return updated_content
+    
     def show_github_repos():
         for item in repostree.get_children():
             repostree.delete(item)
         
         repos = obtain_github_repos()
+        starred_repos = obtain_starred_repos()
         for repo in repos:
             repostree.insert("", "end", values=(repo["name"], repo["description"], repo["language"], repo["html_url"], repo["visibility"], repo["clone_url"]))
+
+        for repo in starred_repos:
+            repostree.insert("", "end", values=(repo["name"], repo["description"], repo["language"], repo["html_url"], "⭐ Destacado", repo["clone_url"]))
     
+    def obtain_starred_repos():
+        url = "https://api.github.com/user/starred"
+        try:
+            response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
+                                                "Accept": "application/vnd.github.v3+json"})
+            response.raise_for_status()
+            repos = response.json()
+            return repos
+        except requests.exceptions.RequestException as e:
+            ms.showerror("ERROR", f"No se pueden obtener los repositorios con estrella: {e}")
+            return []
+            
     show_github_repos()
+    
+    def search_repositories():
+        def search_repositories_global():
+            query = search_var.get().strip()
+            if not query:
+                ms.showerror("Error", "Escribe algo para buscar.")
+                return
+
+            url = f"https://api.github.com/search/repositories?q={query}"
+            try:
+                response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
+                                                    "Accept": "application/vnd.github.v3+json"})
+                response.raise_for_status()
+                repos = response.json()["items"]
+
+                for item in search_tree.get_children():
+                    search_tree.delete(item)
+
+                for repo in repos:
+                    search_tree.insert("", "end", values=(repo["name"], repo["owner"]["login"], repo["stargazers_count"], repo["html_url"], repo["clone_url"]))
+
+            except requests.exceptions.RequestException as e:
+                ms.showerror("Error", f"No se pudo buscar en GitHub: {e}")
+        
+        def star_repository(repo_name, repo_owner):
+            url = f"https://api.github.com/user/starred/{repo_owner}/{repo_name}"
+            try:
+                response = requests.put(url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+                if response.status_code == 204:
+                    ms.showinfo("Éxito", f"Has dado estrella a '{repo_name}'.")
+                else:
+                    ms.showerror("Error", f"No se pudo dar estrella: {response.status_code}")
+            except requests.exceptions.RequestException as e:
+                ms.showerror("Error", f"Error al dar estrella: {e}")
+        
+        def search_menu_context(event):
+            item = search_tree.identify_row(event.y)
+            if item:
+                search_tree.selection_set(item)
+                search_context_menu.post(event.x_root, event.y_root)
+                
+        def on_repo_search_double_click(event):
+            selected_item = search_tree.selection()
+            if selected_item:
+                repo_name = search_tree.item(selected_item, "values")[0]
+                repo_owner = search_tree.item(selected_item, "values")[1]
+                
+                global repo_history
+                repo_history = []
+
+                view_repo_details(repo_name, repo_owner)
+
+        search_var = tk.StringVar()
+        ttk.Entry(search_frame, textvariable=search_var, width=50).pack(pady=5, padx=10)
+        ttk.Button(search_frame, text="🔍 Search", command=search_repositories_global).pack(pady=5)
+
+        columns = ("Name", "Owner", "Stars", "URL", "Clone URL")
+        search_tree = ttk.Treeview(search_frame, columns=columns, show="headings", height=15)
+
+        search_tree.heading("Name", text="Name")
+        search_tree.heading("Owner", text="Owner")
+        search_tree.heading("Stars", text="⭐ Stars")
+        search_tree.heading("URL", text="URL")
+        search_tree.heading("Clone URL", text="Clone URL")
+
+        search_tree.column("Name", width=200)
+        search_tree.column("Owner", width=150)
+        search_tree.column("Stars", width=100)
+        search_tree.column("URL", width=250)
+        search_tree.column("Clone URL", width=250)
+
+        search_tree.pack(expand=True, fill="both", padx=5, pady=5)
+        search_tree.bind("<Double-1>", on_repo_search_double_click)
+        
+        search_context_menu = tk.Menu(github, tearoff=0)
+        search_context_menu.add_command(label="⭐ Agregar a Favoritos", command=lambda: star_repository(search_tree.item(search_tree.selection()[0], "values")[0], search_tree.item(search_tree.selection()[0], "values")[1]))
+        #search_context_menu.add_command(label="🛠️ Clonar Repositorio", command=lambda: clone_repository_from_search())
+    
+    def view_repo_details(repo_name, repo_owner, path=""):
+        notebook.select(repo_view_frame)
+
+
+        if path and (not repo_history or repo_history[-1] != path):
+            repo_history.append(path)
+
+        for widget in repo_view_frame.winfo_children():
+            widget.destroy()
+
+        back_button = ttk.Button(repo_view_frame, text="⬅️ Atrás", command=lambda: go_back(repo_name, repo_owner))
+        back_button.pack(pady=5, padx=10, anchor="w")
+
+        if not repo_history:
+            back_button["state"] = "disabled"
+
+        ttk.Label(repo_view_frame, text=f"📂 Explorando {repo_owner}/{repo_name}/{path}", font=("Arial", 14, "bold")).pack(pady=5)
+
+        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+
+        if path == "":
+            readme_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/readme"
+            response_readme = requests.get(readme_url, headers=headers)
+
+            if response_readme.status_code == 200:
+                readme_data = response_readme.json()
+                readme_content = base64.b64decode(readme_data["content"]).decode("utf-8")
+                readme_html = markdown.markdown(readme_content)
+            else:
+                readme_html = "<p>This repository does not have a README.md.</p>"
+
+            readme_frame = ttk.LabelFrame(repo_view_frame, text="📖 README.md", padding=10, bootstyle="info")
+            readme_frame.pack(fill="both", padx=10, pady=5)
+
+            readme_label = HTMLLabel(readme_frame, html=readme_html, background="white", padx=5, pady=5)
+            readme_label.pack(expand=True, fill="both")
+
+            ttk.Separator(repo_view_frame, orient="horizontal").pack(fill="x", padx=10, pady=5)
+
+        file_list_frame = ttk.LabelFrame(repo_view_frame, text="📂 Files", padding=10, bootstyle="success")
+        file_list_frame.pack(fill="both", padx=10, pady=5)
+
+        file_tree = ttk.Treeview(file_list_frame, columns=("Name", "Type", "Path"), show="headings", height=15)
+        file_tree.heading("Name", text="Name")
+        file_tree.heading("Type", text="Type")
+        file_tree.heading("Path", text="Full Path")
+        file_tree.column("Name", width=300)
+        file_tree.column("Type", width=100)
+        file_tree.column("Path", width=0, stretch=False)
+        file_tree.pack(expand=True, fill="both", padx=5, pady=5)
+
+        files_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{path}"
+        response_files = requests.get(files_url, headers=headers)
+
+        if response_files.status_code == 200:
+            files = response_files.json()
+            for file in files:
+                file_tree.insert("", "end", values=(file.get("name"), file.get("type"), file.get("path")))
+
+        else:
+            ms.showerror("Error", f"Could not get the files of the repository: {response_files.status_code}")
+
+        def on_file_double_click(event):
+            selected_item = file_tree.selection()
+            if selected_item:
+                file_name, file_type, file_path = file_tree.item(selected_item, "values")
+                if file_type == "dir":
+                    view_repo_details(repo_name, repo_owner, file_path)
+                elif file_type == "file":
+                    view_file_content(repo_name, repo_owner, file_path)
+
+        file_tree.bind("<Double-1>", on_file_double_click)
+        
+    def view_file_content(repo_name, repo_owner, file_path):
+        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+        file_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{file_path}"
+
+        try:
+            response = requests.get(file_url, headers=headers)
+            response.raise_for_status()
+            file_data = response.json()
+            file_content = base64.b64decode(file_data["content"]).decode("utf-8")
+
+            file_window = tk.Toplevel(github)
+            file_window.title(f"📄 {file_path}")
+            file_window.iconbitmap(path)
+
+            ttk.Label(file_window, text=f"📄 {file_path}", font=("Arial", 12, "bold")).pack(pady=5)
+
+            text_editor = CodeView(file_window, wrap="word", height=25)
+            text_editor.pack(expand=True, fill="both", padx=10, pady=10)
+
+            try:
+                lexer = pygments.lexers.get_lexer_for_filename(file_path)
+            except:
+                lexer = pygments.lexers.get_lexer_by_name("text")
+
+            text_editor.config(lexer=lexer)
+            text_editor.insert("1.0", file_content)
+
+        except requests.exceptions.RequestException as e:
+            ms.showerror("Error", f"No se pudo obtener el archivo: {e}")
+    
+    def go_back(repo_name, repo_owner):
+        if repo_history:
+            repo_history.pop()
+            prev_path = repo_history[-1] if repo_history else ""
+            view_repo_details(repo_name, repo_owner, prev_path)
     
     def show_repo_stats(repo_name):
         notebook.select(stats_frame)  # Cambia a la pestaña de estadísticas
@@ -5006,6 +5489,95 @@ def unify_windows():
         commit_tree.bind("<Double-Button-1>", load_commit_changes)
 
         load_files()
+        
+    def search_code_on_github():
+        def search_code():
+            query = search_code_var.get().strip()
+            if not query:
+                ms.showerror("Error", "Please enter something to search for code on GitHub.")
+                return
+
+            url = f"https://api.github.com/search/code?q={query}"
+
+            try:
+                response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
+                                                    "Accept": "application/vnd.github.v3+json"})
+                response.raise_for_status()
+                results = response.json()["items"]
+
+                for widget in results_frame.winfo_children():
+                    widget.destroy()
+
+                for item in results:
+                    display_file_result(item)
+
+            except requests.exceptions.RequestException as e:
+                ms.showerror("Error", f"Could not search for code on GitHub: {e}")
+
+        def display_file_result(item):
+            file_name, repo_full_name, file_path, file_url = item["name"], item["repository"]["full_name"], item["path"], item["html_url"]
+            repo_owner, repo_name = repo_full_name.split("/")
+
+            path_label = ttk.Label(results_frame, text=f"{file_path} - {repo_full_name}", font=("Arial", 10, "bold"), anchor="w", foreground="blue")
+            path_label.pack(fill="x", padx=10, pady=5)
+            path_label.bind("<Enter>", lambda e: path_label.config(cursor="hand2"))
+            path_label.bind("<Leave>", lambda e: path_label.config(cursor=""))
+            path_label.bind("<Button-1>", lambda e: open_link(file_url))
+
+            file_api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{file_path}"
+
+            try:
+                response = requests.get(file_api_url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+                response.raise_for_status()
+                file_data = response.json()
+                file_content = base64.b64decode(file_data["content"]).decode("utf-8")
+
+                try:
+                    lexer = get_lexer_for_filename(file_name)
+                except ClassNotFound:
+                    lexer = get_lexer_for_filename("text")
+
+                code_view_frame = ttk.Frame(results_frame)
+                code_view_frame.pack(fill="both", padx=10, pady=5)
+
+                code_view = CodeView(code_view_frame, wrap="word", height=20, lexer=lexer)
+                code_view.pack(expand=True, fill="both")
+                code_view.insert("end", file_content)
+                code_view.config(state=tk.DISABLED)
+
+            except requests.exceptions.RequestException as e:
+                ms.showerror("Error", f"Could not get the code file: {e}")
+            
+        def open_link(url):
+            webbrowser.open(url)
+
+        canvas = tk.Canvas(search_code_frame)
+        canvas.pack(side="left", fill="both", expand=True)
+
+        scrollbar = ttk.Scrollbar(search_code_frame, orient="vertical", command=canvas.yview)
+        scrollbar.pack(side="right", fill="y")
+
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollable_frame = ttk.Frame(canvas)
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+
+        scrollable_frame.bind(
+            "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        search_code_var = tk.StringVar()
+        search_box = ttk.Entry(scrollable_frame, textvariable=search_code_var, width=60)
+        search_box.pack(pady=5, padx=10)
+        search_button = ttk.Button(scrollable_frame, text="Search Code on GitHub", command=search_code)
+        search_button.pack(pady=5)
+
+        results_frame = ttk.Frame(scrollable_frame)
+        results_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+    search_repositories()
+    search_code_on_github()
+    check_github_status()
         
 menu_name = "Organizer"
 description_menu = "Open Organizer"
