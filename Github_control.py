@@ -10,6 +10,7 @@ import pygments.lexers
 import base64
 import markdown2
 import json
+import pylint.lint
 
 from ttkbootstrap.constants import *
 from tkinter import messagebox as ms, filedialog, simpledialog
@@ -18,6 +19,8 @@ from tkhtmlview import HTMLLabel
 from ttkbootstrap.widgets import Progressbar
 from pygments.lexers import get_lexer_for_filename
 from pygments.util import ClassNotFound
+from io import StringIO
+from tkinter.scrolledtext import ScrolledText
 
 main_version = "Version: 0.0.1"
 title_version = "_V.0.0.1"
@@ -26,6 +29,25 @@ version = str(main_version)
 issue_list = None
 
 CONFIG_FILE = "config.json"
+CACHE_FILE = "data/cache.json"
+
+def load_cache():
+    if os.path.exists(CACHE_FILE):
+        with open(CACHE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_cache(data):
+    os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+    with open(CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+        
+def check_network():
+    try:
+        requests.get("https://api.github.com", timeout=5)
+        return True
+    except requests.exceptions.RequestException:
+        return False
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -77,15 +99,24 @@ def is_github_token_valid(token):
     return response.status_code == 200
 
 def obtain_github_repos():
-    url = "https://api.github.com/user/repos"
-    try:
-        response = requests.get(url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}",
-                                              "Accept": "application/vnd.github.v3+json"})
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        ms.showerror("❌ Error", f"No se pudieron obtener los repositorios: {str(e)}")
-        return []
+    cache = load_cache()
+    if check_network():
+        url = "https://api.github.com/user/repos"
+        
+        try:
+            response = requests.get(url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}",
+                                                "Accept": "application/vnd.github.v3+json"})
+            response.raise_for_status()
+            repos = response.json()
+            cache['repos'] = repos
+            save_cache(cache)
+            return repos
+        except requests.exceptions.RequestException as e:
+            ms.showerror("❌ Error", f"No se pudieron obtener los repositorios: {str(e)}")
+            return cache.get("repos", [])
+    else:
+        ms.showwarning("⚠️ No Network Connection", "No network connection. Loading cached data.")
+        return cache.get("repos", [])
 
 def obtain_github_user():
     url = "https://api.github.com/user"
@@ -544,7 +575,45 @@ def manage_github_release1(repo_name):
         ttk.Button(release_frame, text="✅ Save Release", command=save_release).grid(row=7, column=0, columnspan=2, pady=10, sticky="ew")
 
         populate_release_combobox()
-        
+
+def compare_commits(repo_name, commit_base, commit_head):
+    url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/compare/{commit_base}...{commit_head}"
+    response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+    
+    if response.status_code != 200:
+        ms.showerror("❌ Error", f"Can't get the commits: {response.status_code}")
+        return
+
+    diff_data = response.json()
+
+    if "files" not in diff_data or not diff_data["files"]:
+        ms.showinfo("ℹ️ Info", "No differences found between the selected commits.")
+        return
+
+    dif_window = tk.Toplevel(root)
+    dif_window.title(f"🔄 Commits Comparison - {commit_base[:7]} ↔ {commit_head[:7]}")
+    dif_window.geometry("800x600")
+    dif_window.iconbitmap(path_icon)
+
+    ttk.Label(dif_window, text=f"📜 Commits Comparison - {commit_base[:7]} ↔ {commit_head[:7]}",
+              font=("Arial", 14, "bold")).pack(pady=5)
+
+    diff_text = tk.Text(dif_window, wrap="word", height=30)
+    diff_text.pack(expand=True, fill="both", padx=10, pady=10)
+
+    for file in diff_data["files"]:
+        filename = file["filename"]
+        patch = file.get("patch", None)
+
+        if patch is not None:
+            diff_text.insert("end", f"📂 {filename}\n", "filename")
+            diff_text.insert("end", patch + "\n\n", "diff")
+        else:
+            diff_text.insert("end", f"📂 {filename} - ⚠️ No patch data available (Binary file or too large).\n\n", "filename")
+
+    diff_text.tag_configure("filename", foreground="blue", font=("Arial", 10, "bold"))
+    diff_text.tag_configure("diff", foreground="black", font=("Courier", 10))
+    
 def show_github_comits1(repo_name):
     notebook.select(commits_frame)
 
@@ -592,7 +661,24 @@ def show_github_comits1(repo_name):
     commit_tree.column("Date", width=150)
     commit_tree.column("Message", width=300)
     commit_tree.pack(expand=True, fill="both", padx=5, pady=5)
-
+    
+    url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/commits"
+    response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+    
+    if response.status_code == 200:
+        for comit in response.json():
+            commit_tree.insert("", "end", values=(
+                comit.get("sha"),
+                comit.get("commit", {}).get("author", {}).get("name"),
+                comit.get("commit", {}).get("author", {}).get("date"),
+                comit.get("commit", {}).get("message"),
+            ))
+    else:
+        ms.showerror("Error", f"Can't get the commits: {response.status_code}")
+    
+    compare_btn = ttk.Button(commits1_frame, text="Compare Selected Commits", command=lambda: ms.showwarning("Coming Soon", "Coming Soon"), bootstyle=PRIMARY)
+    compare_btn.pack(pady=5, fill="x", expand=True)
+    
     changes_frame = ttk.Labelframe(commits1_frame, text="Code Changes", padding=10, bootstyle=INFO)
     changes_frame.pack(expand=True, fill="both", padx=5, pady=5)
 
@@ -619,6 +705,17 @@ def show_github_comits1(repo_name):
         except requests.exceptions.RequestException as e:
             ms.showerror("Error", f"Unable to fetch files: {e}")
 
+    def compare_selected_commits(repo_name, commit_tree):
+        selected_item = commit_tree.selection()
+        if len(selected_item) != 2:
+            ms.showerror("Error", "Please select two commits to compare.")
+            return
+        
+        commit_base = commit_tree.item(selected_item[0], "values")[0]
+        commit_head = commit_tree.item(selected_item[1], "values")[0]
+        
+        compare_commits(repo_name, commit_base, commit_head)
+    
     def load_commit_history(event=None):
         commit_tree.delete(*commit_tree.get_children())
         selected_item = file_tree.selection()
@@ -765,9 +862,41 @@ def open_repo_files1(repo_name):
         commit_entry.pack(padx=5, pady=5)
 
         save_button = ttk.Button(editor_frame, text="Save Changes", command=lambda: save_changes1(repo_name), width=20, bootstyle=SUCCESS)
-        save_button.pack(pady=10)
+        save_button.pack(side='left',pady=5, fill='x', expand=True)
+        
+        analize_btn = ttk.Button(editor_frame, text="Analyze Code", command=lambda: analize_code(file_list.item(file_list.selection(), "values")), bootstyle=PRIMARY)
+        analize_btn.pack(side='right',pady=5, fill='x', expand=True)
 
         current_file = tk.StringVar()
+        
+        def analize_code(file_path):
+            if isinstance(file_path, tuple):
+                file_path = file_path[0]
+            
+            output = StringIO()
+            sys.stdout = output
+            
+            try:
+
+                pylint_opts = [file_path]
+                pylint.lint.Run(pylint_opts, exit=False)
+            
+            except Exception as e:
+                ms.showerror("Error", f"Error While Analyzing Code: {e}")
+            
+            sys.stdout = sys.__stdout__
+
+            analysis_result = output.getvalue()
+            
+            top = tk.Toplevel()
+            top.title("Code Analysis Results")
+            top.iconbitmap(path_icon)
+
+            scrolled_text = ScrolledText(top, wrap=tk.WORD, width=100, height=30)
+            scrolled_text.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+            
+            scrolled_text.insert(tk.END, analysis_result)
+            scrolled_text.config(state=tk.DISABLED)
         
         def load_file_content1(file_path):
             content = view_file_contents(repo_name, file_path)
@@ -955,24 +1084,29 @@ def show_issues(repo_name):
     global issue_list
 
     try:
-        url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/issues"
+        url_open = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/issues?state=open"
+        url_closed = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/issues?state=closed"
         headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        issues = response.json()
+        
+        response_open = requests.get(url_open, headers=headers)
+        response_closed = requests.get(url_closed, headers=headers)
+        
+        response_open.raise_for_status()
+        response_closed.raise_for_status()
 
-        # Limpiar el Treeview antes de mostrar nuevos resultados
+        issues_open = response_open.json()
+        issues_closed = response_closed.json()
+
+        issues = issues_open + issues_closed
+
         for item in issue_list.get_children():
             issue_list.delete(item)
 
-        # Verificar si no hay issues
         if not issues:
-            # Si no hay issues, mostrar un mensaje y un botón para crear uno nuevo
-            ttk.Label(issues_frame, text="No hay issues en este repositorio. ¿Quieres crear uno?", font=("Arial", 12)).pack(pady=10)
-            create_issue_button = ttk.Button(issues_frame, text="Crear nuevo issue", command=lambda: create_new_issue(repo_name))
+            ttk.Label(issues_frame, text="No issues found in this repository. Do you want to create one?", font=("Arial", 12)).pack(pady=10)
+            create_issue_button = ttk.Button(issues_frame, text="Create New Issue", command=lambda: create_new_issue(repo_name))
             create_issue_button.pack(pady=10)
         else:
-            # Si hay issues, agregarlos al Treeview
             for issue in issues:
                 issue_list.insert("", "end", values=(
                     issue['number'],
@@ -982,16 +1116,14 @@ def show_issues(repo_name):
                 ))
 
     except requests.exceptions.RequestException as e:
-        ms.showerror("Error", f"No se pudieron obtener los issues: {e}")
+        ms.showerror("Error", f"Could not fetch issues: {e}")
         
 def create_new_issue(repo_name):
-    # Crear un cuadro de entrada para el título del issue
     def submit_new_issue():
         title = title_entry.get()
-        description = description_entry.get("1.0", "end-1c")  # Obtener texto de la caja de descripción
+        description = description_entry.get("1.0", "end-1c")
 
         if title and description:
-            # Crear un issue usando la API de GitHub
             url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/issues"
             headers = {"Authorization": f"token {GITHUB_TOKEN}"}
             data = {
@@ -1001,29 +1133,28 @@ def create_new_issue(repo_name):
             response = requests.post(url, headers=headers, json=data)
 
             if response.status_code == 201:
-                ms.showinfo("Éxito", "Issue creado exitosamente.")
-                # Recargar los issues después de crear uno nuevo
+                ms.showinfo("Éxito", "Issue created successfully.")
                 show_issues(repo_name)
                 create_issue_window.destroy()
             else:
-                ms.showerror("Error", "No se pudo crear el issue.")
+                ms.showerror("Error", "Failed to create the issue.")
         else:
-            ms.showerror("Error", "El título y la descripción son obligatorios.")
+            ms.showerror("Error", "The title and description are required.")
 
-    # Crear una ventana para ingresar el título y la descripción
     create_issue_window = tk.Toplevel(root)
-    create_issue_window.title("Crear Nuevo Issue")
+    create_issue_window.title("Create New Issue")
     create_issue_window.geometry("400x300")
+    create_issue_window.iconbitmap(path_icon)
 
-    ttk.Label(create_issue_window, text="Título del Issue").pack(pady=5)
+    ttk.Label(create_issue_window, text="Issue Title").pack(pady=5)
     title_entry = ttk.Entry(create_issue_window, width=50)
     title_entry.pack(pady=5)
 
-    ttk.Label(create_issue_window, text="Descripción del Issue").pack(pady=5)
+    ttk.Label(create_issue_window, text="Description").pack(pady=5)
     description_entry = tk.Text(create_issue_window, width=50, height=6)
     description_entry.pack(pady=5)
 
-    submit_button = ttk.Button(create_issue_window, text="Crear Issue", command=submit_new_issue)
+    submit_button = ttk.Button(create_issue_window, text="Create Issue", command=submit_new_issue)
     submit_button.pack(pady=10)
 
 def filter_repositories(event):
@@ -1048,6 +1179,7 @@ def backup_repository(repo_name):
             return
 
         progress_window = tk.Toplevel(root)
+        progress_window.iconbitmap(path_icon)
         progress_window.title("Creando Backup...")
         ttk.Label(progress_window, text=f"Creando backup de {repo_name}...").pack(pady=5)
         progress = Progressbar(progress_window, mode="determinate", length=300)
@@ -1089,6 +1221,7 @@ def download_file(repo_name, file_path):
             return
 
         progress_window = tk.Toplevel(root)
+        progress_window.iconbitmap(path_icon)
         progress_window.title("Descargando...")
         ttk.Label(progress_window, text=f"Descargando {file_path}...").pack(pady=5)
         progress = Progressbar(progress_window, mode="determinate", length=300)
@@ -1285,7 +1418,7 @@ def view_file_content(repo_name, repo_owner, file_path):
 
         file_window = tk.Toplevel(root)
         file_window.title(f"📄 {file_path}")
-        file_window.iconbitmap(path)
+        file_window.iconbitmap(path_icon)
 
         ttk.Label(file_window, text=f"📄 {file_path}", font=("Arial", 12, "bold")).pack(pady=5)
 
@@ -1403,27 +1536,199 @@ def create_issue(repo_name):
    
 def show_help():
     help_window = tk.Toplevel(root)
-    help_window.iconbitmap(path)
+    help_window.iconbitmap(path_icon)
     
     ttk.Label(help_window, text="📖 Ayuda - Cómo Usar la Aplicación", font=("Arial", 14, "bold")).pack(pady=5)
 
-    # Verificar si el archivo existe
     if os.path.exists("Help.md"):
         with open("Help.md", "r", encoding="utf-8") as f:
             md_content = f.read()
     else:
         md_content = "# ❌ Error\nNo se encontró el archivo 'Help.md'."
 
-    # Convertir Markdown a HTML
     html_content = markdown2.markdown(md_content)
 
-    # Mostrar el contenido en un Label HTML
     html_label = HTMLLabel(help_window, html=html_content, background="white", padx=10, pady=10)
     html_label.pack(expand=True, fill="both", padx=10, pady=10)
 
-path = resource_path("github_control.ico")
+def check_github_status():
+    try:
+        response = requests.get("https://www.githubstatus.com/api/v2/status.json")
+        response.raise_for_status()
+
+        status = response.json()
+
+        if status['status']['indicator'] == 'none':
+            status_label.config(text="Github Connection Status: ✅ Ok", bootstyle='success')
+        else:
+            status_label.config(text="Github Connection Status: ❌ Error", bootstyle='danger')
+    except requests.exceptions.RequestException as e:
+
+        status_label.config(text="Error checking GitHub status: " + str(e), bootstyle='danger')
+        
+def security_check(owner, repo, token):
+    def show_security_alerts(owner, repo, token):
+        url = f"https://api.github.com/repos/{owner}/{repo}/dependabot/alerts"
+    
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json"
+        }
+        
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            alerts = response.json()
+            
+            for row in security_tree.get_children():
+                security_tree.delete(row)
+            
+            if alerts:
+                for alert in alerts:
+                    if alert.get('state') == 'open':
+                        package = alert['dependency']['package']['name']
+                        severity = alert.get('severity', 'Unknown')
+                        description = alert.get('description', 'No description available')
+                        fix_version = alert.get('fixed_in', 'Not fixed')
+                        
+
+                        if severity == "high":
+                            tag = "high_severity"
+                        elif severity == "medium":
+                            tag = "medium_severity"
+                        elif severity == "low":
+                            tag = "low_severity"
+                        else:
+                            tag = "unknown_severity"
+                        
+                        security_tree.insert("", "end", values=(package, severity, description, fix_version), tags=(tag,))
+            
+            else:
+                security_tree.insert("", "end", values=("No open security vulnerabilities found.", "", "", ""), tags=("no_vulnerabilities",))
+            
+            security_tree.tag_configure("high_severity", background="red", foreground="white")
+            security_tree.tag_configure("medium_severity", background="yellow", foreground="black")
+            security_tree.tag_configure("low_severity", background="green", foreground="white")
+            security_tree.tag_configure("unknown_severity", background="gray", foreground="black")
+            security_tree.tag_configure("no_vulnerabilities", background="lightgray", foreground="black")
+        
+        else:
+            ms.showerror("Error", f"Error fetching security alerts: {response.status_code}")
+        
+    def fix_all_security_issues(owner, repo, token):
+        vulnerabilities = []
+        for item in security_tree.get_children():
+            selected_values = security_tree.item(item, "values")
+            if selected_values:
+                package = selected_values[0]
+                fix_version = selected_values[3]
+                
+                if fix_version and fix_version != "Not fixed":
+                    vulnerabilities.append((package, fix_version))
+
+        if not vulnerabilities:
+            ms.showinfo("No vulnerabilities", "No vulnerabilities with fix versions available.")
+            return
+
+        for vulnerable_package, fix_version in vulnerabilities:
+            fix_dependency(owner, repo, token, vulnerable_package, fix_version)
+
+        ms.showinfo("Success", "All vulnerabilities with fix versions have been corrected.")
+    
+    fix_security_btn.config(command=lambda: fix_all_security_issues(owner, repo, token))    
+        
+    show_security_alerts(owner, repo, token)
+
+def update_dependency_in_file(file_content, vulnerable_package, fix_version, file_type):
+    if file_type == "requirements.txt":
+        updated_content = file_content.replace(f"{vulnerable_package}==", f"{vulnerable_package}=={fix_version}")
+    elif file_type == "package.json":
+        updated_content = file_content.replace(f'"{vulnerable_package}": "', f'"{vulnerable_package}": "{fix_version}",')
+    elif file_type == "pom.xml":
+        updated_content = file_content.replace(f"<version>{vulnerable_package}</version>", f"<version>{fix_version}</version>")
+    elif file_type == "composer.json":
+        updated_content = file_content.replace(f'"{vulnerable_package}": "', f'"{vulnerable_package}": "{fix_version}",')
+    else:
+        updated_content = file_content
+    return updated_content
+
+def fix_dependency(owner, repo, token, vulnerable_package, fix_version, branch="main"):
+    file_paths = ["requirements.txt", "package.json", "pom.xml", "composer.json"]
+    file_to_update = None
+    
+    for file_path in file_paths:
+        url = f"https://api.github.com/repos/{owner}/{repo}/contents/{file_path}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json"
+        }
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            file_to_update = file_path
+            content_data = response.json()
+            sha = content_data['sha']
+            content = content_data['content']
+            break
+    
+    if not file_to_update:
+        ms.showerror("Error", "No dependency file found.")
+        return
+    
+    decoded_content = base64.b64decode(content).decode('utf-8')
+
+    updated_content = update_dependency_in_file(decoded_content, vulnerable_package, fix_version, file_to_update)
+
+    commit_message = f"Update {vulnerable_package} to version {fix_version} in {file_to_update}"
+    commit_data = {
+        "message": commit_message,
+        "sha": sha,
+        "content": base64.b64encode(updated_content.encode('utf-8')).decode('utf-8')
+    }
+
+    commit_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{file_to_update}"
+    commit_response = requests.put(commit_url, headers=headers, data=json.dumps(commit_data))
+
+    if commit_response.status_code == 200:
+        ms.showinfo("Success", f"Dependency {vulnerable_package} updated successfully in {file_to_update}!")
+        
+        pr_data = {
+            "title": f"Update {vulnerable_package} to {fix_version} in {file_to_update}",
+            "head": branch,
+            "base": "main",
+            "body": f"This PR updates {vulnerable_package} to the latest secure version {fix_version} in {file_to_update}"
+        }
+
+        pr_url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
+        pr_response = requests.post(pr_url, headers=headers, data=json.dumps(pr_data))
+
+        if pr_response.status_code == 201:
+            ms.showinfo("Pull Request Created", "A pull request has been created for review.")
+        else:
+            ms.showerror("Error", "Failed to create pull request.")
+    else:
+        ms.showerror("Error", "Failed to commit the updated dependency.")
+
+def on_security_analysis_button_click():
+    selected_item = projectstree.selection()
+    
+    if not selected_item:
+        ms.showwarning("No selection", "Please select a repository first.")
+        return
+    
+    selected_repo = projectstree.item(selected_item, "values")
+    repo_name = selected_repo[0]
+    owner_name = selected_repo[3].split('/')[-2]
+    
+    token = GITHUB_TOKEN
+    
+    notebook.select(security_frame)
+    
+    security_check(owner_name, repo_name, token)
+
+path_icon = resource_path("github_control.ico")
 root = ttk.Window(title=f"Github Control{str_title_version}", themename="darkly")
-root.iconbitmap(path)
+root.iconbitmap(path_icon)
 root.resizable(True, True)
 
 menu = tk.Menu(root, tearoff=0)
@@ -1445,6 +1750,7 @@ stats_frame = ttk.Frame(notebook)
 search_frame = ttk.Frame(notebook)
 repo_view_frame = ttk.Frame(notebook)
 search_code_frame = ttk.Frame(notebook)
+security_frame = ttk.Frame(notebook)
 
 
 notebook.add(mygithub_frame, text="My GitHub", padding=5)
@@ -1452,6 +1758,7 @@ notebook.add(commits_frame, text="Repo Commits", padding=5)
 notebook.add(file_frame, text="Files", padding=5)
 notebook.add(release_frame, text="Releases", padding=5)
 notebook.add(edit_frame, text="Edit Repository", padding=5)
+notebook.add(security_frame, text="Security", padding=5)
 notebook.add(issues_frame, text="Issues", padding=5)
 notebook.add(stats_frame, text="Stats", padding=5)
 notebook.add(search_frame, text="Search Repos", padding=5)
@@ -1481,6 +1788,7 @@ context_menu.add_command(label="✏️ Edit Repository", command=lambda: edit_re
 context_menu.add_command(label="🚀 Github Releases", command=lambda: manage_github_release1(projectstree.item(projectstree.selection(), "values")[0]))
 context_menu.add_command(label="🔄 Commits History", command=lambda: show_github_comits1(projectstree.item(projectstree.selection()[0], "values")[0]))
 context_menu.add_command(label="⭐ Quit Star", command=lambda: unstar_repository(projectstree.item(projectstree.selection()[0], "values")[0], projectstree.item(projectstree.selection()[0], "values")[3].split('/')[-2]))
+context_menu.add_command(label="🔐 Security Alerts", command=lambda: on_security_analysis_button_click())
 context_menu.add_command(label="➕ Create New Repository", command=create_repository_github)
 context_menu.add_command(label="📂 Clone Repository", command=clone_repository)
 context_menu.add_command(label="🗂️View Files", command=lambda: open_repo_files1(projectstree.item(projectstree.selection()[0], "values")[0]))
@@ -1488,15 +1796,38 @@ context_menu.add_command(label="📊 View Statistics", command=lambda: show_repo
 context_menu.add_command(label="📦 Create Backup", command=lambda: backup_repository(projectstree.item(projectstree.selection()[0], "values")[0]))
 context_menu.add_command(label="🐞 View Issues", command=lambda: show_repo_issues(projectstree.item(projectstree.selection()[0], "values")[0]))
 
+
+# SECURITY FRAME
+columns = ("Package", "Severity", "Description", "Fix Version")
+security_tree = ttk.Treeview(security_frame, columns=columns, show="headings", height=20, bootstyle='primary')
+security_tree.pack(padx=10, pady=10, fill="both", expand=True)
+
+security_tree.heading("Package", text="Package")
+security_tree.heading("Severity", text="Severity")
+security_tree.heading("Description", text="Description")
+security_tree.heading("Fix Version", text="Fix Version")
+
+scrollb_security = ttk.Scrollbar(security_frame, orient="vertical", command=security_tree.yview)
+scrollb_security.pack(side=RIGHT, fill=Y, padx=5)
+security_tree.configure(yscrollcommand=scrollb_security.set)
+
+fix_security_btn = ttk.Button(security_frame, text="Fix Vulnerability", bootstyle=SUCCESS)
+fix_security_btn.pack(side='bottom', pady=5, fill='x', expand=True)
+
 search_var = tk.StringVar()
 search_entry = ttk.Entry(mygithub_frame, textvariable=search_var, width=40)
 search_entry.pack(pady=5)
 search_entry.bind("<KeyRelease>", filter_repositories)
 
 version_label = ttk.Label(root, text=f'{version}', bootstyle='info')
-version_label.pack(side='bottom', fill='x', padx=5, pady=5)
+version_label.pack(side='right', fill='x', padx=5, pady=5)
+
+status_label = ttk.Label(root, text=f'Github Connection Status: Checking...', bootstyle='info')
+status_label.pack(side='left', fill='x', padx=5, pady=5)
+
 
 show_github_repos()
 search_repositories()
 search_code_on_github()
+check_github_status()
 root.mainloop()
