@@ -1,3 +1,4 @@
+from sqlite3 import PARSE_DECLTYPES
 import tkinter as tk
 import sys
 import ttkbootstrap as ttk
@@ -12,6 +13,7 @@ import markdown2
 import json
 import pylint.lint
 import threading
+import time
 
 from ttkbootstrap.constants import *
 from tkinter import messagebox as ms, filedialog, simpledialog
@@ -111,24 +113,89 @@ def is_github_token_valid(token):
 
 def obtain_github_repos():
     cache = load_cache()
+
     if check_network():
         url = "https://api.github.com/user/repos"
-        
         try:
-            response = requests.get(url, headers={"Authorization": f"Bearer {GITHUB_TOKEN}",
-                                                "Accept": "application/vnd.github.v3+json"})
+            response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
+                                                  "Accept": "application/vnd.github.v3+json"})
             response.raise_for_status()
             repos = response.json()
-            cache['repos'] = repos
+            cache["repos"] = repos
             save_cache(cache)
+
+            for repo in repos:
+                repo_name = repo["name"]
+                obtain_github_commits(repo_name, cache)
+                obtain_github_files(repo_name, cache)
+            
             return repos
         except requests.exceptions.RequestException as e:
             ms.showerror("❌ Error", f"No se pudieron obtener los repositorios: {str(e)}")
             return cache.get("repos", [])
     else:
-        ms.showwarning("⚠️ No Network Connection", "No network connection. Loading cached data.")
+        ms.showwarning("⚠️ Modo Offline", "No hay conexión. Usando datos en caché.")
         return cache.get("repos", [])
+    
+def obtain_github_commits(repo_name, cache):
+    if check_network():
+        url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/commits"
+        try:
+            response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
+                                                  "Accept": "application/vnd.github.v3+json"})
+            response.raise_for_status()
+            commits = response.json()
+            if "commits" not in cache:
+                cache["commits"] = {}
+            cache["commits"][repo_name] = commits
+            save_cache(cache)
+            return commits
+        except requests.exceptions.RequestException as e:
+            return cache.get("commits", {}).get(repo_name, [])
+    else:
+        return cache.get("commits", {}).get(repo_name, [])
 
+def obtain_github_files(repo_name, cache):
+    if check_network():
+        url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/contents"
+        try:
+            response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
+                                                  "Accept": "application/vnd.github.v3+json"})
+            response.raise_for_status()
+            files = response.json()
+            if "files" not in cache:
+                cache["files"] = {}
+            cache["files"][repo_name] = files
+            save_cache(cache)
+            return files
+        except requests.exceptions.RequestException as e:
+            return cache.get("files", {}).get(repo_name, [])
+    else:
+        return cache.get("files", {}).get(repo_name, [])
+    
+def get_file_content(repo_name, file_path):
+    cache = load_cache()
+
+    if check_network():
+        url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{repo_name}/main/{file_path}"
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            content = response.text
+            if "file_content" not in cache:
+                cache["file_content"] = {}
+            if repo_name not in cache["file_content"]:
+                cache["file_content"][repo_name] = {}
+            cache["file_content"][repo_name][file_path] = content
+            save_cache(cache)
+            return content
+        except requests.exceptions.RequestException as e:
+            ms.showerror("❌ Error", f"Could not retrieve file: {str(e)}")
+            return cache.get("file_content", {}).get(repo_name, {}).get(file_path, "⚠️ File not available offline.")
+    else:
+        ms.showwarning("⚠️ Offline Mode", "No internet. Using cached file.")
+        return cache.get("file_content", {}).get(repo_name, {}).get(file_path, "⚠️ File not available offline.")
+            
 def obtain_github_user():
     url = "https://api.github.com/user"
     try:
@@ -168,17 +235,40 @@ def unstar_repository(repo_name, repo_owner):
         ms.showerror("Error", f"Error al quitar la estrella: {e}")
 
 def show_github_repos():
-    for item in projectstree.get_children():
-        projectstree.delete(item)
-        
     repos = obtain_github_repos()
     starred_repos = obtain_starred_repos()
-    
+
+    existing_repos = {projectstree.item(item, "values")[0]: item for item in projectstree.get_children()}
+
+    def update_or_add_repo(repo_data, repo_type):
+        repo_name = repo_data["name"]
+        repo_values = (
+            repo_name, repo_data["description"], repo_data["language"],
+            repo_data["html_url"], repo_data.get("visibility", "⭐ Destacado"),
+            repo_data["clone_url"], repo_type
+        )
+
+        if repo_name in existing_repos:
+            item_id = existing_repos[repo_name]
+            if projectstree.item(item_id, "values") != repo_values:
+                projectstree.item(item_id, values=repo_values)
+        else:
+            projectstree.insert("", "end", values=repo_values)
+
     for repo in repos:
-        projectstree.insert("", "end", values=(repo["name"], repo["description"], repo["language"], repo["html_url"], repo["visibility"], repo["clone_url"], "📁 Propio"))
-        
+        update_or_add_repo(repo, "📁 Propio")
+
     for repo in starred_repos:
-        projectstree.insert("", "end", values=(repo["name"], repo["description"], repo["language"], repo["html_url"], "⭐ Destacado", repo["clone_url"], "⭐ Favorito"))
+        update_or_add_repo(repo, "⭐ Favorito")
+
+    for repo_name in list(existing_repos.keys()):
+        if repo_name not in {r["name"] for r in repos} and repo_name not in {r["name"] for r in starred_repos}:
+            projectstree.delete(existing_repos[repo_name])
+    
+    projectstree.after(60000, threading_show_github_repos)
+    
+def threading_show_github_repos():
+    threading.Thread(target=show_github_repos, daemon=True).start()
     
 def menu_contextual(event):
     item = projectstree.identify_row(event.y)
@@ -603,20 +693,19 @@ def compare_commits(repo_name, commit_base, commit_head):
 
     dif_window = tk.Toplevel(root)
     dif_window.title(f"🔄 Commits Comparison - {commit_base[:7]} ↔ {commit_head[:7]}")
-    dif_window.geometry("800x600")
-    dif_window.iconbitmap(path_icon)
+    dif_window.geometry("900x600")
 
-    ttk.Label(dif_window, text=f"📜 Commits Comparison - {commit_base[:7]} ↔ {commit_head[:7]}",
+    ttk.Label(dif_window, text=f"📜 Comparing {commit_base[:7]} ↔ {commit_head[:7]}",
               font=("Arial", 14, "bold")).pack(pady=5)
 
-    diff_text = tk.Text(dif_window, wrap="word", height=30)
+    diff_text = CodeView(dif_window, wrap="word", height=30)
     diff_text.pack(expand=True, fill="both", padx=10, pady=10)
 
     for file in diff_data["files"]:
         filename = file["filename"]
         patch = file.get("patch", None)
 
-        if patch is not None:
+        if patch:
             diff_text.insert("end", f"📂 {filename}\n", "filename")
             diff_text.insert("end", patch + "\n\n", "diff")
         else:
@@ -687,7 +776,7 @@ def show_github_comits1(repo_name):
     else:
         ms.showerror("Error", f"Can't get the commits: {response.status_code}")
     
-    compare_btn = ttk.Button(commits1_frame, text="Compare Selected Commits", command=lambda: ms.showwarning("Coming Soon", "Coming Soon"), bootstyle=PRIMARY)
+    compare_btn = ttk.Button(commits1_frame, text="Compare Selected Commits", command=lambda: compare_selected_commits(repo_name, commit_tree), bootstyle=PRIMARY)
     compare_btn.pack(pady=5, fill="x", expand=True)
     
     changes_frame = ttk.Labelframe(commits1_frame, text="Code Changes", padding=10, bootstyle=INFO)
@@ -717,41 +806,45 @@ def show_github_comits1(repo_name):
             ms.showerror("Error", f"Unable to fetch files: {e}")
 
     def compare_selected_commits(repo_name, commit_tree):
-        selected_item = commit_tree.selection()
-        if len(selected_item) != 2:
-            ms.showerror("Error", "Please select two commits to compare.")
+        selected_items = commit_tree.selection()
+        
+        if len(selected_items) != 2:
+            ms.showerror("⚠️ Error", "Please select exactly two commits to compare.")
             return
-        
-        commit_base = commit_tree.item(selected_item[0], "values")[0]
-        commit_head = commit_tree.item(selected_item[1], "values")[0]
-        
+
+        commit_base = commit_tree.item(selected_items[0], "values")[0]
+        commit_head = commit_tree.item(selected_items[1], "values")[0]
+
         compare_commits(repo_name, commit_base, commit_head)
     
     def load_commit_history(event=None):
+        cache = load_cache()
+        
         commit_tree.delete(*commit_tree.get_children())
         selected_item = file_tree.selection()
         if not selected_item:
             return
 
         file_path = file_tree.item(selected_item, "values")[0]
+        if check_network():
+            try:
+                url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/commits"
+                headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+                params = {"path": file_path}
+                response = requests.get(url, headers=headers, params=params)
+                response.raise_for_status()
+                commits = response.json()
 
-        try:
-            url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/commits"
-            headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-            params = {"path": file_path}
-            response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            commits = response.json()
-
-            for commit in commits:
-                commit_tree.insert("", "end", values=(
-                    commit.get("sha"),
-                    commit.get("commit", {}).get("author", {}).get("name"),
-                    commit.get("commit", {}).get("author", {}).get("date"),
-                    commit.get("commit", {}).get("message"),
-                ))
-        except requests.exceptions.RequestException as e:
-            ms.showerror("Error", f"Unable to fetch commit history: {e}")
+                for commit in commits:
+                    commit_tree.insert("", "end", values=(
+                        commit.get("sha"),
+                        commit.get("commit", {}).get("author", {}).get("name"),
+                        commit.get("commit", {}).get("author", {}).get("date"),
+                        commit.get("commit", {}).get("message"),
+                    ))
+            except requests.exceptions.RequestException as e:
+                ms.showerror("Error", f"Unable to fetch commit history: {e}")
+                
 
     def load_commit_changes(event=None):
         selected_commit = commit_tree.selection()
@@ -989,20 +1082,45 @@ def show_repo_stats(repo_name):
         popularity_frame = ttk.LabelFrame(stats_frame, text="🌟 Popularidad", padding=10, bootstyle="primary")
         popularity_frame.pack(fill="x", padx=10, pady=5)
 
-        ttk.Label(popularity_frame, text=f"⭐ Estrellas: {repo_data.get('stargazers_count', 0)}", font=("Arial", 12, "bold")).pack(anchor="w")
-        ttk.Label(popularity_frame, text=f"🍴 Forks: {repo_data.get('forks_count', 0)}", font=("Arial", 12, "bold")).pack(anchor="w")
-        ttk.Label(popularity_frame, text=f"👀 Watchers: {repo_data.get('watchers_count', 0)}", font=("Arial", 12, "bold")).pack(anchor="w")
+        stars_label = ttk.Label(popularity_frame, text=f"⭐ Stars: {repo_data.get('stargazers_count', 0)}", font=("Arial", 12, "bold"))
+        stars_label.pack(anchor="w")
+        forks_label = ttk.Label(popularity_frame, text=f"🍴 Forks: {repo_data.get('forks_count', 0)}", font=("Arial", 12, "bold"))
+        forks_label.pack(anchor="w")
+        watchers_label = ttk.Label(popularity_frame, text=f"👀 Watchers: {repo_data.get('watchers_count', 0)}", font=("Arial", 12, "bold"))
+        watchers_label.pack(anchor="w")
 
         ttk.Separator(stats_frame, orient="horizontal").pack(fill="x", padx=10, pady=5)
 
-        traffic_frame = ttk.LabelFrame(stats_frame, text="📈 Tráfico", padding=10, bootstyle="success")
+        traffic_frame = ttk.LabelFrame(stats_frame, text="📈 Trafic", padding=10, bootstyle="success")
         traffic_frame.pack(fill="x", padx=10, pady=5)
 
-        ttk.Label(traffic_frame, text=f"📥 Descargas de Releases: {get_total_downloads(repo_name, headers)}", font=("Arial", 12, "bold")).pack(anchor="w")
-        ttk.Label(traffic_frame, text=f"🔄 Clones del Repo (últimos 14 días): {get_total_clones(repo_name, headers)}", font=("Arial", 12, "bold")).pack(anchor="w")
+        releases_label = ttk.Label(traffic_frame, text=f"📥 Releases Downloads: {get_total_downloads(repo_name, headers)}", font=("Arial", 12, "bold"))
+        releases_label.pack(anchor="w")
+        clones_label= ttk.Label(traffic_frame, text=f"🔄 Repo clones (Last 14 days): {get_total_clones(repo_name, headers)}", font=("Arial", 12, "bold"))
+        clones_label.pack(anchor="w")
+        
+        def update_stats():
+            print("ejecutando...")
+            try:
+                response = requests.get(url, headers=headers)
+                response.raise_for_status()
+                new_data = response.json()
+                
+                stars_label.config(text=f"⭐ Stars: {new_data.get('stargazers_count', 0)}", font=("Arial", 12, "bold"))
+                forks_label.config(text=f"🍴 Forks: {new_data.get('forks_count', 0)}", font=("Arial", 12, "bold"))
+                watchers_label.config(text=f"👀 Watchers: {new_data.get('watchers_count', 0)}", font=("Arial", 12, "bold"))
+                releases_label.config(text=f"📥 Releases Downloads: {get_total_downloads(repo_name, headers)}", font=("Arial", 12, "bold"))
+                clones_label.config(text=f"🔄 Repo clones (Last 14 days): {get_total_clones(repo_name, headers)}", font=("Arial", 12, "bold"))
+                
+            except requests.exception.requests.RequestException as e:
+                ms.showerror("ERROR", f"Error Updating stats: {e}")
+            
+            stats_frame.after(15000, update_stats)
+            
+        update_stats()
 
     except requests.exceptions.RequestException as e:
-        ms.showerror("Error", f"No se pudieron obtener las estadísticas del repositorio: {e}")
+        ms.showerror("Error", f"Could not get repository statistics: {e}")
 
 def get_total_downloads(repo_name, headers):
     total_downloads = 0
@@ -1268,23 +1386,65 @@ def search_repositories():
             ms.showerror("Error", "Escribe algo para buscar.")
             return
 
-        url = f"https://api.github.com/search/repositories?q={query}"
+        load_bar = Progressbar(root, orient=tk.HORIZONTAL, mode='indeterminate')
+        load_bar.pack(side='bottom', padx=5, pady=5, fill='x')
+        load_bar.start()
+
+        repo_count = 0
+        page = 1
+        max_pages = 30  # 🔹 Límite de GitHub
+
         try:
-            response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
-                                                "Accept": "application/vnd.github.v3+json"})
-            response.raise_for_status()
-            repos = response.json()["items"]
+            while page <= max_pages:
+                url = f"https://api.github.com/search/repositories?q={query}&page={page}"
+                response = requests.get(
+                    url,
+                    headers={
+                        "Authorization": f"token {GITHUB_TOKEN}",
+                        "Accept": "application/vnd.github.v3+json",
+                    },
+                )
 
-            for item in search_tree.get_children():
-                search_tree.delete(item)
+                # 🔹 Solo mostrar error si realmente falla la API
+                if response.status_code != 200:
+                    ms.showerror("Error", f"No se pudo buscar en GitHub: {response.status_code}")
+                    break
 
-            for repo in repos:
-                search_tree.insert("", "end", values=(repo["name"], repo["owner"]["login"], repo["stargazers_count"], repo["html_url"], repo["clone_url"]))
+                data = response.json()
+
+                if "items" in data and isinstance(data["items"], list):
+                    if not data["items"]:  # 🔹 Si la página está vacía, terminamos
+                        break
+
+                    for repo in data["items"]:
+                        search_tree.insert(
+                            "",
+                            "end",
+                            values=(
+                                repo["name"],
+                                repo["owner"]["login"],
+                                repo["stargazers_count"],
+                                repo["html_url"],
+                                repo["clone_url"],
+                            ),
+                        )
+                        repo_count += 1
+                        repo_count_label.config(text=f"Found Repos: {repo_count}")
+                        load_bar.step(1)
+
+                    page += 1
+                else:
+                    break
 
         except requests.exceptions.RequestException as e:
             ms.showerror("Error", f"No se pudo buscar en GitHub: {e}")
-            
-    def thread_search_repositories():
+
+        finally:
+            load_bar.stop()
+            load_bar.pack_forget()
+
+    
+    def threading_search():
         threading.Thread(target=search_repositories_global).start()
     
     def star_repository(repo_name, repo_owner):
@@ -1314,10 +1474,64 @@ def search_repositories():
             repo_history = []
 
             view_repo_details(repo_name, repo_owner)
+            
+    def search_repos_in_treeview(event):
+        search_query = search_entry_repos.get().strip().lower()
+        found_items = []
+
+        for item in search_tree.get_children():
+            values = search_tree.item(item, "values")
+            repo_name = values[0].lower()
+            owner_name = values[1].lower()
+            stars = str(values[2])
+
+            if search_query in repo_name or search_query in owner_name or search_query in stars:
+                search_tree.item(item, tags=("match",))
+                found_items.append(item)
+            else:
+                search_tree.item(item, tags=("nomatch",))
+
+        if found_items:
+            search_tree.selection_set(found_items[0])
+            search_tree.focus(found_items[0])
+            search_tree.see(found_items[0])
+            
+    def clone_repository_from_search():
+        selected_item = search_tree.selection()
+        if not selected_item:
+            ms.showerror("ERROR", "Select a repo to clone")
+            return
+        
+        repo_name = search_tree.item(selected_item, "values")[0]
+        repo_owner = search_tree.item(selected_item, "values")[1]
+        clone_url = search_tree.item(selected_item, "values")[4]
+
+        save_path = tk.filedialog.askdirectory(title="Select Path folder")
+        if not save_path:
+            return
+
+        dest_folder = os.path.join(save_path, repo_name)
+
+        load_bar = Progressbar(root, orient=tk.HORIZONTAL, mode='indeterminate')
+        load_bar.pack(side='bottom', padx=5, pady=5, fill='x')
+        load_bar.start()
+        
+        def clone_repo():
+            try:
+                subprocess.run(["git", "clone", clone_url, dest_folder], check=True)
+                ms.showinfo("Success", f"Repo '{repo_name}' successfully cloned in:\n{dest_folder}")
+            except subprocess.CalledProcessError:
+                ms.showerror("Error", "The repository could not be cloned. Please verify that Git is installed.")
+            finally:
+                load_bar.stop()
+                load_bar.pack_forget()
+        
+        threading.Thread(target=clone_repo).start()
+                
 
     search_var = tk.StringVar()
     ttk.Entry(search_frame, textvariable=search_var, width=50).pack(pady=5, padx=10)
-    ttk.Button(search_frame, text="🔍 Search", command=thread_search_repositories).pack(pady=5)
+    ttk.Button(search_frame, text="🔍 Search", command=threading_search).pack(pady=5)
 
     columns = ("Name", "Owner", "Stars", "URL", "Clone URL")
     search_tree = ttk.Treeview(search_frame, columns=columns, show="headings", height=15)
@@ -1336,10 +1550,21 @@ def search_repositories():
 
     search_tree.pack(expand=True, fill="both", padx=5, pady=5)
     search_tree.bind("<Double-1>", on_repo_search_double_click)
+    search_tree.bind("<Button-3>", search_menu_context)
+    
+    repo_count_label = ttk.Label(search_frame, text="Found Repos: 0", bootstyle='info')
+    repo_count_label.pack(side='left', fill='x', padx=5, pady=5, expand=True)
+    
+    search_repos_label = ttk.Label(search_frame, text="Search on Repos", bootstyle='info')
+    search_repos_label.pack(side='left', fill='x', padx=5, pady=5, expand=True)
+    
+    search_entry_repos = ttk.Entry(search_frame, width=250)
+    search_entry_repos.pack(side='left', fill='x', padx=5, pady=5, expand=True)
+    search_entry_repos.bind("<KeyRelease>", search_repos_in_treeview)
     
     search_context_menu = tk.Menu(root, tearoff=0)
     search_context_menu.add_command(label="⭐ Agregar a Favoritos", command=lambda: star_repository(search_tree.item(search_tree.selection()[0], "values")[0], search_tree.item(search_tree.selection()[0], "values")[1]))
-    #search_context_menu.add_command(label="🛠️ Clonar Repositorio", command=lambda: clone_repository_from_search())
+    search_context_menu.add_command(label="🛠️ Clonar Repositorio", command=lambda: clone_repository_from_search())
 
 def go_back(repo_name, repo_owner):
     if repo_history:
@@ -1456,24 +1681,39 @@ def search_code_on_github():
         if not query:
             ms.showerror("Error", "Please enter something to search for code on GitHub.")
             return
-        
-        loading_bar.pack(pady=10)
+
+        loading_bar.pack(side='bottom',pady=5)
         loading_bar.start(10)
 
-        url = f"https://api.github.com/search/code?q={query}"
+        results = []
+        page = 1
+        results_frame_children = results_frame.winfo_children()
+        max_results = 10
+        total_results_shown = 0
 
         try:
-            response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
-                                                  "Accept": "application/vnd.github.v3+json"})
-            response.raise_for_status()
-            results = response.json()["items"]
+            while True:
+                url = f"https://api.github.com/search/code?q={query}&page={page}"
+                response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
+                                                    "Accept": "application/vnd.github.v3+json"})
+                response.raise_for_status()
+                data = response.json()
+                items = data.get("items",)
+                results.extend(items)
 
-            # Limpiar resultados anteriores
-            for widget in results_frame.winfo_children():
-                widget.destroy()
+                # Limpiar resultados anteriores (except the initial ones)
+                for widget in results_frame.winfo_children():
+                    if widget not in results_frame_children:
+                        widget.destroy()
 
-            for item in results:
-                display_file_result(item)
+                for item in items:
+                    if total_results_shown < max_results:
+                        display_file_result(item)
+                        total_results_shown += 1
+
+                if len(items) < 30 or total_results_shown >= max_results:
+                    break
+                page += 1
 
         except requests.exceptions.RequestException as e:
             ms.showerror("Error", f"Could not search for code on GitHub: {e}")
@@ -1502,20 +1742,30 @@ def search_code_on_github():
             response = requests.get(file_api_url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
             response.raise_for_status()
             file_data = response.json()
-            file_content = base64.b64decode(file_data["content"]).decode("utf-8")
 
-            try:
-                lexer = get_lexer_for_filename(file_name)
-            except ClassNotFound:
-                lexer = get_lexer_for_filename("text")
+            # Verificar si el archivo es un archivo de texto
+            if "encoding" in file_data and file_data["encoding"] == "base64":
+                file_content = base64.b64decode(file_data["content"]).decode("utf-8")
 
-            code_view_frame = ttk.Frame(results_frame)
-            code_view_frame.pack(fill="both", padx=10, pady=5)
+                try:
+                    lexer = get_lexer_for_filename(file_name)
+                except ClassNotFound:
+                    lexer = pygments.lexers.get_lexer_by_name("text")
+                except Exception as e:
+                    ms.showerror("Error", f"Error getting lexer for {file_name}: {e}")
+                    return
 
-            code_view = CodeView(code_view_frame, wrap="word", height=20, lexer=lexer)
-            code_view.pack(expand=True, fill="both")
-            code_view.insert("end", file_content)
-            code_view.config(state=tk.DISABLED)
+                code_view_frame = ttk.Frame(results_frame)
+                code_view_frame.pack(fill="both", padx=10, pady=5)
+
+                code_view = CodeView(code_view_frame, wrap="word", height=20, lexer=lexer)
+                code_view.pack(expand=True, fill="both")
+                code_view.insert("end", file_content)
+                code_view.config(state=tk.DISABLED)
+            else:
+                # Si no es un archivo de texto, mostrar un mensaje
+                not_text_label = ttk.Label(results_frame, text=f"{file_path} no es un archivo de texto y no se puede mostrar.", foreground="gray")
+                not_text_label.pack(fill="x", padx=10, pady=5)
 
         except requests.exceptions.RequestException as e:
             ms.showerror("Error", f"Could not get the code file: {e}")
@@ -1539,14 +1789,14 @@ def search_code_on_github():
 
     search_code_var = tk.StringVar()
     search_box = ttk.Entry(scrollable_frame, textvariable=search_code_var, width=60)
-    search_box.pack(pady=5, padx=10)
+    search_box.pack(pady=5, padx=5, side='top', fill='x', expand=True)
 
     search_button = ttk.Button(scrollable_frame, text="Search Code on GitHub", command=thread_search_code)
-    search_button.pack(pady=5)
+    search_button.pack(pady=5, padx=5, fill='x', expand=True)
 
     # Indicador de carga (Progressbar)
-    loading_bar = ttk.Progressbar(scrollable_frame, mode="indeterminate", bootstyle="info")
-    loading_bar.pack(pady=10)
+    loading_bar = ttk.Progressbar(root, mode="indeterminate", bootstyle="info")
+    loading_bar.pack(side='bottom',pady=5)
     loading_bar.pack_forget()  # Se oculta hasta que se inicie la búsqueda
 
     results_frame = ttk.Frame(scrollable_frame)
@@ -1583,19 +1833,27 @@ def show_help():
     html_label.pack(expand=True, fill="both", padx=10, pady=10)
 
 def check_github_status():
+    start_time = time.time()
     try:
         response = requests.get("https://www.githubstatus.com/api/v2/status.json")
         response.raise_for_status()
+        
+        elapse_time = round((time.time() - start_time) * 1000, 2)
 
         status = response.json()
 
         if status['status']['indicator'] == 'none':
-            status_label.config(text="Github Connection Status: ✅ Ok", bootstyle='success')
+            status_label.config(text=f"Github Connection Status: ✅ Ok {elapse_time}ms", bootstyle='success')
         else:
             status_label.config(text="Github Connection Status: ❌ Error", bootstyle='danger')
     except requests.exceptions.RequestException as e:
 
         status_label.config(text="Error checking GitHub status: ❗No internet connection", bootstyle='danger')
+    
+    status_label.after(30000, threading_check_github_status)
+
+def threading_check_github_status():
+    threading.Thread(target=check_github_status, daemon=True).start()
         
 def security_check(owner, repo, token):
     def show_security_alerts(owner, repo, token):
@@ -1756,6 +2014,13 @@ def on_security_analysis_button_click():
     notebook.select(security_frame)
     
     security_check(owner_name, repo_name, token)
+    
+def update_cache():
+    if check_network():
+        obtain_github_repos()
+        ms.showinfo("✅ Success", "Cache updated successfully.")
+    else:
+        ms.showerror("⚠️ Error", "No internet connection. Cannot update cache.")
 
 path_icon = resource_path("github_control.ico")
 root = ttk.Window(title=f"Github Control{str_title_version}", themename="darkly")
@@ -1845,10 +2110,16 @@ security_tree.configure(yscrollcommand=scrollb_security.set)
 fix_security_btn = ttk.Button(security_frame, text="Fix Vulnerability", bootstyle=SUCCESS)
 fix_security_btn.pack(side='bottom', pady=5, fill='x', expand=True)
 
+ttk.Button(mygithub_frame, text="Update Cache", command=lambda: update_cache).pack(padx=5, pady=5, fill='x')
+
+search_label = ttk.Label(mygithub_frame, text="Search", bootstyle='info')
+search_label.pack(padx=5, pady=5, side='left', fill='x')
+
 search_var = tk.StringVar()
-search_entry = ttk.Entry(mygithub_frame, textvariable=search_var, width=40)
-search_entry.pack(pady=5)
+search_entry = ttk.Entry(mygithub_frame, textvariable=search_var, width=250)
+search_entry.pack(pady=5, padx=5, side='left', fill='x', expand=True)
 search_entry.bind("<KeyRelease>", filter_repositories)
+
 
 version_label = ttk.Label(root, text=f'{version}', bootstyle='info')
 version_label.pack(side='right', fill='x', padx=5, pady=5)
