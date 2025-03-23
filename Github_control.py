@@ -1112,7 +1112,7 @@ def show_repo_stats(repo_name):
                 releases_label.config(text=f"📥 Releases Downloads: {get_total_downloads(repo_name, headers)}", font=("Arial", 12, "bold"))
                 clones_label.config(text=f"🔄 Repo clones (Last 14 days): {get_total_clones(repo_name, headers)}", font=("Arial", 12, "bold"))
                 
-            except requests.exception.requests.RequestException as e:
+            except requests.exceptions.requests.RequestException as e:
                 ms.showerror("ERROR", f"Error Updating stats: {e}")
             
             stats_frame.after(15000, update_stats)
