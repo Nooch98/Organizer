@@ -1,4 +1,3 @@
-from sqlite3 import PARSE_DECLTYPES
 import tkinter as tk
 import sys
 import ttkbootstrap as ttk
@@ -14,6 +13,7 @@ import json
 import pylint.lint
 import threading
 import time
+import datetime
 
 from ttkbootstrap.constants import *
 from tkinter import messagebox as ms, filedialog, simpledialog
@@ -24,6 +24,7 @@ from pygments.lexers import get_lexer_for_filename
 from pygments.util import ClassNotFound
 from io import StringIO
 from tkinter.scrolledtext import ScrolledText
+from ping3 import ping
 
 main_version = "Version: 0.0.1"
 title_version = "_V.0.0.1"
@@ -222,6 +223,20 @@ def obtain_starred_repos():
 GITHUB_TOKEN = search_github_key()
 GITHUB_USER = obtain_github_user() if GITHUB_TOKEN else None
 
+def check_api_limits():
+    url = "https://api.github.com/rate_limit"
+    response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+    
+    if response.status_code == 200:
+        remaining_requests = int(response.headers.get("X-RateLimit-Remaining", 0))
+        limit = int(response.headers.get("X-RateLimit-Limit", 0))
+        reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
+        
+        ms.showinfo("API Limits", f"Remaining Requests: {remaining_requests}/{limit}\nReset Time: {time.ctime(reset_time)}")
+        
+    else:
+        ms.showerror("Error", f"Can't get the API limits: {response.status_code}")
+
 def unstar_repository(repo_name, repo_owner):
     url = f"https://api.github.com/user/starred/{repo_owner}/{repo_name}"
     try:
@@ -267,6 +282,46 @@ def show_github_repos():
     
     projectstree.after(60000, threading_show_github_repos)
     
+def start_show_github_repos():
+    start_bar.pack(fill='x', side='bottom', pady=5)
+    start_bar.start()
+    repos = obtain_github_repos()
+    starred_repos = obtain_starred_repos()
+
+    existing_repos = {projectstree.item(item, "values")[0]: item for item in projectstree.get_children()}
+
+    def update_or_add_repo(repo_data, repo_type):
+        repo_name = repo_data["name"]
+        repo_values = (
+            repo_name, repo_data["description"], repo_data["language"],
+            repo_data["html_url"], repo_data.get("visibility", "⭐ Destacado"),
+            repo_data["clone_url"], repo_type
+        )
+
+        if repo_name in existing_repos:
+            item_id = existing_repos[repo_name]
+            if projectstree.item(item_id, "values") != repo_values:
+                projectstree.item(item_id, values=repo_values)
+        else:
+            projectstree.insert("", "end", values=repo_values)
+
+    for repo in repos:
+        update_or_add_repo(repo, "📁 Propio")
+
+    for repo in starred_repos:
+        update_or_add_repo(repo, "⭐ Favorito")
+
+    for repo_name in list(existing_repos.keys()):
+        if repo_name not in {r["name"] for r in repos} and repo_name not in {r["name"] for r in starred_repos}:
+            projectstree.delete(existing_repos[repo_name])
+    
+    start_bar.stop()
+    start_bar.pack_forget()
+    projectstree.after(60000, threading_show_github_repos)
+    
+def threading_start_show_github_repos():
+    threading.Thread(target=start_show_github_repos, daemon=True).start()
+
 def threading_show_github_repos():
     threading.Thread(target=show_github_repos, daemon=True).start()
     
@@ -1100,7 +1155,6 @@ def show_repo_stats(repo_name):
         clones_label.pack(anchor="w")
         
         def update_stats():
-            print("ejecutando...")
             try:
                 response = requests.get(url, headers=headers)
                 response.raise_for_status()
@@ -1392,7 +1446,7 @@ def search_repositories():
 
         repo_count = 0
         page = 1
-        max_pages = 30  # 🔹 Límite de GitHub
+        max_pages = 30
 
         try:
             while page <= max_pages:
@@ -1405,7 +1459,6 @@ def search_repositories():
                     },
                 )
 
-                # 🔹 Solo mostrar error si realmente falla la API
                 if response.status_code != 200:
                     ms.showerror("Error", f"No se pudo buscar en GitHub: {response.status_code}")
                     break
@@ -1413,7 +1466,7 @@ def search_repositories():
                 data = response.json()
 
                 if "items" in data and isinstance(data["items"], list):
-                    if not data["items"]:  # 🔹 Si la página está vacía, terminamos
+                    if not data["items"]:
                         break
 
                     for repo in data["items"]:
@@ -1676,42 +1729,52 @@ def view_file_content(repo_name, repo_owner, file_path):
         ms.showerror("Error", f"No se pudo obtener el archivo: {e}")
         
 def search_code_on_github():
+    """Búsqueda de código en GitHub con paginación, scroll y visualización de código."""
+    global results, current_page, max_results_per_page, prev_button, next_button
+
+    results = []
+    current_page = 0
+    max_results_per_page = 10
+
     def search_code():
+        global results, current_page
+
         query = search_code_var.get().strip()
         if not query:
             ms.showerror("Error", "Please enter something to search for code on GitHub.")
             return
 
-        loading_bar.pack(side='bottom',pady=5)
+        loading_bar.pack(side='bottom', pady=5)
         loading_bar.start(10)
 
-        results = []
+        results.clear()
         page = 1
-        results_frame_children = results_frame.winfo_children()
-        max_results = 10
-        total_results_shown = 0
 
         try:
             while True:
                 url = f"https://api.github.com/search/code?q={query}&page={page}"
                 response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
                                                     "Accept": "application/vnd.github.v3+json"})
+                
+                remaining_requests = int(response.headers.get("X-RateLimit-Remaining", 0))
+                if remaining_requests == 0:
+                    reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
+                    wait_time = reset_time - int(time.time())
+                    
+                    if wait_time > 0:
+                        update_rate_limit_label(wait_time)
+                        time.sleep(wait_time)
+                        continue
+
                 response.raise_for_status()
                 data = response.json()
-                items = data.get("items",)
+                items = data.get("items", [])
+
+                if not items:
+                    break
+
                 results.extend(items)
-
-                # Limpiar resultados anteriores (except the initial ones)
-                for widget in results_frame.winfo_children():
-                    if widget not in results_frame_children:
-                        widget.destroy()
-
-                for item in items:
-                    if total_results_shown < max_results:
-                        display_file_result(item)
-                        total_results_shown += 1
-
-                if len(items) < 30 or total_results_shown >= max_results:
+                if len(items) < 30:
                     break
                 page += 1
 
@@ -1719,18 +1782,61 @@ def search_code_on_github():
             ms.showerror("Error", f"Could not search for code on GitHub: {e}")
 
         finally:
-            # Detener y ocultar la barra de carga
             loading_bar.stop()
             loading_bar.pack_forget()
+            rate_limit_label.config(text="")
+            root.after(0, update_results_display)
+
+    def update_rate_limit_label(wait_time):
+        if wait_time > 0:
+            rate_limit_label.config(text=f"Rate limit reached. Please wait {wait_time} seconds.")
+            if wait_time > 0:
+                root.after(1000, update_rate_limit_label, wait_time - 1)
+    
+    def update_results_display():
+        global current_page
+
+        if 'prev_button' in globals() and 'next_button' in globals():
+            prev_button.config(state=tk.NORMAL if current_page > 0 else tk.DISABLED)
+            next_button.config(state=tk.NORMAL if (current_page + 1) * max_results_per_page < len(results) else tk.DISABLED)
+
+        for widget in scrollable_frame.winfo_children():
+            widget.destroy()
+
+        start_index = current_page * max_results_per_page
+        end_index = start_index + max_results_per_page
+        page_results = results[start_index:end_index]
+
+        for item in page_results:
+            display_file_result(item)
+            
+    def threading_update_results_display():
+        threading.Thread(target=update_results_display, daemon=True).start()
+
+    def next_page():
+        global current_page
+        if (current_page + 1) * max_results_per_page < len(results):
+            current_page += 1
+            threading_update_results_display()
+
+    def prev_page():
+        global current_page
+        if current_page > 0:
+            current_page -= 1
+            threading_update_results_display()
 
     def thread_search_code():
-        threading.Thread(target=search_code).start()
-    
+        threading.Thread(target=search_code, daemon=True).start()
+
     def display_file_result(item):
-        file_name, repo_full_name, file_path, file_url = item["name"], item["repository"]["full_name"], item["path"], item["html_url"]
+        file_name = item["name"]
+        repo_full_name = item["repository"]["full_name"]
+        file_path = item["path"]
+        file_url = item["html_url"]
         repo_owner, repo_name = repo_full_name.split("/")
 
-        path_label = ttk.Label(results_frame, text=f"{file_path} - {repo_full_name}", font=("Arial", 10, "bold"), anchor="w", foreground="blue")
+        path_label = ttk.Label(scrollable_frame, text=f"{file_path} - {repo_full_name}",
+                               font=("Arial", 10, "bold"), anchor="w", foreground="blue")
         path_label.pack(fill="x", padx=10, pady=5)
         path_label.bind("<Enter>", lambda e: path_label.config(cursor="hand2"))
         path_label.bind("<Leave>", lambda e: path_label.config(cursor=""))
@@ -1743,7 +1849,6 @@ def search_code_on_github():
             response.raise_for_status()
             file_data = response.json()
 
-            # Verificar si el archivo es un archivo de texto
             if "encoding" in file_data and file_data["encoding"] == "base64":
                 file_content = base64.b64decode(file_data["content"]).decode("utf-8")
 
@@ -1755,16 +1860,17 @@ def search_code_on_github():
                     ms.showerror("Error", f"Error getting lexer for {file_name}: {e}")
                     return
 
-                code_view_frame = ttk.Frame(results_frame)
+                code_view_frame = ttk.Frame(scrollable_frame)
                 code_view_frame.pack(fill="both", padx=10, pady=5)
 
                 code_view = CodeView(code_view_frame, wrap="word", height=20, lexer=lexer)
                 code_view.pack(expand=True, fill="both")
                 code_view.insert("end", file_content)
                 code_view.config(state=tk.DISABLED)
+
             else:
-                # Si no es un archivo de texto, mostrar un mensaje
-                not_text_label = ttk.Label(results_frame, text=f"{file_path} no es un archivo de texto y no se puede mostrar.", foreground="gray")
+                not_text_label = ttk.Label(scrollable_frame, text=f"{file_path} is not a text file and cannot be displayed.",
+                                           foreground="gray")
                 not_text_label.pack(fill="x", padx=10, pady=5)
 
         except requests.exceptions.RequestException as e:
@@ -1773,7 +1879,19 @@ def search_code_on_github():
     def open_link(url):
         webbrowser.open(url)
 
-    # Frame principal
+    search_bar_frame = ttk.Frame(search_code_frame)
+    search_bar_frame.pack(fill="x", padx=10, pady=5)
+
+    search_code_var = tk.StringVar()
+    search_box = ttk.Entry(search_bar_frame, textvariable=search_code_var, width=60)
+    search_box.pack(side="left", padx=5, expand=True, fill="x")
+
+    search_button = ttk.Button(search_bar_frame, text="🔍 Search", command=thread_search_code)
+    search_button.pack(side="right", padx=5)
+    
+    rate_limit_label = ttk.Label(search_code_frame, text="", foreground="red", font=("Arial", 10, "bold"))
+    rate_limit_label.pack(side="bottom", pady=5)
+    
     canvas = tk.Canvas(search_code_frame)
     canvas.pack(side="left", fill="both", expand=True)
 
@@ -1787,20 +1905,18 @@ def search_code_on_github():
 
     scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
 
-    search_code_var = tk.StringVar()
-    search_box = ttk.Entry(scrollable_frame, textvariable=search_code_var, width=60)
-    search_box.pack(pady=5, padx=5, side='top', fill='x', expand=True)
-
-    search_button = ttk.Button(scrollable_frame, text="Search Code on GitHub", command=thread_search_code)
-    search_button.pack(pady=5, padx=5, fill='x', expand=True)
-
-    # Indicador de carga (Progressbar)
     loading_bar = ttk.Progressbar(root, mode="indeterminate", bootstyle="info")
-    loading_bar.pack(side='bottom',pady=5)
-    loading_bar.pack_forget()  # Se oculta hasta que se inicie la búsqueda
+    loading_bar.pack(side='bottom', pady=5)
+    loading_bar.pack_forget()
 
-    results_frame = ttk.Frame(scrollable_frame)
-    results_frame.pack(fill="both", expand=True, padx=10, pady=10)
+    pagination_frame = ttk.Frame(search_code_frame)  
+    pagination_frame.pack(fill="x", padx=10, pady=5, side="bottom")  
+
+    prev_button = ttk.Button(pagination_frame, text="⬅️ Previous", command=prev_page, state=tk.DISABLED)
+    prev_button.pack(side="left", padx=5, pady=5)
+
+    next_button = ttk.Button(pagination_frame, text="Next ➡️", command=next_page, state=tk.DISABLED)
+    next_button.pack(side="right", padx=5, pady=5)
 
 def create_issue(repo_name):
     issue_title = simpledialog.askstring("🐞 New Issue", "Enter issue title:")
@@ -1835,19 +1951,17 @@ def show_help():
 def check_github_status():
     start_time = time.time()
     try:
-        response = requests.get("https://www.githubstatus.com/api/v2/status.json")
-        response.raise_for_status()
-        
-        elapse_time = round((time.time() - start_time) * 1000, 2)
 
-        status = response.json()
+        response = ping("github.com", timeout=5)
 
-        if status['status']['indicator'] == 'none':
+        if response is not None:
+            elapse_time = round((time.time() - start_time) * 1000, 2)  # Convertir a ms
+
             status_label.config(text=f"Github Connection Status: ✅ Ok {elapse_time}ms", bootstyle='success')
         else:
             status_label.config(text="Github Connection Status: ❌ Error", bootstyle='danger')
-    except requests.exceptions.RequestException as e:
-
+            
+    except Exception as e:
         status_label.config(text="Error checking GitHub status: ❗No internet connection", bootstyle='danger')
     
     status_label.after(30000, threading_check_github_status)
@@ -2032,6 +2146,7 @@ root.config(menu=menu)
 help_menu = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label='help', menu=help_menu)
 help_menu.add_cascade(label='Help', command=show_help)
+help_menu.add_cascade(label='Api Limits', command=check_api_limits)
 
 notebook = ttk.Notebook(root)
 notebook.pack(expand=True, fill="both")
@@ -2092,7 +2207,6 @@ context_menu.add_command(label="📊 View Statistics", command=lambda: show_repo
 context_menu.add_command(label="📦 Create Backup", command=lambda: backup_repository(projectstree.item(projectstree.selection()[0], "values")[0]))
 context_menu.add_command(label="🐞 View Issues", command=lambda: show_repo_issues(projectstree.item(projectstree.selection()[0], "values")[0]))
 
-
 # SECURITY FRAME
 columns = ("Package", "Severity", "Description", "Fix Version")
 security_tree = ttk.Treeview(security_frame, columns=columns, show="headings", height=20, bootstyle='primary')
@@ -2120,6 +2234,7 @@ search_entry = ttk.Entry(mygithub_frame, textvariable=search_var, width=250)
 search_entry.pack(pady=5, padx=5, side='left', fill='x', expand=True)
 search_entry.bind("<KeyRelease>", filter_repositories)
 
+start_bar = Progressbar(root, mode="indeterminate", bootstyle="info")
 
 version_label = ttk.Label(root, text=f'{version}', bootstyle='info')
 version_label.pack(side='right', fill='x', padx=5, pady=5)
@@ -2127,8 +2242,7 @@ version_label.pack(side='right', fill='x', padx=5, pady=5)
 status_label = ttk.Label(root, text=f'Github Connection Status: Checking...', bootstyle='info')
 status_label.pack(side='left', fill='x', padx=5, pady=5)
 
-
-show_github_repos()
+threading_start_show_github_repos()
 search_repositories()
 search_code_on_github()
 check_github_status()
