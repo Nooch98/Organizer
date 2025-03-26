@@ -1,7 +1,8 @@
 # Organizer
 Organizer is an application developed in python and open source which allows you to organize all your projects in the same app, being able to create new projects in various languages, save already created projects, delete them and open them directly in visual studio code
 
-![Captura de pantalla 2024-03-13 074437](https://github.com/Nooch98/Organizer/assets/73700510/43e9f104-9704-448c-8873-57a98ae77789)
+
+![Captura de pantalla 2025-03-26 031655](https://github.com/user-attachments/assets/143898df-5730-4e97-8d78-d61f43c00aac)
 
 
 # SOURCE CODE FEATURE AGREE
