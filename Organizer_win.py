@@ -45,6 +45,8 @@ from git import Repo
 from tkinter.colorchooser import askcolor
 from datetime import datetime
 from pygments.lexers.markup import MarkdownLexer
+from pygments.lexers import get_lexer_for_filename
+from pygments.util import ClassNotFound
 
 
 main_version = "ver.1.9.6"
@@ -4147,6 +4149,9 @@ def unify_windows():
     edit_frame = ttk.Frame(notebook)
     issues_frame = ttk.Frame(notebook)
     stats_frame = ttk.Frame(notebook)
+    search_frame = ttk.Frame(notebook)
+    repo_view_frame = ttk.Frame(notebook)
+    search_code_frame = ttk.Frame(notebook)
 
     # Add tabs to the notebook
     notebook.add(mygithub_frame, text="My GitHub", padding=5)
@@ -4156,6 +4161,9 @@ def unify_windows():
     notebook.add(edit_frame, text="Edit Repository", padding=5)
     notebook.add(issues_frame, text="Issues", padding=5)
     notebook.add(stats_frame, text="Stats", padding=5)
+    notebook.add(search_frame, text="Search Repos", padding=5)
+    notebook.add(repo_view_frame, text="Repos View", padding=5)
+    notebook.add(search_code_frame, text="Gtihub Search", padding=5)
     
     # Define columns for the repository Treeview
     columns = ("Name", "Description", "Language", "URL", "Visibility", "Clone URL")
@@ -4174,7 +4182,7 @@ def unify_windows():
     repostree.configure(yscrollcommand=scrollb.set)
     scrollb.pack(side=RIGHT, fill=Y, padx=5, pady=5)
     
-    repostree.pack(expand=True, fill="both", padx=10, pady=10)
+    repostree.pack(expand=True, fill="both", padx=5, pady=5)
     
     def filter_repositories(event):
         query = search_var.get().lower()
@@ -4186,9 +4194,12 @@ def unify_windows():
             else:
                 repostree.selection_remove(item)
     
+    search_label = ttk.Label(mygithub_frame, text="Search", bootstyle='info')
+    search_label.pack(padx=5, pady=5, side='left', fill='x')
+    
     search_var = tk.StringVar()
     search_entry = ttk.Entry(mygithub_frame, textvariable=search_var, width=40)
-    search_entry.pack(pady=5)
+    search_entry.pack(pady=5, padx=5, side='left', fill='x', expand=True)
     search_entry.bind("<KeyRelease>", filter_repositories)
     
     def menu_contextual(event):
@@ -4392,6 +4403,497 @@ def unify_windows():
 
         except requests.exceptions.RequestException as e:
             ms.showerror("Error", f"Can't obtain the statistics of the repository: {e}")
+    
+    def search_repositories():
+        def search_repositories_global():
+            query = search_var.get().strip()
+            if not query:
+                ms.showerror("Error", "Escribe algo para buscar.")
+                return
+
+            load_bar = Progressbar(github, orient=tk.HORIZONTAL, mode='indeterminate')
+            load_bar.pack(side='bottom', padx=5, pady=5, fill='x')
+            load_bar.start()
+
+            repo_count = 0
+            page = 1
+            max_pages = 30
+
+            try:
+                while page <= max_pages:
+                    url = f"https://api.github.com/search/repositories?q={query}&page={page}"
+                    response = requests.get(
+                        url,
+                        headers={
+                            "Authorization": f"token {GITHUB_TOKEN}",
+                            "Accept": "application/vnd.github.v3+json",
+                        },
+                    )
+
+                    if response.status_code != 200:
+                        ms.showerror("Error", f"No se pudo buscar en GitHub: {response.status_code}")
+                        break
+
+                    data = response.json()
+
+                    if "items" in data and isinstance(data["items"], list):
+                        if not data["items"]:
+                            break
+
+                        for repo in data["items"]:
+                            search_tree.insert(
+                                "",
+                                "end",
+                                values=(
+                                    repo["name"],
+                                    repo["owner"]["login"],
+                                    repo["stargazers_count"],
+                                    repo["html_url"],
+                                    repo["clone_url"],
+                                ),
+                            )
+                            repo_count += 1
+                            repo_count_label.config(text=f"Found Repos: {repo_count}")
+                            load_bar.step(1)
+
+                        page += 1
+                    else:
+                        break
+
+            except requests.exceptions.RequestException as e:
+                ms.showerror("Error", f"No se pudo buscar en GitHub: {e}")
+
+            finally:
+                load_bar.stop()
+                load_bar.pack_forget()
+
+        
+        def threading_search():
+            threading.Thread(target=search_repositories_global).start()
+        
+        def star_repository(repo_name, repo_owner):
+            url = f"https://api.github.com/user/starred/{repo_owner}/{repo_name}"
+            try:
+                response = requests.put(url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+                if response.status_code == 204:
+                    ms.showinfo("Éxito", f"Has dado estrella a '{repo_name}'.")
+                else:
+                    ms.showerror("Error", f"No se pudo dar estrella: {response.status_code}")
+            except requests.exceptions.RequestException as e:
+                ms.showerror("Error", f"Error al dar estrella: {e}")
+        
+        def search_menu_context(event):
+            item = search_tree.identify_row(event.y)
+            if item:
+                search_tree.selection_set(item)
+                search_context_menu.post(event.x_root, event.y_root)
+                
+        def on_repo_search_double_click(event):
+            selected_item = search_tree.selection()
+            if selected_item:
+                repo_name = search_tree.item(selected_item, "values")[0]
+                repo_owner = search_tree.item(selected_item, "values")[1]
+                
+                global repo_history
+                repo_history = []
+
+                view_repo_details(repo_name, repo_owner)
+                
+        def search_repos_in_treeview(event):
+            search_query = search_entry_repos.get().strip().lower()
+            found_items = []
+
+            for item in search_tree.get_children():
+                values = search_tree.item(item, "values")
+                repo_name = values[0].lower()
+                owner_name = values[1].lower()
+                stars = str(values[2])
+
+                if search_query in repo_name or search_query in owner_name or search_query in stars:
+                    search_tree.item(item, tags=("match",))
+                    found_items.append(item)
+                else:
+                    search_tree.item(item, tags=("nomatch",))
+
+            if found_items:
+                search_tree.selection_set(found_items[0])
+                search_tree.focus(found_items[0])
+                search_tree.see(found_items[0])
+                
+        def clone_repository_from_search():
+            selected_item = search_tree.selection()
+            if not selected_item:
+                ms.showerror("ERROR", "Select a repo to clone")
+                return
+            
+            repo_name = search_tree.item(selected_item, "values")[0]
+            repo_owner = search_tree.item(selected_item, "values")[1]
+            clone_url = search_tree.item(selected_item, "values")[4]
+
+            save_path = tk.filedialog.askdirectory(title="Select Path folder")
+            if not save_path:
+                return
+
+            dest_folder = os.path.join(save_path, repo_name)
+
+            load_bar = Progressbar(github, orient=tk.HORIZONTAL, mode='indeterminate')
+            load_bar.pack(side='bottom', padx=5, pady=5, fill='x')
+            load_bar.start()
+            
+            def clone_repo():
+                try:
+                    subprocess.run(["git", "clone", clone_url, dest_folder], check=True)
+                    ms.showinfo("Success", f"Repo '{repo_name}' successfully cloned in:\n{dest_folder}")
+                except subprocess.CalledProcessError:
+                    ms.showerror("Error", "The repository could not be cloned. Please verify that Git is installed.")
+                finally:
+                    load_bar.stop()
+                    load_bar.pack_forget()
+            
+            threading.Thread(target=clone_repo).start()
+                    
+
+        search_var = tk.StringVar()
+        ttk.Entry(search_frame, textvariable=search_var, width=50).pack(pady=5, padx=10)
+        ttk.Button(search_frame, text="🔍 Search", command=threading_search).pack(pady=5)
+
+        columns = ("Name", "Owner", "Stars", "URL", "Clone URL")
+        search_tree = ttk.Treeview(search_frame, columns=columns, show="headings", height=15)
+
+        search_tree.heading("Name", text="Name")
+        search_tree.heading("Owner", text="Owner")
+        search_tree.heading("Stars", text="⭐ Stars")
+        search_tree.heading("URL", text="URL")
+        search_tree.heading("Clone URL", text="Clone URL")
+
+        search_tree.column("Name", width=200)
+        search_tree.column("Owner", width=150)
+        search_tree.column("Stars", width=100)
+        search_tree.column("URL", width=250)
+        search_tree.column("Clone URL", width=250)
+        
+        scrolls = ttk.Scrollbar(search_frame, orient='vertical', command=search_tree.yview,
+        bootstyle='primary-rounded')
+        search_tree.configure(yscrollcommand=scrolls.set)
+        scrolls.pack(side='right', fill='y', padx=5)
+        
+        search_tree.pack(expand=True, fill="both", padx=5, pady=5)
+        search_tree.bind("<Double-1>", on_repo_search_double_click)
+        search_tree.bind("<Button-3>", search_menu_context)
+        
+        repo_count_label = ttk.Label(search_frame, text="Found Repos: 0", bootstyle='info')
+        repo_count_label.pack(side='left', fill='x', padx=5, pady=5, expand=True)
+        
+        search_repos_label = ttk.Label(search_frame, text="Search on Repos", bootstyle='info')
+        search_repos_label.pack(side='left', fill='x', padx=5, pady=5, expand=True)
+        
+        search_entry_repos = ttk.Entry(search_frame, width=250)
+        search_entry_repos.pack(side='left', fill='x', padx=5, pady=5, expand=True)
+        search_entry_repos.bind("<KeyRelease>", search_repos_in_treeview)
+        
+        search_context_menu = tk.Menu(github, tearoff=0)
+        search_context_menu.add_command(label="⭐ Agregar a Favoritos", command=lambda: star_repository(search_tree.item(search_tree.selection()[0], "values")[0], search_tree.item(search_tree.selection()[0], "values")[1]))
+        search_context_menu.add_command(label="🛠️ Clonar Repositorio", command=lambda: clone_repository_from_search())
+
+    def go_back(repo_name, repo_owner):
+        if repo_history:
+            repo_history.pop()
+            prev_path = repo_history[-1] if repo_history else ""
+            view_repo_details(repo_name, repo_owner, prev_path)
+
+    def view_repo_details(repo_name, repo_owner, path=""):
+        notebook.select(repo_view_frame)
+
+
+        if path and (not repo_history or repo_history[-1] != path):
+            repo_history.append(path)
+
+        for widget in repo_view_frame.winfo_children():
+            widget.destroy()
+
+        back_button = ttk.Button(repo_view_frame, text="⬅️ Atrás", command=lambda: go_back(repo_name, repo_owner))
+        back_button.pack(pady=5, padx=10, anchor="w")
+
+        if not repo_history:
+            back_button["state"] = "disabled"
+
+        ttk.Label(repo_view_frame, text=f"📂 Explorando {repo_owner}/{repo_name}/{path}", font=("Arial", 14, "bold")).pack(pady=5)
+
+        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+
+        if path == "":
+            readme_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/readme"
+            response_readme = requests.get(readme_url, headers=headers)
+
+            if response_readme.status_code == 200:
+                readme_data = response_readme.json()
+                readme_content = base64.b64decode(readme_data["content"]).decode("utf-8")
+                readme_html = markdown.markdown(readme_content)
+            else:
+                readme_html = "<p>This repository does not have a README.md.</p>"
+
+            readme_frame = ttk.LabelFrame(repo_view_frame, text="📖 README.md", padding=10, bootstyle="info")
+            readme_frame.pack(fill="both", padx=10, pady=5)
+
+            readme_label = HTMLLabel(readme_frame, html=readme_html, background="white", padx=5, pady=5)
+            readme_label.pack(expand=True, fill="both")
+
+            ttk.Separator(repo_view_frame, orient="horizontal").pack(fill="x", padx=10, pady=5)
+
+        file_list_frame = ttk.LabelFrame(repo_view_frame, text="📂 Files", padding=10, bootstyle="success")
+        file_list_frame.pack(fill="both", padx=10, pady=5)
+
+        file_tree = ttk.Treeview(file_list_frame, columns=("Name", "Type", "Path"), show="headings", height=15)
+        file_tree.heading("Name", text="Name")
+        file_tree.heading("Type", text="Type")
+        file_tree.heading("Path", text="Full Path")
+        file_tree.column("Name", width=300)
+        file_tree.column("Type", width=100)
+        file_tree.column("Path", width=0, stretch=False)
+        file_tree.pack(expand=True, fill="both", padx=5, pady=5)
+
+        files_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{path}"
+        response_files = requests.get(files_url, headers=headers)
+
+        if response_files.status_code == 200:
+            files = response_files.json()
+            for file in files:
+                file_tree.insert("", "end", values=(file.get("name"), file.get("type"), file.get("path")))
+
+        else:
+            ms.showerror("Error", f"Could not get the files of the repository: {response_files.status_code}")
+
+        def on_file_double_click(event):
+            selected_item = file_tree.selection()
+            if selected_item:
+                file_name, file_type, file_path = file_tree.item(selected_item, "values")
+                if file_type == "dir":
+                    view_repo_details(repo_name, repo_owner, file_path)
+                elif file_type == "file":
+                    view_file_content(repo_name, repo_owner, file_path)
+
+        file_tree.bind("<Double-1>", on_file_double_click)
+        
+    def view_file_content(repo_name, repo_owner, file_path):
+        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+        file_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{file_path}"
+
+        try:
+            response = requests.get(file_url, headers=headers)
+            response.raise_for_status()
+            file_data = response.json()
+            file_content = base64.b64decode(file_data["content"]).decode("utf-8")
+
+            file_window = tk.Toplevel(orga)
+            file_window.title(f"📄 {file_path}")
+            file_window.iconbitmap(path)
+
+            ttk.Label(file_window, text=f"📄 {file_path}", font=("Arial", 12, "bold")).pack(pady=5)
+
+            text_editor = CodeView(file_window, wrap="word", height=25)
+            text_editor.pack(expand=True, fill="both", padx=10, pady=10)
+
+            try:
+                lexer = pygments.lexers.get_lexer_for_filename(file_path)
+            except:
+                lexer = pygments.lexers.get_lexer_by_name("text")
+
+            text_editor.config(lexer=lexer)
+            text_editor.insert("1.0", file_content)
+
+        except requests.exceptions.RequestException as e:
+            ms.showerror("Error", f"No se pudo obtener el archivo: {e}")
+            
+    def search_code_on_github():
+        """Búsqueda de código en GitHub con paginación, scroll y visualización de código."""
+        global results, current_page, max_results_per_page, prev_button, next_button
+
+        results = []
+        current_page = 0
+        max_results_per_page = 10
+
+        def search_code():
+            global results, current_page
+
+            query = search_code_var.get().strip()
+            if not query:
+                ms.showerror("Error", "Please enter something to search for code on GitHub.")
+                return
+
+            loading_bar.pack(side='bottom', pady=5)
+            loading_bar.start(10)
+
+            results.clear()
+            page = 1
+
+            try:
+                while True:
+                    url = f"https://api.github.com/search/code?q={query}&page={page}"
+                    response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
+                                                        "Accept": "application/vnd.github.v3+json"})
+                    
+                    remaining_requests = int(response.headers.get("X-RateLimit-Remaining", 0))
+                    if remaining_requests == 0:
+                        reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
+                        wait_time = reset_time - int(time.time())
+                        
+                        if wait_time > 0:
+                            update_rate_limit_label(wait_time)
+                            time.sleep(wait_time)
+                            continue
+
+                    response.raise_for_status()
+                    data = response.json()
+                    items = data.get("items", [])
+
+                    if not items:
+                        break
+
+                    results.extend(items)
+                    if len(items) < 30:
+                        break
+                    page += 1
+
+            except requests.exceptions.RequestException as e:
+                ms.showerror("Error", f"Could not search for code on GitHub: {e}")
+
+            finally:
+                loading_bar.stop()
+                loading_bar.pack_forget()
+                rate_limit_label.config(text="")
+                github.after(0, update_results_display)
+
+        def update_rate_limit_label(wait_time):
+            if wait_time > 0:
+                rate_limit_label.config(text=f"Rate limit reached. Please wait {wait_time} seconds.")
+                if wait_time > 0:
+                    github.after(1000, update_rate_limit_label, wait_time - 1)
+        
+        def update_results_display():
+            global current_page
+
+            if 'prev_button' in globals() and 'next_button' in globals():
+                prev_button.config(state=tk.NORMAL if current_page > 0 else tk.DISABLED)
+                next_button.config(state=tk.NORMAL if (current_page + 1) * max_results_per_page < len(results) else tk.DISABLED)
+
+            for widget in scrollable_frame.winfo_children():
+                widget.destroy()
+
+            start_index = current_page * max_results_per_page
+            end_index = start_index + max_results_per_page
+            page_results = results[start_index:end_index]
+
+            for item in page_results:
+                display_file_result(item)
+                
+        def threading_update_results_display():
+            threading.Thread(target=update_results_display, daemon=True).start()
+
+        def next_page():
+            global current_page
+            if (current_page + 1) * max_results_per_page < len(results):
+                current_page += 1
+                threading_update_results_display()
+
+        def prev_page():
+            global current_page
+            if current_page > 0:
+                current_page -= 1
+                threading_update_results_display()
+
+        def thread_search_code():
+            threading.Thread(target=search_code, daemon=True).start()
+
+        def display_file_result(item):
+            file_name = item["name"]
+            repo_full_name = item["repository"]["full_name"]
+            file_path = item["path"]
+            file_url = item["html_url"]
+            repo_owner, repo_name = repo_full_name.split("/")
+
+            path_label = ttk.Label(scrollable_frame, text=f"{file_path} - {repo_full_name}",
+                                font=("Arial", 10, "bold"), anchor="w", foreground="blue")
+            path_label.pack(fill="x", padx=10, pady=5)
+            path_label.bind("<Enter>", lambda e: path_label.config(cursor="hand2"))
+            path_label.bind("<Leave>", lambda e: path_label.config(cursor=""))
+            path_label.bind("<Button-1>", lambda e: open_link(file_url))
+
+            file_api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{file_path}"
+
+            try:
+                response = requests.get(file_api_url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+                response.raise_for_status()
+                file_data = response.json()
+
+                if "encoding" in file_data and file_data["encoding"] == "base64":
+                    file_content = base64.b64decode(file_data["content"]).decode("utf-8")
+
+                    try:
+                        lexer = get_lexer_for_filename(file_name)
+                    except ClassNotFound:
+                        lexer = pygments.lexers.get_lexer_by_name("text")
+                    except Exception as e:
+                        ms.showerror("Error", f"Error getting lexer for {file_name}: {e}")
+                        return
+
+                    code_view_frame = ttk.Frame(scrollable_frame)
+                    code_view_frame.pack(fill="both", padx=10, pady=5)
+
+                    code_view = CodeView(code_view_frame, wrap="word", height=20, lexer=lexer)
+                    code_view.pack(expand=True, fill="both")
+                    code_view.insert("end", file_content)
+                    code_view.config(state=tk.DISABLED)
+
+                else:
+                    not_text_label = ttk.Label(scrollable_frame, text=f"{file_path} is not a text file and cannot be displayed.",
+                                            foreground="gray")
+                    not_text_label.pack(fill="x", padx=10, pady=5)
+
+            except requests.exceptions.RequestException as e:
+                ms.showerror("Error", f"Could not get the code file: {e}")
+
+        def open_link(url):
+            webbrowser.open(url)
+
+        search_bar_frame = ttk.Frame(search_code_frame)
+        search_bar_frame.pack(fill="x", padx=10, pady=5)
+
+        search_code_var = tk.StringVar()
+        search_box = ttk.Entry(search_bar_frame, textvariable=search_code_var, width=60)
+        search_box.pack(side="left", padx=5, expand=True, fill="x")
+
+        search_button = ttk.Button(search_bar_frame, text="🔍 Search", command=thread_search_code)
+        search_button.pack(side="right", padx=5)
+        
+        rate_limit_label = ttk.Label(search_code_frame, text="", foreground="red", font=("Arial", 10, "bold"))
+        rate_limit_label.pack(side="bottom", pady=5)
+        
+        canvas = tk.Canvas(search_code_frame)
+        canvas.pack(side="left", fill="both", expand=True)
+
+        scrollbar = ttk.Scrollbar(search_code_frame, orient="vertical", command=canvas.yview)
+        scrollbar.pack(side="right", fill="y")
+
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollable_frame = ttk.Frame(canvas)
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        loading_bar = ttk.Progressbar(github, mode="indeterminate", bootstyle="info")
+        loading_bar.pack(side='bottom', pady=5)
+        loading_bar.pack_forget()
+
+        pagination_frame = ttk.Frame(search_code_frame)  
+        pagination_frame.pack(fill="x", padx=10, pady=5, side="bottom")  
+
+        prev_button = ttk.Button(pagination_frame, text="⬅️ Previous", command=prev_page, state=tk.DISABLED)
+        prev_button.pack(side="left", padx=5, pady=5)
+
+        next_button = ttk.Button(pagination_frame, text="Next ➡️", command=next_page, state=tk.DISABLED)
+        next_button.pack(side="right", padx=5, pady=5)
+
     
     def edit_repository1(name):
         notebook.select(edit_frame)
@@ -5020,6 +5522,9 @@ def unify_windows():
         commit_tree.bind("<Double-Button-1>", load_commit_changes)
 
         load_files()
+    
+    search_repositories()
+    search_code_on_github()
         
 menu_name = "Organizer"
 description_menu = "Open Organizer"
@@ -5297,7 +5802,6 @@ btn_abrir.grid(row=7, column=0, columnspan=2, pady=10, padx=5, sticky="s")
 version_label = ttk.Label(main_frame, text=f'{version}', bootstyle='info')
 version_label.grid(row=7, column=1, pady=5, padx=5, sticky="se")
 
-# Configuración de peso y distribución
 main_frame.grid_rowconfigure(4, weight=1)
 
 if len(sys.argv) > 1:
