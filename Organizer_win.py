@@ -49,7 +49,7 @@ from pygments.lexers import get_lexer_for_filename
 from pygments.util import ClassNotFound
 
 
-main_version = "ver.1.9.6"
+main_version = "ver.1.9.7"
 version = str(main_version)
 base_path = os.path.dirname(os.path.abspath(sys.argv[0]))
 db_path = os.path.join(base_path, "proyectos.db")
@@ -62,7 +62,7 @@ selected_project_path = None
 text_editor = None
 app_name = "Organizer_win.exe"
 exe_path = os.path.abspath(sys.argv[0])
-current_version = "v1.9.6"
+current_version = "v1.9.7"
 
 # Integration with local control version app
 VCS_DIR = ".myvcs"
@@ -3596,25 +3596,18 @@ def aplicar_plantilla():
                                                 "(python, java, cpp, javascript, php, csharp, rust, go, react, bun, vue)")
 
     if lenguaje and lenguaje in TEMPLATES:
-        # Obtener la ruta de la plantilla predefinida
         ruta_plantilla = TEMPLATES[lenguaje]
-
-        # Solicitar al usuario donde quiere crear el nuevo proyecto
-        ruta_nueva = filedialog.askdirectory(title="Selecciona la carpeta donde crear el nuevo proyecto")
+        ruta_nueva = filedialog.askdirectory(title="Select path folder for new Project")
         if not ruta_nueva:
             return
 
-        # Crear el proyecto a partir de la plantilla
         crear_proyecto_desde_plantilla(ruta_plantilla, ruta_nueva)
     else:
         ms.showerror("Error", "Lenguaje no soportado o no válido.")
 
 
 def crear_proyecto_desde_plantilla(ruta_plantilla, ruta_nueva):
-    """Crear un nuevo proyecto a partir de la plantilla seleccionada."""
     try:
-        # Copiar toda la estructura de la plantilla al directorio nuevo
-        # El contenido de la plantilla (archivos y subcarpetas) se copia directamente
         shutil.copytree(ruta_plantilla, ruta_nueva)
 
         ms.showinfo("Éxito", "Proyecto creado con éxito desde la plantilla.")
@@ -4133,9 +4126,29 @@ def sync_repo_files(repo_url, local_path):
 
 def unify_windows():
     """Unifies all the separate windows into a single window."""
+    def check_api_limits():
+        url = "https://api.github.com/rate_limit"
+        response = requests.get(url, headers={"Authorization": f"token {GITHUB_TOKEN}"})
+        
+        if response.status_code == 200:
+            remaining_requests = int(response.headers.get("X-RateLimit-Remaining", 0))
+            limit = int(response.headers.get("X-RateLimit-Limit", 0))
+            reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
+            
+            ms.showinfo("API Limits", f"Remaining Requests: {remaining_requests}/{limit}\nReset Time: {time.ctime(reset_time)}")
+            
+        else:
+            ms.showerror("Error", f"Can't get the API limits: {response.status_code}")
+    
     github = tk.Toplevel(orga)
     github.title("GitHub Repository Manager")
     github.iconbitmap(path)
+    
+    menu = tk.Menu(github, tearoff=0)
+    github.config(menu=menu)
+    help_menu = tk.Menu(menu, tearoff=0)
+    menu.add_cascade(label='Help', menu=help_menu)
+    help_menu.add_cascade(label='API Limits', command=check_api_limits)
     
     # Create a notebook (tabbed interface)
     notebook = ttk.Notebook(github, bootstyle='primary')
