@@ -1159,25 +1159,42 @@ def show_repo_stats(repo_name):
             last_release_label = ttk.Label(traffic_frame, text=f"🚀 Last Release: {last_release_info['name']} ({last_release_info['version']})", font=("Arial", 12, "bold"))
             last_release_label.pack(anchor="w")
             for asset in last_release_info['assets']:
-                ttk.Label(traffic_frame, text=f"📥 {asset['name']} - Downloads: {asset['download_count']}", font=("Arial", 12, "bold")).pack(anchor="w")
+                las_asset_downloads = ttk.Label(traffic_frame, text=f"📥 {asset['name']} - Downloads: {asset['download_count']}", font=("Arial", 12, "bold"))
+                las_asset_downloads.pack(anchor="w")
         else:
-            ttk.Label(traffic_frame, text="🚫 Don't have downloads for the las release", font=("Arial", 12, "bold")).pack(anchor="w")
+            error_last_asset_label = ttk.Label(traffic_frame, text="🚫 Don't have downloads for the las release", font=("Arial", 12, "bold"))
+            error_last_asset_label.pack(anchor="w")
 
         def update_stats():
             try:
                 response = requests.get(url, headers=headers)
                 response.raise_for_status()
                 new_data = response.json()
+
+                # Verificar si el widget existe antes de actualizarlo
+                if stars_label.winfo_exists():
+                    stars_label.config(text=f"⭐ Stars: {new_data.get('stargazers_count', 0)}", font=("Arial", 12, "bold"))
+                if forks_label.winfo_exists():
+                    forks_label.config(text=f"🍴 Forks: {new_data.get('forks_count', 0)}", font=("Arial", 12, "bold"))
+                if watchers_label.winfo_exists():
+                    watchers_label.config(text=f"👀 Watchers: {new_data.get('watchers_count', 0)}", font=("Arial", 12, "bold"))
+                if releases_label.winfo_exists():
+                    releases_label.config(text=f"📥 Total Downloads de Releases: {get_total_downloads(repo_name, headers)}", font=("Arial", 12, "bold"))
+                if clones_label.winfo_exists():
+                    clones_label.config(text=f"🔄 Repo clones (Last 14 days): {get_total_clones(repo_name, headers)}", font=("Arial", 12, "bold"))
                 
-                stars_label.config(text=f"⭐ Stars: {new_data.get('stargazers_count', 0)}", font=("Arial", 12, "bold"))
-                forks_label.config(text=f"🍴 Forks: {new_data.get('forks_count', 0)}", font=("Arial", 12, "bold"))
-                watchers_label.config(text=f"👀 Watchers: {new_data.get('watchers_count', 0)}", font=("Arial", 12, "bold"))
-                releases_label.config(text=f"📥 Total Downloads de Releases: {get_total_downloads(repo_name, headers)}", font=("Arial", 12, "bold"))
-                clones_label.config(text=f"🔄 Repo clones (Last 14 days): {get_total_clones(repo_name, headers)}", font=("Arial", 12, "bold"))
-                
+                # Verificar si el último release info está disponible
+                last_release_info = get_last_release_info(repo_name, headers)
+                if last_release_info:
+                    if last_release_label.winfo_exists():
+                        last_release_label.config(text=f"🚀 Last Release: {last_release_info['name']} (v{last_release_info['version']})", font=("Arial", 12, "bold"))
+                    for asset in last_release_info['assets']:
+                        las_asset_downloads.config(text=f"📥 {asset['name']} - Downloads: {asset['download_count']}", font=("Arial", 12, "bold"))
+
             except requests.exceptions.RequestException as e:
                 ms.showerror("ERROR", f"Error Updating stats: {e}")
-            
+
+            # Volver a llamar la función después de 15 segundos
             stats_frame.after(15000, update_stats)
             
         update_stats()
