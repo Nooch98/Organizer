@@ -1101,11 +1101,11 @@ def open_repo_files1(repo_name):
         
 def show_repo_stats(repo_name):
     notebook.select(stats_frame)
-    
+
     for widget in stats_frame.winfo_children():
         widget.destroy()
 
-    ttk.Label(stats_frame, text=f"📊 Estadísticas de {repo_name}", font=("Arial", 16, "bold")).pack(pady=10)
+    ttk.Label(stats_frame, text=f"📊 Statistics of {repo_name}", font=("Arial", 16, "bold")).pack(pady=10)
 
     try:
         url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}"
@@ -1114,7 +1114,7 @@ def show_repo_stats(repo_name):
         response.raise_for_status()
         repo_data = response.json()
 
-        description = repo_data.get("description", "Este repositorio no tiene descripción.")
+        description = repo_data.get("description", "This Repo don't have description.")
 
         readme_url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/readme"
         response_readme = requests.get(readme_url, headers=headers)
@@ -1126,7 +1126,7 @@ def show_repo_stats(repo_name):
         else:
             readme_html = f"<p>{description}</p>" 
 
-        readme_frame = ttk.LabelFrame(stats_frame, text="📖 README / Descripción", padding=10, bootstyle="info")
+        readme_frame = ttk.LabelFrame(stats_frame, text="📖 README / description", padding=10, bootstyle="info")
         readme_frame.pack(fill="both", padx=10, pady=5)
 
         readme_label = HTMLLabel(readme_frame, html=readme_html, background="white", padx=5, pady=5)
@@ -1134,7 +1134,7 @@ def show_repo_stats(repo_name):
 
         ttk.Separator(stats_frame, orient="horizontal").pack(fill="x", padx=10, pady=5)
 
-        popularity_frame = ttk.LabelFrame(stats_frame, text="🌟 Popularidad", padding=10, bootstyle="primary")
+        popularity_frame = ttk.LabelFrame(stats_frame, text="🌟 Popularity", padding=10, bootstyle="primary")
         popularity_frame.pack(fill="x", padx=10, pady=5)
 
         stars_label = ttk.Label(popularity_frame, text=f"⭐ Stars: {repo_data.get('stargazers_count', 0)}", font=("Arial", 12, "bold"))
@@ -1149,11 +1149,20 @@ def show_repo_stats(repo_name):
         traffic_frame = ttk.LabelFrame(stats_frame, text="📈 Trafic", padding=10, bootstyle="success")
         traffic_frame.pack(fill="x", padx=10, pady=5)
 
-        releases_label = ttk.Label(traffic_frame, text=f"📥 Releases Downloads: {get_total_downloads(repo_name, headers)}", font=("Arial", 12, "bold"))
+        releases_label = ttk.Label(traffic_frame, text=f"📥 Total Downloads of Releases: {get_total_downloads(repo_name, headers)}", font=("Arial", 12, "bold"))
         releases_label.pack(anchor="w")
         clones_label= ttk.Label(traffic_frame, text=f"🔄 Repo clones (Last 14 days): {get_total_clones(repo_name, headers)}", font=("Arial", 12, "bold"))
         clones_label.pack(anchor="w")
-        
+
+        last_release_info = get_last_release_info(repo_name, headers)
+        if last_release_info:
+            last_release_label = ttk.Label(traffic_frame, text=f"🚀 Last Release: {last_release_info['name']} ({last_release_info['version']})", font=("Arial", 12, "bold"))
+            last_release_label.pack(anchor="w")
+            for asset in last_release_info['assets']:
+                ttk.Label(traffic_frame, text=f"📥 {asset['name']} - Downloads: {asset['download_count']}", font=("Arial", 12, "bold")).pack(anchor="w")
+        else:
+            ttk.Label(traffic_frame, text="🚫 Don't have downloads for the las release", font=("Arial", 12, "bold")).pack(anchor="w")
+
         def update_stats():
             try:
                 response = requests.get(url, headers=headers)
@@ -1163,10 +1172,10 @@ def show_repo_stats(repo_name):
                 stars_label.config(text=f"⭐ Stars: {new_data.get('stargazers_count', 0)}", font=("Arial", 12, "bold"))
                 forks_label.config(text=f"🍴 Forks: {new_data.get('forks_count', 0)}", font=("Arial", 12, "bold"))
                 watchers_label.config(text=f"👀 Watchers: {new_data.get('watchers_count', 0)}", font=("Arial", 12, "bold"))
-                releases_label.config(text=f"📥 Releases Downloads: {get_total_downloads(repo_name, headers)}", font=("Arial", 12, "bold"))
+                releases_label.config(text=f"📥 Total Downloads de Releases: {get_total_downloads(repo_name, headers)}", font=("Arial", 12, "bold"))
                 clones_label.config(text=f"🔄 Repo clones (Last 14 days): {get_total_clones(repo_name, headers)}", font=("Arial", 12, "bold"))
                 
-            except requests.exceptions.requests.RequestException as e:
+            except requests.exceptions.RequestException as e:
                 ms.showerror("ERROR", f"Error Updating stats: {e}")
             
             stats_frame.after(15000, update_stats)
@@ -1186,6 +1195,26 @@ def get_total_downloads(repo_name, headers):
             for asset in release.get("assets", []):
                 total_downloads += asset.get("download_count", 0)
     return total_downloads
+
+
+def get_last_release_info(repo_name, headers):
+    last_release_info = {}
+    releases_url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/releases"
+    response_releases = requests.get(releases_url, headers=headers)
+    if response_releases.status_code == 200:
+        releases = response_releases.json()
+        if releases:
+            last_release = releases[0]
+            last_release_info['name'] = last_release.get("name", "Unknown Release")
+            last_release_info['version'] = last_release.get("tag_name", "N/A")
+            last_release_info['assets'] = []
+            for asset in last_release.get("assets", []):
+                last_release_info['assets'].append({
+                    "name": asset.get("name"),
+                    "download_count": asset.get("download_count")
+                })
+    return last_release_info
+
 
 def get_total_clones(repo_name, headers):
     clones_url = f"https://api.github.com/repos/{GITHUB_USER}/{repo_name}/traffic/clones"
@@ -1530,24 +1559,33 @@ def search_repositories():
             
     def search_repos_in_treeview(event):
         search_query = search_entry_repos.get().strip().lower()
-        found_items = []
-
+    
+        # Limpiar el Treeview antes de aplicar el filtro
         for item in search_tree.get_children():
-            values = search_tree.item(item, "values")
-            repo_name = values[0].lower()
-            owner_name = values[1].lower()
-            stars = str(values[2])
-
-            if search_query in repo_name or search_query in owner_name or search_query in stars:
+            search_tree.item(item, tags=("nomatch",))
+        
+        if not search_query:
+            # Si no hay búsqueda, mostrar todos los resultados
+            for item in search_tree.get_children():
                 search_tree.item(item, tags=("match",))
-                found_items.append(item)
-            else:
-                search_tree.item(item, tags=("nomatch",))
-
-        if found_items:
-            search_tree.selection_set(found_items[0])
-            search_tree.focus(found_items[0])
-            search_tree.see(found_items[0])
+        else:
+            found_items = []
+            for item in search_tree.get_children():
+                values = search_tree.item(item, "values")
+                repo_name = values[0].lower()
+                owner_name = values[1].lower()
+                stars = str(values[2])
+                
+                if search_query in repo_name or search_query in owner_name or search_query in stars:
+                    search_tree.item(item, tags=("match",))
+                    found_items.append(item)
+                else:
+                    search_tree.item(item, tags=("nomatch",))
+        
+            if found_items:
+                search_tree.selection_set(found_items[0])
+                search_tree.focus(found_items[0])
+                search_tree.see(found_items[0])
             
     def clone_repository_from_search():
         selected_item = search_tree.selection()
