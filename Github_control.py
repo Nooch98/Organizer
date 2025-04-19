@@ -1,3 +1,4 @@
+from pydoc import text
 import tkinter as tk
 import sys
 import ttkbootstrap as ttk
@@ -259,7 +260,7 @@ def show_github_repos():
         repo_name = repo_data["name"]
         repo_values = (
             repo_name, repo_data["description"], repo_data["language"],
-            repo_data["html_url"], repo_data.get("visibility", "⭐ Destacado"),
+            repo_data["html_url"], repo_data.get("visibility", "⭐ Favorite"),
             repo_data["clone_url"], repo_type
         )
 
@@ -267,24 +268,30 @@ def show_github_repos():
             item_id = existing_repos[repo_name]
             if projectstree.item(item_id, "values") != repo_values:
                 projectstree.item(item_id, values=repo_values)
+            if item_id not in all_project_items:
+                all_project_items.append(item_id)
         else:
-            projectstree.insert("", "end", values=repo_values)
+            item_id = projectstree.insert("", "end", values=repo_values)
+            all_project_items.append(item_id)
 
     for repo in repos:
-        update_or_add_repo(repo, "📁 Propio")
+        update_or_add_repo(repo, "📁 Own")
 
     for repo in starred_repos:
-        update_or_add_repo(repo, "⭐ Favorito")
+        update_or_add_repo(repo, "⭐ Favorite")
 
     for repo_name in list(existing_repos.keys()):
         if repo_name not in {r["name"] for r in repos} and repo_name not in {r["name"] for r in starred_repos}:
             projectstree.delete(existing_repos[repo_name])
+    
+    apply_conditional_colors()
     
     projectstree.after(60000, threading_show_github_repos)
     
 def start_show_github_repos():
     start_bar.pack(fill='x', side='bottom', pady=5)
     start_bar.start()
+    all_project_items.clear()
     repos = obtain_github_repos()
     starred_repos = obtain_starred_repos()
 
@@ -294,7 +301,7 @@ def start_show_github_repos():
         repo_name = repo_data["name"]
         repo_values = (
             repo_name, repo_data["description"], repo_data["language"],
-            repo_data["html_url"], repo_data.get("visibility", "⭐ Destacado"),
+            repo_data["html_url"], repo_data.get("visibility", "⭐ Favorite"),
             repo_data["clone_url"], repo_type
         )
 
@@ -302,18 +309,23 @@ def start_show_github_repos():
             item_id = existing_repos[repo_name]
             if projectstree.item(item_id, "values") != repo_values:
                 projectstree.item(item_id, values=repo_values)
+            if item_id not in all_project_items:
+                all_project_items.append(item_id)
         else:
-            projectstree.insert("", "end", values=repo_values)
+            item_id = projectstree.insert("", "end", values=repo_values)
+            all_project_items.append(item_id)
 
     for repo in repos:
-        update_or_add_repo(repo, "📁 Propio")
+        update_or_add_repo(repo, "📁 Own")
 
     for repo in starred_repos:
-        update_or_add_repo(repo, "⭐ Favorito")
+        update_or_add_repo(repo, "⭐ Favorite")
 
     for repo_name in list(existing_repos.keys()):
         if repo_name not in {r["name"] for r in repos} and repo_name not in {r["name"] for r in starred_repos}:
             projectstree.delete(existing_repos[repo_name])
+    
+    apply_conditional_colors()
     
     start_bar.stop()
     start_bar.pack_forget()
@@ -1386,15 +1398,25 @@ def create_new_issue(repo_name):
     submit_button = ttk.Button(create_issue_window, text="Create Issue", command=submit_new_issue)
     submit_button.pack(pady=10)
 
-def filter_repositories(event):
-    query = search_var.get().lower()
-    for item in projectstree.get_children():
-        repo_name = projectstree.item(item, "values")[0].lower()
-        if query in repo_name:
-            projectstree.item(item, open=True)
-            projectstree.selection_set(item)
+def filter_repositories(event=None):
+    query = search_var.get().lower().strip()
+    lang = lenguaje_filter.get().lower().strip()
+    vis = visibilitie_filter.get().lower().strip()
+    
+    for item in all_project_items:
+        values = projectstree.item(item, "values")
+        name = values[0].lower()
+        language = values[2].lower()
+        visibility = values[4].lower()
+
+        matches_query = query in name if query else True
+        matches_lang = language == lang if lang else True
+        matches_vis = visibility == vis if vis else True
+
+        if matches_query and matches_lang and matches_vis:
+            projectstree.reattach(item, '', 'end')
         else:
-            projectstree.selection_remove(item)
+            projectstree.detach(item)
             
 def backup_repository(repo_name):
     try:
@@ -2191,7 +2213,36 @@ def update_cache():
     else:
         ms.showerror("⚠️ Error", "No internet connection. Cannot update cache.")
 
+def apply_conditional_colors():
+    for item in projectstree.get_children():
+        values = projectstree.item(item, "values")
+        visibility = values[4].lower()  # "visibility" columna (public/private)
+        repo_type = values[5].lower()  # "repo_type" columna (favorito)
+
+        # Cambiar el color de fondo según visibilidad
+        if visibility == "private":
+            projectstree.item(item, tags=("private",))
+        else:
+            projectstree.item(item, tags=("public",))
+
+        # Cambiar color si es un favorito
+        if repo_type == "⭐ favorito":
+            projectstree.item(item, tags=("favorite",))
+
+    # Definir colores para las filas con las tags
+    projectstree.tag_configure("private", background="#ff4c4c", foreground="white")
+    projectstree.tag_configure("public", background="#4cff4c", foreground="black")
+    projectstree.tag_configure("favorite", background="#ffcc00", foreground="black")
+
+def treeview_sort_column(tv, col, reverse):
+    l = [(tv.set(k, col), k) for k in tv.get_children('')]
+    l.sort(reverse=reverse)
+    for index, (val, k) in enumerate(l):
+        tv.move(k, '', index)
+    tv.heading(col, command=lambda: treeview_sort_column(tv, col, not reverse))
+
 path_icon = resource_path("github_control.ico")
+all_project_items = []
 root = ttk.Window(title=f"Github Control{str_title_version}", themename="darkly")
 root.iconbitmap(path_icon)
 root.resizable(True, True)
@@ -2232,7 +2283,7 @@ notebook.add(repo_view_frame, text="Repos View", padding=5)
 notebook.add(search_code_frame, text="Gtihub Search", padding=5)
 
 columns = ("Name", "Description", "Language", "URL", "Visibility", "Clone URL")
-projectstree = ttk.Treeview(mygithub_frame, columns=columns, show="headings", height=20, bootstyle='primary')
+projectstree = ttk.Treeview(mygithub_frame, columns=columns, show="headings", height=15, bootstyle='primary')
 projectstree.heading("Name", text="Name")
 projectstree.heading("Description", text="Description")
 projectstree.heading("Language", text="Language")
@@ -2240,13 +2291,17 @@ projectstree.heading("URL", text="URL")
 projectstree.heading("Visibility", text="Visibility")
 projectstree.heading("Clone URL", text="Clone URL")
 
-scrollb = ttk.Scrollbar(mygithub_frame, orient="vertical", command=projectstree.yview, bootstyle='primary-rounded')
+scrollb = ttk.Scrollbar(mygithub_frame, orient="vertical", command=projectstree.yview, bootstyle='primary')
 projectstree.configure(yscrollcommand=scrollb.set)
-scrollb.pack(side=RIGHT, fill=Y, padx=5)
+scrollb.pack(side=RIGHT, fill=Y)
 
 projectstree.pack(expand=True, fill="both", padx=5, pady=5)
 projectstree.bind("<Double-1>", open_repository)
 projectstree.bind("<Button-3>", menu_contextual)
+item_id = projectstree.insert('', 'end', values=(...))
+all_project_items.append(item_id)
+for col in columns:
+    projectstree.heading(col, text=col, command=lambda _col=col: treeview_sort_column(projectstree, _col, False))
 
 context_menu = tk.Menu(root, tearoff=0)
 context_menu.add_command(label="🗑️Delete Repository", command=lambda: delete_repository_github(projectstree.item(projectstree.selection(), "values")[0]))
@@ -2281,13 +2336,31 @@ fix_security_btn.pack(side='bottom', pady=5, fill='x', expand=True)
 
 ttk.Button(mygithub_frame, text="Update Cache", command=lambda: update_cache).pack(padx=5, pady=5, fill='x')
 
-search_label = ttk.Label(mygithub_frame, text="Search", bootstyle='info')
+search_label = ttk.Label(mygithub_frame, text="Search")
 search_label.pack(padx=5, pady=5, side='left', fill='x')
 
 search_var = tk.StringVar()
-search_entry = ttk.Entry(mygithub_frame, textvariable=search_var, width=250)
+search_entry = ttk.Entry(mygithub_frame, textvariable=search_var, width=100)
 search_entry.pack(pady=5, padx=5, side='left', fill='x', expand=True)
 search_entry.bind("<KeyRelease>", filter_repositories)
+
+lenguaje_filter = tk.StringVar()
+visibilitie_filter = tk.StringVar()
+
+lenguajes = ["", "Python", "JavaScript", "Java", "C++", "C#", "Rust", "PHP", "TypeScript", "Go", "PowerShell", "Bash"]
+visibilities = ["", "Public", "Private"]
+
+lenguaje_label = ttk.Label(mygithub_frame, text="Lenguaje:")
+lenguaje_label.pack(padx=5, pady=5, fill="x", side='left', expand=True)
+lenguaje_combobox = ttk.Combobox(mygithub_frame, textvariable=lenguaje_filter, values=lenguajes, width=10)
+lenguaje_combobox.pack(side='left', padx=5, fill='x', expand=True)
+lenguaje_filter.trace_add("write", lambda *args: filter_repositories())
+
+visibilities_label = ttk.Label(mygithub_frame, text="Visibility:")
+visibilities_label.pack(padx=5, pady=5, fill="x", side='left', expand=True)
+visibilite_combobox = ttk.Combobox(mygithub_frame, textvariable=visibilitie_filter, values=visibilities, width=10)
+visibilite_combobox.pack(side='left', padx=5, fill='x', expand=True)
+visibilitie_filter.trace_add("write", lambda *args: filter_repositories())
 
 start_bar = Progressbar(root, mode="indeterminate", bootstyle="info")
 
