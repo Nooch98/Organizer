@@ -35,6 +35,7 @@ issue_list = None
 
 CONFIG_FILE = "config.json"
 CACHE_FILE = "data/cache.json"
+GITHUB_ACCOUNTS_FILE = "github_accounts.json"
 
 def load_cache():
     if os.path.exists(CACHE_FILE):
@@ -63,45 +64,22 @@ def load_config():
 def save_config(data):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
+        
+def load_github_accounts():
+    if os.path.exists(GITHUB_ACCOUNTS_FILE):
+        try:
+            with open(GITHUB_ACCOUNTS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            return {"github_accounts": []}
+    return {"github_accounts": []}
+
+def save_github_accounts(data):
+    with open(GITHUB_ACCOUNTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
 
 def search_github_key():
-    config = load_config()
-    
-    if "GITHUB_TOKEN" in config and is_github_token_valid(config["GITHUB_TOKEN"]):
-        return config["GITHUB_TOKEN"]
-
-    if not check_network():
-        ms.showwarning("⚠️ No Network Connection", "No network connection. Unable to validate the API Key.")
-        token = config.get("GITHUB_TOKEN") or os.getenv("GITHUB_TOKEN")
-        if token:
-            return token
-        else:
-            return None
-
-    posible_names = ["GITHUB", "TOKEN", "API", "KEY", "SECRET"]
-    for name_var, valor in os.environ.items():
-        if any(clave in name_var.upper() for clave in posible_names):
-            if is_github_token_valid(valor):
-                config["GITHUB_TOKEN"] = valor
-                save_config(config)
-                return valor
-    
-    ms.showwarning("⚠️ GitHub API Key Not Found", "No API Key found. Please enter one to continue.")
-
-    while True:
-        token = simpledialog.askstring("🔑 Enter GitHub API Key", 
-                                       "Enter your GitHub API Key:", show="*")
-
-        if not token:
-            ms.showerror("❌ Error", "No API Key entered.")
-            return None
-
-        if is_github_token_valid(token):
-            config["GITHUB_TOKEN"] = token
-            save_config(config)
-            return token
-        else:
-            ms.showerror("❌ Error", "Invalid API Key. Try again.")
+    return cuenta_seleccionada.get("token")
 
 def is_github_token_valid(token):
     url = "https://api.github.com/user"
@@ -220,9 +198,6 @@ def obtain_starred_repos():
     except requests.exceptions.RequestException as e:
         ms.showerror("ERROR", f"No se pueden obtener los repositorios con estrella: {e}")
         return []
-
-GITHUB_TOKEN = search_github_key()
-GITHUB_USER = obtain_github_user() if GITHUB_TOKEN else None
 
 def check_api_limits():
     url = "https://api.github.com/rate_limit"
@@ -2243,9 +2218,80 @@ def treeview_sort_column(tv, col, reverse):
 
 path_icon = resource_path("github_control.ico")
 all_project_items = []
+cuenta_seleccionada = {"token": None, "username": None}
 root = ttk.Window(title=f"Github Control{str_title_version}", themename="darkly")
+root.geometry("1265x523")
 root.iconbitmap(path_icon)
 root.resizable(True, True)
+
+def mostrar_selector_cuenta(master_frame):
+    frame_selector = ttk.Frame(master_frame)
+    frame_selector.pack(expand=True, fill="both", padx=5, pady=5)
+
+    ttk.Label(frame_selector, text="Select Github account you want use", font=("Arial", 12, "bold")).pack(pady=5)
+
+    lista = ttk.Treeview(frame_selector, columns=("Username",), show="headings")
+    lista.heading("Username", text="Username")
+    lista.pack(fill="both", expand=True)
+
+    cuentas = load_github_accounts().get("github_accounts", [])
+    for cuenta in cuentas:
+        lista.insert("", "end", values=(cuenta["username"],))
+
+    def seleccionar():
+        selected = lista.selection()
+        if selected:
+            username = lista.item(selected)["values"][0]
+            for cuenta in cuentas:
+                if cuenta["username"] == username:
+                    cuenta_seleccionada["token"] = cuenta["token"]
+                    cuenta_seleccionada["username"] = cuenta["username"]
+                    frame_selector.destroy()
+                    notebook.pack(expand=True, fill="both")
+                    version_label.pack(side='right', fill='x', padx=5, pady=5)
+                    status_label.pack(side='left', fill='x', padx=5, pady=5)
+                    iniciar_aplicacion()
+                    return
+        ms.showerror("Error", "You need select one acount.")
+
+    def agregar_cuenta():
+        token = simpledialog.askstring("🔑 New API Key", "Agree github api key token:", show="*")
+        if token and is_github_token_valid(token):
+            user = obtener_usuario(token)["login"]
+            cuentas.append({"username": user, "token": token})
+            save_github_accounts({"github_accounts": cuentas})
+            lista.insert("", "end", values=(user,))
+            ms.showinfo("✔️ Account Added", f"{user} has been added.")
+        else:
+            ms.showerror("❌ Error", "Token inválido o no ingresado.")
+
+    ttk.Button(frame_selector, text="Select Account", command=seleccionar).pack(pady=5)
+    ttk.Button(frame_selector, text="Add New Account", command=agregar_cuenta).pack()
+
+    return frame_selector
+
+def obtener_usuario(token):
+    try:
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        response = requests.get("https://api.github.com/user", headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error getting user: {e}")
+        return None
+
+def iniciar_aplicacion():
+    global GITHUB_TOKEN, GITHUB_USER
+    GITHUB_TOKEN = cuenta_seleccionada["token"]
+    GITHUB_USER = cuenta_seleccionada["username"] or obtener_usuario()
+
+    threading_start_show_github_repos()
+    search_repositories()
+    check_github_status()
+    search_code_on_github()
 
 menu = tk.Menu(root, tearoff=0)
 root.config(menu=menu)
@@ -2255,7 +2301,6 @@ help_menu.add_cascade(label='Help', command=show_help)
 help_menu.add_cascade(label='Api Limits', command=check_api_limits)
 
 notebook = ttk.Notebook(root)
-notebook.pack(expand=True, fill="both")
 
 mygithub_frame = ttk.Frame(notebook)
 commits_frame = ttk.Frame(notebook)
@@ -2365,13 +2410,9 @@ visibilitie_filter.trace_add("write", lambda *args: filter_repositories())
 start_bar = Progressbar(root, mode="indeterminate", bootstyle="info")
 
 version_label = ttk.Label(root, text=f'{version}', bootstyle='info')
-version_label.pack(side='right', fill='x', padx=5, pady=5)
 
 status_label = ttk.Label(root, text=f'Github Connection Status: Checking...', bootstyle='info')
-status_label.pack(side='left', fill='x', padx=5, pady=5)
 
-threading_start_show_github_repos()
-search_repositories()
-search_code_on_github()
-check_github_status()
-root.mainloop()
+if __name__ == "__main__":
+    mostrar_selector_cuenta(root)
+    root.mainloop()
