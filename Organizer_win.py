@@ -1,5 +1,6 @@
 import json
 import os
+import io
 import shutil
 import sqlite3
 import subprocess
@@ -25,6 +26,7 @@ import webview
 import base64
 import hashlib
 import ctypes
+import contextlib
 #--------------------------------------------------------#
 from tkinter import OptionMenu, StringVar, filedialog, simpledialog
 from tkinter.simpledialog import askstring 
@@ -33,7 +35,7 @@ from tkinter import messagebox as ms
 from tkinter import scrolledtext
 from bs4 import BeautifulSoup
 from github import Auth, Github
-from openai import OpenAI, project
+from openai import OpenAI
 from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 from chlorophyll import CodeView
@@ -1766,14 +1768,23 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
 def mostrar_proyectos():
     for row in tree.get_children():
         tree.delete(row)
+
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    
     cursor.execute('SELECT * FROM proyectos')
     proyectos = cursor.fetchall()
+
     for proyecto in proyectos:
-        tree.insert("", "end", values=proyecto)
-        
+
+        proj_id, name, description, language, path, repo = proyecto
+
+        tree.insert(
+            "", "end", iid=path, text=name,
+            values=(description, language, path, repo)
+        )
+
+        tree.insert(path, "end", iid=f"{path}_dummy", text="(loading...)")
+
     conn.close()
     
 def show_projects_thread():
@@ -4232,7 +4243,15 @@ def open_project_notes(project_path):
     notes.protocol("WM_DELETE_WINDOW", save_close)
     
 def create_control_versions_structure(project_path):
-    versions_folder = os.path.join("projects_versions")
+    project_name = os.path.basename(project_path)
+
+    projects_versions_folder = "projects_versions"
+    versions_folder = os.path.join(projects_versions_folder, project_name)
+
+    if not os.path.exists(projects_versions_folder):
+        os.makedirs(projects_versions_folder)
+        make_file_hide(projects_versions_folder)
+
     os.makedirs(versions_folder, exist_ok=True)
     make_file_hide(versions_folder)
     
@@ -4266,10 +4285,12 @@ def save_project_version(project_path, coment=""):
     timestamp = now.strftime("%Y%m%d_%H%M%S")
     version_name = f"v_{timestamp}"
     
-    destini_path = os.path.join("projects_versions", version_name)
+    project_name = os.path.basename(project_path)
+    destini_path = os.path.join("projects_versions", project_name, version_name)
+    
     shutil.copytree(project_path, destini_path, ignore=shutil.ignore_patterns("projects_versions", ".git", "__pycache__"))
     
-    metadata_path = os.path.join("projects_versions", "versions.json")
+    metadata_path = os.path.join("projects_versions", project_name, "versions.json")
     with open(metadata_path, "r+", encoding="utf-8") as f:
         versions = json.load(f)
         versions.append({
@@ -4281,7 +4302,8 @@ def save_project_version(project_path, coment=""):
         f.truncate()
         
 def show_versions_historial(project_path):
-    metadata_path = os.path.join("projects_versions", "versions.json")
+    project_name = os.path.basename(project_path)
+    metadata_path = os.path.join("projects_versions", project_name, "versions.json")
     if not os.path.exists(metadata_path):
         ms.showinfo("No versions", "This project has no saved versions")
         return
@@ -4305,7 +4327,7 @@ def show_versions_historial(project_path):
         selection = tree.selection()
         if selection:
             version_name = selection[0]
-            origin_path = os.path.join(project_path, "projects_versions", version_name)
+            origin_path = os.path.join(project_path, "projects_versions", project_name, version_name)
             confirm = ms.askyesno("Confirm", f"You want restore {version_name}?\n This will overwrite the current project ")
             if confirm:
                 for item in os.listdir(project_path):
@@ -4315,7 +4337,7 @@ def show_versions_historial(project_path):
                             shutil.rmtree(item_path)
                         else:
                             os.remove(item_path)
-                        
+
                 for item in os.listdir(origin_path):
                     src = os.path.join(origin_path, item)
                     dst = os.path.join(project_path, item)
@@ -4468,6 +4490,73 @@ def show_dashboard_proyect(project_path):
         ttk.Label(frame, text="🧠 Detected Languages / File Types:").pack(anchor="w", pady=5)
         for ext, count in extensions.most_common(10):
             ttk.Label(frame, text=f"  • {ext or '[no extension]'}: {count} file(s)").pack(anchor="w")
+
+def open_sandbox():
+    sandbox = tk.Toplevel(orga)
+    sandbox.title("Sandbox")
+    sandbox.iconbitmap(path)
+    
+    entry = scrolledtext.ScrolledText(sandbox)
+    entry.pack(side="left",fill='both', expand=True, padx=5, pady=5)
+    
+    output = scrolledtext.ScrolledText(sandbox)
+    output.pack(side="right",fill='both', expand=True, padx=5, pady=5)
+    
+    def execute_code():
+        code  = entry.get("1.0", "end-1c")
+        buffer = io.StringIO()
+        
+        try:
+            with contextlib.redirect_stdout(buffer):
+                exec(code, {})
+            output.delete("1.0", "end")
+            output.insert("1.0", buffer.getvalue())
+        except Exception as e:
+            output.delete("1.0", "end")
+            output.insert("1.0", f"Error: {str(e)}")
+        
+    btn_execute = ttk.Button(sandbox, text="Execute", command=execute_code)
+    btn_execute.pack(side="bottom", fill="x", padx=5, pady=5)
+    
+def insert_project_tree_node(name, description, language, path, repo):
+    tree.insert(
+        "", "end", iid=path, text=name,
+        values=(description, language, path, repo)
+    )
+    tree.insert(path, "end", iid=f"{path}_dummy", text="(loading...)")
+    
+def load_project_structure_on_expand(event):
+    item_id = tree.focus()
+    try:
+        project_path = tree.item(item_id, "values")[2]
+    except IndexError:
+        return
+
+    if not os.path.isdir(project_path):
+        return
+
+    if tree.get_children(item_id) and not any("dummy" in i for i in tree.get_children(item_id)):
+        return
+
+    for child in tree.get_children(item_id):
+        if "dummy" in child:
+            tree.delete(child)
+
+    try:
+        for name in sorted(os.listdir(project_path)):
+            sub_path = os.path.join(project_path, name)
+            if not os.path.exists(sub_path):
+                continue
+
+            item_type = "folder" if os.path.isdir(sub_path) else "file"
+            tree.insert(item_id, "end", iid=sub_path, text=name,
+                        values=("", item_type, sub_path, ""))
+
+            if os.path.isdir(sub_path):
+                tree.insert(sub_path, "end", iid=f"{sub_path}_dummy", text="(loading...)")
+    except Exception as e:
+        ms.showerror("ERROR", f"Error loading project content: {e}")
+                    
 
 menu_name = "Organizer"
 description_menu = "Open Organizer"
@@ -4680,6 +4769,7 @@ menu_archivo = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label="Projects", menu=menu_archivo)
 menu_archivo.add_command(label='Agree Project', command=agregar_proyecto_existente)
 menu_archivo.add_command(label='Create New', command=crear_nuevo_proyecto)
+menu_archivo.add_command(label='sandbox', command=open_sandbox)
 menu_archivo.add_command(label="My Github Profile", command=unify_windows)
 menu_archivo.add_command(label="New Project Github", command=abrir_proyecto_github)
 menu_archivo.add_command(label="Push Update Github", command=lambda: push_actualizaciones_github(tree.item(tree.selection())['values'][5]))
@@ -4707,16 +4797,27 @@ repo_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
 
 
 # Árbol de proyectos
-tree = ttk.Treeview(main_frame, columns=('ID', 'Name', 'Description', 'Language', 'Path', 'Repository'), show='headings', bootstyle='primary')
-for col in ('ID', 'Name', 'Description', 'Language', 'Path', 'Repository'):
+tree = ttk.Treeview(
+    main_frame,
+    columns=('Description', 'Language', 'Path', 'Repository'),
+    show='tree headings',  # Enables tree structure + column headers
+    bootstyle='primary'
+)
+
+tree.heading('#0', text='Project')
+tree.column('#0', width=200)
+
+for col in ('Description', 'Language', 'Path', 'Repository'):
     tree.heading(col, text=col)
     tree.column(col, width=150)
+
 tree.grid(row=4, column=0, columnspan=2, padx=5, pady=5, sticky="nsew")
 
 scrollbar_y = ttk.Scrollbar(main_frame, orient='vertical', command=tree.yview, bootstyle='round-primary')
 scrollbar_y.grid(row=4, columnspan=2, padx=5, pady=5, sticky='nse')
 tree.configure(yscrollcommand=scrollbar_y.set)
 tree.bind("<Button-3>", show_context_menu)
+tree.bind("<<TreeviewOpen>>", load_project_structure_on_expand)
 
 # Drag and drop label
 label_drop = ttk.Label(main_frame, text="Drop here your folder", bootstyle="info")
