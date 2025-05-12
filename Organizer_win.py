@@ -49,6 +49,7 @@ from pygments.util import ClassNotFound
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from tkinterdnd2 import DND_FILES, TkinterDnD
+from collections import Counter
 
 
 main_version = "ver.1.9.7"
@@ -2370,6 +2371,7 @@ def show_context_menu(event):
         ("Show Tasks", lambda: open_tasks_projects(tree.item(tree.selection())['values'][4])),
         ("Save version", lambda: promp_coment_and_save_version(tree.item(tree.selection())['values'][4])),
         ("Show Versions History", lambda: show_versions_historial(tree.item(tree.selection())['values'][4])),
+        ("Show Resumen", lambda: show_dashboard_proyect(tree.item(tree.selection())['values'][4])),
         ("Delete", lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4])),
         ("Notes", lambda: open_project_notes(tree.item(tree.selection())['values'][4])),
         ("Sync Files Locals", lambda: sync_repo_files(tree.item(tree.selection())['values'][5], tree.item(tree.selection())['values'][4])),
@@ -4329,40 +4331,38 @@ def show_versions_historial(project_path):
     btn_restore.pack(padx=5, pady=5)
 
 def open_tasks_projects(project_path):
-    task_path = os.path.join(".organizer_tasks.json")
-    
+    task_path = os.path.join(project_path, ".organizer_tasks.json")
+
     if not os.path.exists(task_path):
         with open(task_path, "w", encoding="utf-8") as f:
             json.dump([], f)
         make_file_hide(task_path)
-            
+
     with open(task_path, "r", encoding="utf-8") as f:
         tasks = json.load(f)
-        
+
     window = tk.Toplevel(orga)
     window.title("Project Task")
     window.geometry("400x500")
     window.iconbitmap(path)
-    
+
     list_frame = ttk.Frame(window)
     list_frame.pack(fill='both', expand=True, padx=5, pady=5)
-    
+
     entrys = []
-    
+
     def save_task():
         new = []
         for text, var in entrys:
             new.append({"text": text.get(), "done": var.get()})
-        
+
         quit_attribute_only_read_hide(task_path)
         with open(task_path, "w", encoding="utf-8") as f:
             json.dump(new, f, indent=4)
-            
         make_file_hide(task_path)
-            
+
     def agree_task():
         text = new_task_entry.get().strip()
-        
         if text:
             var = tk.BooleanVar()
             entry = ttk.Checkbutton(list_frame, text=text, variable=var)
@@ -4371,7 +4371,7 @@ def open_tasks_projects(project_path):
             entry.config(variable=var)
             new_task_entry.delete(0, "end")
             save_task()
-    
+
     def load_task():
         for task in tasks:
             text = tk.StringVar(value=task["text"])
@@ -4379,11 +4379,10 @@ def open_tasks_projects(project_path):
             chk = ttk.Checkbutton(list_frame, textvariable=text, variable=var)
             chk.pack(anchor="w")
             entrys.append((text, var))
-           
+
     def delete_complete_task():
         for widget in list_frame.winfo_children():
             widget.destroy()
-            
         filtered_task = [(t, v) for (t, v) in entrys if not v.get()]
         entrys.clear()
         entrys.extend(filtered_task)
@@ -4391,17 +4390,84 @@ def open_tasks_projects(project_path):
             chk = ttk.Checkbutton(list_frame, textvariable=text, variable=var)
             chk.pack(anchor="w")
         save_task()
-    
+
     load_task()
-    
+
     new_task_entry = ttk.Entry(window)
     new_task_entry.pack(fill="x", padx=5, pady=5)
-    
+
     btn_agree = ttk.Button(window, text="Agree task", command=agree_task)
     btn_agree.pack(padx=5, pady=5)
-    
+
     btn_delete = ttk.Button(window, text="Delete complete task", command=delete_complete_task)
     btn_delete.pack(padx=5, pady=5)
+
+def show_dashboard_proyect(project_path):
+    dashboard = tk.Toplevel(orga)
+    dashboard.title("Project Resumen")
+    dashboard.iconbitmap(path)
+
+    frame = ttk.Frame(dashboard)
+    frame.pack(fill='both', expand=True, padx=5, pady=5)
+
+    total_files = 0
+    total_folders = 0
+    total_size = 0
+    extensions = Counter()
+
+    for folder, subdirs, files in os.walk(project_path):
+        if "projects_versions" in folder:
+            continue
+
+        total_folders += len(subdirs)
+        total_files += len(files)
+
+        for file in files:
+            file_path = os.path.join(folder, file)
+            try:
+                total_size += os.path.getsize(file_path)
+            except:
+                continue
+
+            ext = os.path.splitext(file)[1].lower()
+            extensions[ext] += 1
+
+    task_path = os.path.join(project_path, ".organizer_tasks.json")
+    pending_task = 0
+    if os.path.exists(task_path):
+        try:
+            quit_attribute_only_read_hide(task_path)
+            with open(task_path, "r", encoding="utf-8") as f:
+                tasks = json.load(f)
+                pending_task = sum(1 for t in tasks if not t.get("done"))
+        except:
+            pass
+
+    try:
+        last_mod = max(
+            os.path.getmtime(os.path.join(dp, f))
+            for dp, dn, fn in os.walk(project_path)
+            for f in fn
+        )
+        last_date = datetime.fromtimestamp(last_mod).strftime("%Y-%m-%d %H:%M:%S")
+    except:
+        last_date = "Not available"
+
+    data = [
+        f"📁 Folders: {total_folders}",
+        f"📄 Files: {total_files}",
+        f"📦 Total Size: {round(total_size / 1024, 2)} KB",
+        f"🕓 Last Modification: {last_date}",
+        f"📝 Pending Tasks: {pending_task}"
+    ]
+
+    for line in data:
+        ttk.Label(frame, text=line).pack(anchor="w", pady=2)
+
+    if extensions:
+        ttk.Label(frame, text="🧠 Detected Languages / File Types:").pack(anchor="w", pady=5)
+        for ext, count in extensions.most_common(10):
+            ttk.Label(frame, text=f"  • {ext or '[no extension]'}: {count} file(s)").pack(anchor="w")
 
 menu_name = "Organizer"
 description_menu = "Open Organizer"
