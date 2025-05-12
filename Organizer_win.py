@@ -453,6 +453,8 @@ def guardar_configuracion_editores(rutas_editores):
         json.dump(configuracion, archivo_configuracion)
 
 def abrir_proyecto(id_proyecto, ruta, editor):
+    ruta_formateada = ruta.replace("/", "\\")
+
     configuracion_editores = cargar_configuracion_editores()
     ruta_editor = configuracion_editores.get(editor) if configuracion_editores and editor in configuracion_editores else None
 
@@ -460,36 +462,30 @@ def abrir_proyecto(id_proyecto, ruta, editor):
         editores_disponibles = detectar_editores_disponibles()
         ruta_editor = editores_disponibles.get(editor)
 
-    # Obtener la ruta de la copia en la carpeta _internal/projects de la app
     nombre_proyecto = os.path.basename(ruta)
     ruta_copia = obtener_ruta_copia_proyecto(nombre_proyecto)
 
-    # Sincronización inicial usando la última sincronización registrada
     ultima_sincronizacion = obtener_ultima_sincronizacion(id_proyecto)
-    sincronizar_diferencial(ruta, ruta_copia, ultima_sincronizacion)
-
-    # Marcar proyecto como abierto en editor
-    actualizar_estado_proyecto(id_proyecto, True)
+    sincronizar_diferencial(ruta_formateada, ruta_copia, ultima_sincronizacion)
 
     def execute_project_on_subprocess():
         try:
             process = []
-            # Ejecutar el editor seleccionado
             if ruta_editor:
                 editor_process = subprocess.Popen(
-                    [ruta_editor, ruta], 
+                    [ruta_editor, ruta_formateada], 
                     shell=True, 
                     start_new_session=True
                 )
                 process.append(editor_process)
                 terminal_process = subprocess.Popen(
-                    f'Start wt -d "{ruta}"', 
+                    f'Start wt -d "{ruta_formateada}"', 
                     shell=True, 
                     start_new_session=True
                 )
                 process.append(terminal_process)
             elif editor == "neovim":
-                comando_ps = f"Start-Process nvim '{ruta}' -WorkingDirectory '{ruta}'"
+                comando_ps = f"Start-Process nvim '{ruta_formateada}' -WorkingDirectory '{ruta_formateada}'"
                 editor_process = subprocess.Popen(
                     ["powershell", "-Command", comando_ps], 
                     start_new_session=True
@@ -497,22 +493,20 @@ def abrir_proyecto(id_proyecto, ruta, editor):
                 process.append(editor_process)
             elif editor == "Integrated Editor":
                 terminal_process = subprocess.Popen(
-                    f'Start wt -d "{ruta}"', 
+                    f'Start wt -d "{ruta_formateada}"', 
                     shell=True, 
                     start_new_session=True
                 )
                 process.append(terminal_process)
-                abrir_editor_thread(ruta, tree.item(tree.selection())['values'][1])
+                abrir_editor_thread(ruta, id_proyecto)
             else:
                 ms.showerror("ERROR", f"{editor} Not found")
 
-            # Sincronización de los procesos en segundo plano
             threading.Thread(target=monitor_processes_and_sync, args=(process, id_proyecto, ruta, ruta_copia), daemon=True).start()
 
         except Exception as e:
             ms.showerror("ERROR", f"An error occurred while opening the project. Check the editor path and project files. Error: {str(e)}")
 
-    # Ejecutar el proceso de apertura en segundo plano
     threading.Thread(target=execute_project_on_subprocess, daemon=True).start()
     
 def monitor_processes_and_sync(processes, id_proyecto, ruta, ruta_copia):
@@ -1780,7 +1774,7 @@ def mostrar_proyectos():
 
         tree.insert(
             "", "end", iid=path, text=name,
-            values=(description, language, path, repo)
+            values=(proj_id, description, language, path, repo)
         )
 
         tree.insert(path, "end", iid=f"{path}_dummy", text="(loading...)")
@@ -2377,15 +2371,15 @@ def show_context_menu(event):
     menu_items = [
         ("Open Explorer", lambda: abrir_explorador(event)),
         ("Open Github", lambda: abrir_repositorio(event)),
-        ("Create Workspace", lambda: save_project_file(tree.item(tree.selection())['values'][0],tree.item(tree.selection())['values'][4], selected_editor.get())),
+        ("Create Workspace", lambda: save_project_file(tree.item(tree.selection())['values'][1],tree.item(tree.selection())['values'][3], selected_editor.get())),
         ("Edit", modificar_proyecto),
-        ("Show Tasks", lambda: open_tasks_projects(tree.item(tree.selection())['values'][4])),
-        ("Save version", lambda: promp_coment_and_save_version(tree.item(tree.selection())['values'][4])),
-        ("Show Versions History", lambda: show_versions_historial(tree.item(tree.selection())['values'][4])),
-        ("Show Resumen", lambda: show_dashboard_proyect(tree.item(tree.selection())['values'][4])),
-        ("Delete", lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4])),
-        ("Notes", lambda: open_project_notes(tree.item(tree.selection())['values'][4])),
-        ("Sync Files Locals", lambda: sync_repo_files(tree.item(tree.selection())['values'][5], tree.item(tree.selection())['values'][4])),
+        ("Show Tasks", lambda: open_tasks_projects(tree.item(tree.selection())['values'][3])),
+        ("Save version", lambda: promp_coment_and_save_version(tree.item(tree.selection())['values'][3])),
+        ("Show Versions History", lambda: show_versions_historial(tree.item(tree.selection())['values'][3])),
+        ("Show Resumen", lambda: show_dashboard_proyect(tree.item(tree.selection())['values'][3])),
+        ("Delete", lambda: eliminar_proyecto(tree.item(tree.selection())['values'][1], tree.item(tree.selection())['values'][3])),
+        ("Notes", lambda: open_project_notes(tree.item(tree.selection())['values'][3])),
+        ("Sync Files Locals", lambda: sync_repo_files(tree.item(tree.selection())['values'][4], tree.item(tree.selection())['values'][3])),
         ("Version Control", mostrar_control_versiones),
         ("Detect Dependencies", detectar_dependencias),
         ("Git Init", lambda: git_init(selected_project_path)),
@@ -2414,13 +2408,13 @@ def show_context_menu(event):
 
 def abrir_repositorio(event):
     item_seleccionado = tree.item(tree.selection())
-    url_repositorio = item_seleccionado['values'][5]
+    url_repositorio = item_seleccionado['values'][4]
 
     webbrowser.open_new(url_repositorio)
     
 def abrir_explorador(event):
     item_seleccionado = tree.item(tree.selection())
-    ruta = item_seleccionado['values'][4]
+    ruta = item_seleccionado['values'][3]
     ruta_formateada = ruta.replace("/", "\\")
     subprocess.Popen(['explorer', ruta_formateada])
     
@@ -4518,17 +4512,17 @@ def open_sandbox():
     btn_execute = ttk.Button(sandbox, text="Execute", command=execute_code)
     btn_execute.pack(side="bottom", fill="x", padx=5, pady=5)
     
-def insert_project_tree_node(name, description, language, path, repo):
+def insert_project_tree_node(name, id, description, language, path, repo):
     tree.insert(
         "", "end", iid=path, text=name,
-        values=(description, language, path, repo)
+        values=(id, description, language, path, repo)
     )
     tree.insert(path, "end", iid=f"{path}_dummy", text="(loading...)")
     
 def load_project_structure_on_expand(event):
     item_id = tree.focus()
     try:
-        project_path = tree.item(item_id, "values")[2]
+        project_path = tree.item(item_id, "values")[3]
     except IndexError:
         return
 
@@ -4772,8 +4766,8 @@ menu_archivo.add_command(label='Create New', command=crear_nuevo_proyecto)
 menu_archivo.add_command(label='sandbox', command=open_sandbox)
 menu_archivo.add_command(label="My Github Profile", command=unify_windows)
 menu_archivo.add_command(label="New Project Github", command=abrir_proyecto_github)
-menu_archivo.add_command(label="Push Update Github", command=lambda: push_actualizaciones_github(tree.item(tree.selection())['values'][5]))
-menu_archivo.add_command(label='Delete Project', command=lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4]))
+menu_archivo.add_command(label="Push Update Github", command=lambda: push_actualizaciones_github(tree.item(tree.selection())['values'][4]))
+menu_archivo.add_command(label='Delete Project', command=lambda: eliminar_proyecto(tree.item(tree.selection())['values'][1], tree.item(tree.selection())['values'][3]))
 menu_archivo.add_command(label="Generate Report", command=generar_informe)
 menu_settings = tk.Menu(menu, tearoff=0)
 menu.add_command(label="Settings", command=setting_window)   
@@ -4799,15 +4793,15 @@ repo_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
 # Árbol de proyectos
 tree = ttk.Treeview(
     main_frame,
-    columns=('Description', 'Language', 'Path', 'Repository'),
-    show='tree headings',  # Enables tree structure + column headers
+    columns=('id','Description', 'Language', 'Path', 'Repository'),
+    show='tree headings',
     bootstyle='primary'
 )
 
 tree.heading('#0', text='Project')
 tree.column('#0', width=200)
 
-for col in ('Description', 'Language', 'Path', 'Repository'):
+for col in ('id', 'Description', 'Language', 'Path', 'Repository'):
     tree.heading(col, text=col)
     tree.column(col, width=150)
 
@@ -4845,8 +4839,22 @@ ttk.Label(main_frame, text="Editor:", bootstyle='info').grid(row=7, column=0, pa
 editor_menu = ttk.Combobox(main_frame, textvariable=selected_editor, values=editor_options, state="readonly", bootstyle='secondary')
 editor_menu.grid(row=7, column=1, padx=5, pady=5, sticky="ew")
 
+def obtener_datos_seleccionado(tree):
+    seleccionados = tree.selection()
+    if not seleccionados:
+        ms.showinfo("Error", "No project selected.")
+        return None, None  # Retorna valores None si no hay selección
+    item_seleccionado = seleccionados[0]
+    item_data = tree.item(item_seleccionado)['values']
+    id_proyecto = item_data[1]  # id
+    ruta = item_data[3]  # ruta
+    return id_proyecto, ruta
+
 # Botones de acción
-btn_abrir = ttk.Button(main_frame, text='Open Project', command=lambda: abrir_threading(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4], selected_editor.get()), bootstyle='success')
+btn_abrir = ttk.Button(main_frame, text='Open Project', command=lambda: abrir_threading(
+    *obtener_datos_seleccionado(tree),  # Desempaqueta id_proyecto y ruta
+    selected_editor.get()  # Editor seleccionado
+), bootstyle='success')
 btn_abrir.grid(row=8, column=0, columnspan=2, pady=10, padx=5, sticky="s")
 
 version_label = ttk.Label(main_frame, text=f'{version}', bootstyle='info')
