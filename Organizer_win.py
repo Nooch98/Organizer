@@ -1,12 +1,10 @@
 import json
 import os
-from pydoc import text
 import shutil
 import sqlite3
 import subprocess
 import sys
 import threading
-from urllib import response
 import git
 import time
 import webbrowser
@@ -26,6 +24,7 @@ import xml.etree.ElementTree as ET
 import webview
 import base64
 import hashlib
+import ctypes
 #--------------------------------------------------------#
 from tkinter import OptionMenu, StringVar, filedialog, simpledialog
 from tkinter.simpledialog import askstring 
@@ -39,7 +38,6 @@ from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 from chlorophyll import CodeView
 from pathlib import Path
-from ttkbootstrap import Window
 from ttkbootstrap.constants import *
 from ttkbootstrap.widgets import Progressbar
 from git import Repo
@@ -74,6 +72,21 @@ vcs_configfile = ".myvcs/config.json"
 vcs_githubconfigfile = ".myvcs/github_config.json"
 selected_file = None
 file_name = None
+
+def make_file_hide(path):
+    FILE_ATTRIBUTE_HIDDEN = 0x02
+    
+    try:
+        ctypes.windll.kernel32.SetFileAttributesW(path, FILE_ATTRIBUTE_HIDDEN)
+    except Exception as e:
+        ms.showerror("ERROR", f"[ERROR] The file could not be hidden: {e}")
+        
+def quit_attribute_only_read_hide(path):
+    try:
+        FILE_ATTRIBUTE_NORMAL = 0x80
+        ctypes.windll.kernel32.SetFileAttributesW(path, FILE_ATTRIBUTE_NORMAL)
+    except Exception as e:
+        ms.showerror("ERROR", f"[ERROR] Attributes could not be cleared: {e}")
 
 def search_github_key():
     posible_name = ["GITHUB", "TOKEN", "API", "KEY", "SECRET"]
@@ -2354,6 +2367,7 @@ def show_context_menu(event):
         ("Open Github", lambda: abrir_repositorio(event)),
         ("Create Workspace", lambda: save_project_file(tree.item(tree.selection())['values'][0],tree.item(tree.selection())['values'][4], selected_editor.get())),
         ("Edit", modificar_proyecto),
+        ("Show Tasks", lambda: open_tasks_projects(tree.item(tree.selection())['values'][4])),
         ("Save version", lambda: promp_coment_and_save_version(tree.item(tree.selection())['values'][4])),
         ("Show Versions History", lambda: show_versions_historial(tree.item(tree.selection())['values'][4])),
         ("Delete", lambda: eliminar_proyecto(tree.item(tree.selection())['values'][0], tree.item(tree.selection())['values'][4])),
@@ -4218,7 +4232,7 @@ def open_project_notes(project_path):
 def create_control_versions_structure(project_path):
     versions_folder = os.path.join("projects_versions")
     os.makedirs(versions_folder, exist_ok=True)
-    
+    make_file_hide(versions_folder)
     
     metadata_path = os.path.join(versions_folder, "versions.json")
     if not os.path.exists(metadata_path):
@@ -4313,6 +4327,81 @@ def show_versions_historial(project_path):
                 
     btn_restore = ttk.Button(window, text="Restore version", command=restore)
     btn_restore.pack(padx=5, pady=5)
+
+def open_tasks_projects(project_path):
+    task_path = os.path.join(".organizer_tasks.json")
+    
+    if not os.path.exists(task_path):
+        with open(task_path, "w", encoding="utf-8") as f:
+            json.dump([], f)
+        make_file_hide(task_path)
+            
+    with open(task_path, "r", encoding="utf-8") as f:
+        tasks = json.load(f)
+        
+    window = tk.Toplevel(orga)
+    window.title("Project Task")
+    window.geometry("400x500")
+    window.iconbitmap(path)
+    
+    list_frame = ttk.Frame(window)
+    list_frame.pack(fill='both', expand=True, padx=5, pady=5)
+    
+    entrys = []
+    
+    def save_task():
+        new = []
+        for text, var in entrys:
+            new.append({"text": text.get(), "done": var.get()})
+        
+        quit_attribute_only_read_hide(task_path)
+        with open(task_path, "w", encoding="utf-8") as f:
+            json.dump(new, f, indent=4)
+            
+        make_file_hide(task_path)
+            
+    def agree_task():
+        text = new_task_entry.get().strip()
+        
+        if text:
+            var = tk.BooleanVar()
+            entry = ttk.Checkbutton(list_frame, text=text, variable=var)
+            entry.pack(anchor="w")
+            entrys.append((tk.StringVar(value=text), var))
+            entry.config(variable=var)
+            new_task_entry.delete(0, "end")
+            save_task()
+    
+    def load_task():
+        for task in tasks:
+            text = tk.StringVar(value=task["text"])
+            var = tk.BooleanVar(value=task["done"])
+            chk = ttk.Checkbutton(list_frame, textvariable=text, variable=var)
+            chk.pack(anchor="w")
+            entrys.append((text, var))
+           
+    def delete_complete_task():
+        for widget in list_frame.winfo_children():
+            widget.destroy()
+            
+        filtered_task = [(t, v) for (t, v) in entrys if not v.get()]
+        entrys.clear()
+        entrys.extend(filtered_task)
+        for text, var in entrys:
+            chk = ttk.Checkbutton(list_frame, textvariable=text, variable=var)
+            chk.pack(anchor="w")
+        save_task()
+    
+    load_task()
+    
+    new_task_entry = ttk.Entry(window)
+    new_task_entry.pack(fill="x", padx=5, pady=5)
+    
+    btn_agree = ttk.Button(window, text="Agree task", command=agree_task)
+    btn_agree.pack(padx=5, pady=5)
+    
+    btn_delete = ttk.Button(window, text="Delete complete task", command=delete_complete_task)
+    btn_delete.pack(padx=5, pady=5)
 
 menu_name = "Organizer"
 description_menu = "Open Organizer"
