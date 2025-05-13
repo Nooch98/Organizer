@@ -4512,24 +4512,25 @@ def open_sandbox():
     btn_execute = ttk.Button(sandbox, text="Execute", command=execute_code)
     btn_execute.pack(side="bottom", fill="x", padx=5, pady=5)
     
-def insert_project_tree_node(name, id, description, language, path, repo):
+def insert_project_tree_node(name, description, language, path, repo):
     tree.insert(
         "", "end", iid=path, text=name,
-        values=(id, description, language, path, repo)
+        values=("", description, language, path, repo)
     )
     tree.insert(path, "end", iid=f"{path}_dummy", text="(loading...)")
-    
+
 def load_project_structure_on_expand(event):
     item_id = tree.focus()
+
     try:
-        project_path = tree.item(item_id, "values")[3]
-    except IndexError:
+        values = tree.item(item_id, "values")
+        if len(values) < 4:
+            return
+        project_path = values[3]
+    except Exception as e:
         return
 
     if not os.path.isdir(project_path):
-        return
-
-    if tree.get_children(item_id) and not any("dummy" in i for i in tree.get_children(item_id)):
         return
 
     for child in tree.get_children(item_id):
@@ -4543,14 +4544,15 @@ def load_project_structure_on_expand(event):
                 continue
 
             item_type = "folder" if os.path.isdir(sub_path) else "file"
+
             tree.insert(item_id, "end", iid=sub_path, text=name,
-                        values=("", item_type, sub_path, ""))
+                        values=("", "", item_type, sub_path, ""))
 
             if os.path.isdir(sub_path):
                 tree.insert(sub_path, "end", iid=f"{sub_path}_dummy", text="(loading...)")
+
     except Exception as e:
-        ms.showerror("ERROR", f"Error loading project content: {e}")
-                    
+        ms.showerror("ERROR", f"Error loading content: {e}")
 
 menu_name = "Organizer"
 description_menu = "Open Organizer"
@@ -4862,37 +4864,38 @@ version_label.grid(row=8, column=1, pady=5, padx=5, sticky="se")
 
 main_frame.grid_rowconfigure(4, weight=1)
 
-def copiar_a_dropzone(path_origen):
-    dropzone = os.path.join(base_path, "DROPZONE")
-    os.makedirs(dropzone, exist_ok=True)
-    destino = os.path.join(dropzone, os.path.basename(path_origen))
-    if not os.path.exists(destino):
-        shutil.copytree(path_origen, destino)
-        ms.showinfo("Organizer", f"[DROP] Copied: {path_origen} -> {destino}")
+def obtener_nombre_y_ruta(path_origen):
+    if os.path.isdir(path_origen):
+        nombre_directorio = os.path.basename(path_origen)
+        ruta_directorio = path_origen
+        ms.showinfo("Organizer", f"[DROP] Directorio: {nombre_directorio}\nRuta: {ruta_directorio}")
     else:
-        ms.showwarning("WARNING", f"[DROP] Already exists in DROPZONE: {destino}")
+        ms.showerror("ERROR", f"[DROP] Ignorado: {path_origen} (no es un directorio)")
 
 def on_drop(event):
     paths = event.data.strip().split()
     for p in paths:
         ruta = p.strip("{}")
-        if os.path.isdir(ruta):
-            copiar_a_dropzone(ruta)
-        else:
-            ms.showerror("ERROR", f"[DROP] Ignored: {path} (not a folder)")
+        
+        nombre_directorio = os.path.basename(ruta)
+        description = "Project agreed with drag and drop"
+        repo = ""
+        
+        orga.after(0, lambda: insertar_proyecto(nombre_directorio, description, ruta, repo))
+        orga.after(0, mostrar_proyectos)
 
 class DropHandler(FileSystemEventHandler):
     def on_created(self, event):
         if event.is_directory:
             name = os.path.basename(event.src_path)
-            description = "Project agree with drag and drop"
+            description = "Project agreed with drag and drop"
             repo = ""
             path = event.src_path
             orga.after(0, lambda: insertar_proyecto(name, description, path, repo))
             orga.after(0, mostrar_proyectos)
-               
+
 def start_observer_dropzone():
-    dropzone_path = os.path.join(base_path, "DROPZONE")
+    dropzone_path = os.path.join(base_path)
     os.makedirs(dropzone_path, exist_ok=True)
     
     event_handler = DropHandler()
