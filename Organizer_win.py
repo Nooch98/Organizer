@@ -28,7 +28,7 @@ import hashlib
 import ctypes
 import contextlib
 #--------------------------------------------------------#
-from tkinter import OptionMenu, StringVar, filedialog, simpledialog
+from tkinter import Listbox, OptionMenu, StringVar, filedialog, simpledialog
 from tkinter.simpledialog import askstring 
 from urllib.parse import urlparse
 from tkinter import messagebox as ms
@@ -2887,12 +2887,27 @@ def get_system_theme():
         return "light"
     
 def set_default_theme():
+    try:
+        with open("user_theme_config.json", "r", encoding="utf-8") as f:
+            saved = json.load(f)
+            theme_name = saved.get("theme")
+            library = saved.get("library")
+
+            if library == "ttkbootstrap" and theme_name in temas:
+                orga.set_theme(theme_name)
+                return
+
+            elif library == "ttk" and theme_name in ttk.Style().theme_names():
+                style = ttk.Style()
+                style.theme_use(theme_name)
+                return
+    except Exception as e:
+            return
+
     system_theme = get_system_theme()
-    
-    if system_theme == "dark":
-        change_bootstrap_theme(theme_name="darkly")
-    else:
-        change_bootstrap_theme(theme_name="cosmo")
+    default_theme = "darkly" if system_theme == "dark" else "cosmo"
+    change_bootstrap_theme(theme_name=default_theme)
+
     
 def create_theme():
         comando = "python -m ttkcreator"
@@ -3183,47 +3198,76 @@ def setting_window():
             hide_frames()
             theme_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
-            def change_theme1(theme_name):
-                orga.set_theme(theme_name)
-                orga.update_idletasks()
-            
             for widget in theme_frame.winfo_children():
                 widget.destroy()
-            
-            num_columns = 3
+
+            num_columns = 4
+            style = ttk.Style()
 
             for index, theme in enumerate(temas):
                 row = index // num_columns
                 column = index % num_columns
-                button = ttk.Button(theme_frame, text=theme, command=lambda theme=theme: change_theme1(theme))
-                button.grid(row=row, column=column, sticky="ew", padx=2, pady=2)
+
+                preview = ttk.Frame(theme_frame, borderwidth=2, relief="ridge", padding=8)
+                preview.grid(row=row, column=column, padx=5, pady=5, sticky="nsew")
+
+                ttk.Label(preview, text=theme, font=("Segoe UI", 9, "bold")).pack(anchor="center", pady=(0, 5))
+                sample_btn = ttk.Button(preview, text="Sample")
+                sample_entry = ttk.Entry(preview)
+                sample_btn.pack(fill="x", pady=2)
+                sample_entry.pack(fill="x", pady=2)
+
+                def apply_theme(theme_name=theme):
+                    orga.set_theme(theme_name)
+                    orga.update_idletasks()
+                    with open("user_theme_config.json", "w", encoding="utf-8") as f:
+                        json.dump({"library": "ttk", "theme": theme_name}, f)
+
+                preview.bind("<Button-1>", lambda e, t=theme: apply_theme(t))
+                for child in preview.winfo_children():
+                    child.bind("<Button-1>", lambda e, t=theme: apply_theme(t))
 
         elif item == "TTKTheme":
             hide_frames()
             ttktheme_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+
             def ttk_themes():
                 style = ttk.Style()
-                themes = style.theme_names()
-                return themes
-            
+                return style.theme_names()
+
             def change_ttktheme(theme_name):
-                style = ttk.Style()
                 style.theme_use(theme_name)
-                            
+                with open("user_theme_config.json", "w", encoding="utf-8") as f:
+                    json.dump({"library": "ttkbootstrap", "theme": theme_name}, f)
+
             themes = ttk_themes()
-            
+
             for widget in ttktheme_frame.winfo_children():
                 widget.destroy()
-                
-            num_columns = 3
-            
+
+            num_columns = 4
+            style = ttk.Style()
+
             for index, theme in enumerate(themes):
                 row = index // num_columns
                 column = index % num_columns
-                button1 = ttk.Button(ttktheme_frame, text=theme, command=lambda theme=theme: change_ttktheme(theme))
-                button1.grid(row=row, column=column, sticky="ew", padx=2, pady=2)
-            button2 = ttk.Button(ttktheme_frame, text="Create Theme", command=create_theme)
-            button2.grid(row=row, column=column, sticky="ew", padx=2, pady=2)
+
+                preview = ttk.Frame(ttktheme_frame, borderwidth=2, relief="groove", padding=8)
+                preview.grid(row=row, column=column, padx=5, pady=5, sticky="nsew")
+
+                ttk.Label(preview, text=theme, font=("Segoe UI", 9, "bold")).pack(pady=(0, 5))
+                ttk.Button(preview, text="Button").pack(fill="x", pady=2)
+                ttk.Entry(preview).pack(fill="x", pady=2)
+
+                # Aplica tema al hacer clic
+                preview.bind("<Button-1>", lambda e, t=theme: change_ttktheme(t))
+                for child in preview.winfo_children():
+                    child.bind("<Button-1>", lambda e, t=theme: change_ttktheme(t))
+
+            # Botón para crear nuevo tema (si lo tienes definido)
+            ttk.Button(ttktheme_frame, text="🎨 Create Theme", command=create_theme).grid(
+                row=row + 1, column=0, columnspan=num_columns, padx=10, pady=10, sticky="ew"
+            )
         
         elif item == "System Startup":
             hide_frames()
@@ -4554,6 +4598,116 @@ def load_project_structure_on_expand(event):
     except Exception as e:
         ms.showerror("ERROR", f"Error loading content: {e}")
 
+def open_link_panel(project_path):
+    links_path = os.path.join(project_path, ".organizer_links.json")
+    
+    if not os.path.exists(links_path):
+        with open(links_path, "w", encoding="utf-8") as f:
+            json.dump([], f)
+        make_file_hide(links_path)
+        
+    with open(links_path, "r", encoding="utf-8") as f:
+        links = json.load(f)
+        
+    win = tk.Toplevel(orga)
+    win.title("Project Resources")
+    win.iconbitmap(path)
+    
+    frame_links = ttk.Frame(win)
+    frame_links.pack(fill="both", expand=True, padx=5, pady=5)
+    
+    listbox = tk.Listbox(frame_links)
+    listbox.pack(fill="both", expand=True)
+    
+    for link in links:
+        listbox.insert("end", f"{link['label']} -> {link['url']}")
+        
+    entry_label = ttk.Entry(win)
+    entry_label.pack(fill="x", padx=5, pady=5)
+    entry_label.insert(0, "Label")
+
+    entry_url = ttk.Entry(win)
+    entry_url.pack(fill="x", padx=5, pady=5)
+    entry_url.insert(0, "https://")
+    
+    def save_links():
+        quit_attribute_only_read_hide(links_path)
+        with open(links_path, "w", encoding="utf-8") as f:
+            json.dump(links, f, indent=4)
+        make_file_hide(links_path)
+        
+    def add_link():
+        label = entry_label.get().strip()
+        url = entry_url.get().strip()
+        if label and url:
+            links.append({"label": label, "url": url})
+            listbox.insert("end", f"{label} → {url}")
+            save_links()
+            entry_label.delete(0, "end")
+            entry_url.delete(0, "end")
+            
+    def delete_link():
+        sel = listbox.curselection()
+        if not sel: return
+        idx = sel[0]
+        del links[idx]
+        listbox.delete(idx)
+        save_links()
+        
+    def open_selected():
+        sel = listbox.curselection()
+        if not sel: return
+        url = links[sel[0]]["url"]
+        webbrowser.open(url)
+        
+    ttk.Button(win, text="Add Link", command=add_link).pack(pady=5)
+    ttk.Button(win, text="Delete Selected", command=delete_link).pack(pady=5)
+    ttk.Button(win, text="Open Selected", command=open_selected).pack(pady=5)
+
+def update_sidebar_project(event=None):
+    sidebar.grid(row=4, column=2, padx=5, pady=5, sticky="ns")
+    for widget in sidebar.winfo_children():
+        widget.destroy()
+        
+    selection = tree.selection()
+    if not selection:
+        return
+    
+    item_id = selection[0]
+    values = tree.item(item_id, "values")
+    if len(values) < 4:
+        return
+    
+    project_path = values[3]
+    
+    ttk.Label(sidebar, text="✅ Tasks").pack(anchor="w", padx=5, pady=5)
+    task_path = os.path.join(project_path, ".organizer_tasks.json")
+    if os.path.exists(task_path):
+        with open(task_path, "r", encoding="utf-8") as f:
+            tasks = json.load(f)
+        for task in tasks:
+            var = tk.BooleanVar(value=task["done"])
+            ttk.Checkbutton(sidebar, text=task["text"], variable=var, state="disable").pack(anchor="w", padx=5)
+            
+            
+    ttk.Label(sidebar, text="🔗 Resources").pack(anchor="w", padx=5, pady=5)
+    links_path = os.path.join(project_path, ".organizer_links.json")
+    if os.path.exists(links_path):
+        with open(links_path, "r", encoding="utf-8") as f:
+            links = json.load(f)
+
+        for link in links:
+            def open_link(url=link["url"]):
+                webbrowser.open(url)
+
+            label = ttk.Label(sidebar, text=f"{link['label']}", foreground="blue", cursor="hand2")
+            label.pack(anchor="w", padx=15, pady=2)
+            label.bind("<Button-1>", lambda e, url=link["url"]: webbrowser.open(url))
+    
+    ttk.Separator(sidebar).pack(fill="x", pady=5)
+    ttk.Button(sidebar, text="Edit Tasks", command=lambda: open_tasks_projects(project_path)).pack(fill="x", padx=5, pady=5)
+    ttk.Button(sidebar, text="Edit Links", command=lambda: open_link_panel(project_path)).pack(fill="x", padx=5, pady=5)
+
 menu_name = "Organizer"
 description_menu = "Open Organizer"
 ruta_exe = os.path.abspath(sys.argv[0])
@@ -4575,6 +4729,9 @@ check_var = tk.IntVar(value=saved_state if saved_state else (1 if is_in_startup(
 
 main_frame = ttk.Frame(orga, bootstyle="default")
 main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+
+sidebar = ttk.Frame(main_frame, width=300)
+
 orga.grid_rowconfigure(0, weight=1)
 orga.grid_columnconfigure(0, weight=1)
 main_frame.grid_columnconfigure(1, weight=3)
@@ -4814,6 +4971,7 @@ scrollbar_y.grid(row=4, columnspan=2, padx=5, pady=5, sticky='nse')
 tree.configure(yscrollcommand=scrollbar_y.set)
 tree.bind("<Button-3>", show_context_menu)
 tree.bind("<<TreeviewOpen>>", load_project_structure_on_expand)
+tree.bind("<<TreeviewSelect>>", update_sidebar_project)
 
 # Drag and drop label
 label_drop = ttk.Label(main_frame, text="Drop here your folder", bootstyle="info")
