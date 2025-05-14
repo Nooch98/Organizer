@@ -27,6 +27,8 @@ import base64
 import hashlib
 import ctypes
 import contextlib
+import importlib
+import traceback
 #--------------------------------------------------------#
 from tkinter import Listbox, OptionMenu, StringVar, filedialog, simpledialog
 from tkinter.simpledialog import askstring 
@@ -38,6 +40,7 @@ from github import Auth, Github
 from openai import OpenAI
 from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
+from _internal.jedi import plugins
 from chlorophyll import CodeView
 from pathlib import Path
 from ttkbootstrap.constants import *
@@ -75,6 +78,184 @@ vcs_configfile = ".myvcs/config.json"
 vcs_githubconfigfile = ".myvcs/github_config.json"
 selected_file = None
 file_name = None
+loaded_plugins = {}
+
+class PluginAPI:
+    def __init__(self, main_window, menu, sidebar, tree, sandbox_fn=None):
+        self.main_window = main_window
+        self.menu = menu
+        self.sidebar = sidebar
+        self.tree = tree
+        self.sandbox_fn = sandbox_fn
+        self._menu_commands = {}
+        
+    def get_selected_project_path(self):
+        selection = self.tree.selection()
+        if not selection:
+            return None
+        return self.tree.item(selection[0], "values")[3]
+    
+    def get_selected_node(self):
+        selection = self.tree.selection()
+        if not selection:
+            return None
+        return self.tree.item(selection[0])
+    
+    def add_menu_command(self, label, command):
+        index = self.menu.index("end") or -1
+        self.menu.add_command(label=label, command=command)
+        self._menu_commands[label] = index + 1
+        
+    def remove_menu_command(self, label):
+        index = self._menu_commands.pop(label, None)
+        if index is not None:
+            try:
+                self.menu.delete(index)
+            except Exception as e:
+                print(f"[PluginAPI] Error deleting menu '{label}': {e}")
+        
+    def add_sidebar_widget(self, widget):
+        widget.pack(in_=self.sidebar, anchor="w", padx=5, pady=5)
+        
+    def add_main_button(self, text, command):
+        btn = ttk.Button(self.main_window, text=text, command=command)
+        btn.pack(padx=5, pady=5)
+        return btn
+
+
+def load_plugins(api, config_path="plugin_config.json"):
+    plugin_dir = os.path.join(os.getcwd(), "plugins")
+    os.makedirs(plugin_dir, exist_ok=True)
+    sys.path.insert(0, plugin_dir)
+
+    # Leer configuración de activación
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    else:
+        config = {}
+
+    for filename in os.listdir(plugin_dir):
+        if filename.endswith(".py") and not filename.startswith("_"):
+            module_name = filename[:-3]
+            plugin_active = config.get(module_name, True)
+            if not plugin_active:
+                continue
+            
+            try:
+                plugin = __import__(module_name)
+                if hasattr(plugin, "register"):
+                    plugin.register(api)
+                else:
+                    ms.showinfo("Plugins", f"[⛔] Plugin {module_name} don't have register function")
+            except Exception as e:
+                ms.showinfo("Plugins", f"[⛔] Plugin {module_name} error: {e}")
+                
+def gestor_plugins(api, config_path="plugin_config.json"):
+    top = tk.Toplevel(orga)
+    top.title("Plugin Manager")
+    top.geometry("500x600")
+    top.iconbitmap(path)
+
+    plugin_dir = os.path.join(os.getcwd(), "plugins")
+    os.makedirs(plugin_dir, exist_ok=True)
+    sys.path.insert(0, plugin_dir)
+
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    else:
+        config = {}
+
+    plugin_vars = {}
+
+    def reload_plugin(name):
+        try:
+            if name in sys.modules:
+                plugin = sys.modules[name]
+
+                if hasattr(plugin, "unregister"):
+                    plugin.unregister(api)
+
+                del sys.modules[name]
+                loaded_plugins.pop(name, None)
+
+            # Volver a importar
+            plugin = __import__(name)
+            if var.get():
+                if hasattr(plugin, "register"):
+                    plugin.register(api)
+                    loaded_plugins[name] = plugin
+                else:
+                    ms.showerror("Plugin", f"[⚠️] {name} has no 'register'")
+            else:
+                ms.showinfo("Plugin", f"[ℹ️] {name} is disabled")
+        except Exception as e:
+            ms.showerror("Plugin", f"[⛔] Error reloading {name}: {e}")
+
+    def guardar_config():
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump({n: v.get() for n, v in plugin_vars.items()}, f, indent=4)
+        ms.showinfo("Plugins", "Save Changes.")
+
+    for filename in os.listdir(plugin_dir):
+        if filename.endswith(".py") and not filename.startswith("_"):
+            module_name = filename[:-3]
+            plugin_path = os.path.join(plugin_dir, filename)
+
+            frame = ttk.Frame(top, padding=5)
+            frame.pack(fill="x", padx=5, pady=5)
+
+            var = tk.BooleanVar(value=config.get(module_name, True))
+            plugin_vars[module_name] = var
+
+            def toggle_plugin(name=module_name, var=var):
+                try:
+                    if name in sys.modules:
+                        plugin = sys.modules[name]
+                        if hasattr(plugin, "unregister"):
+                            plugin.unregister(api)
+                        del sys.modules[name]
+                        loaded_plugins.pop(name, None)
+
+                    if var.get():
+                        plugin = __import__(name)
+                        if hasattr(plugin, "register"):
+                            plugin.register(api)
+                            loaded_plugins[name] = plugin
+                            print(f"[✓] {name} activado")
+                        else:
+                            ms.showerror("Plugin", f"[⚠️] {name} It does not have a register() function")
+                    else:
+                        print(f"[🛑] {name} desactivado")
+                except Exception as e:
+                    ms.showerror("Plugin", f"[⛔] Error updating {name}:\n{e}")
+
+            cb = ttk.Checkbutton(frame, text=module_name, variable=var, command=toggle_plugin)
+            cb.grid(row=0, column=0, sticky="w")
+
+            metadata = {}
+            try:
+                metadata_path = os.path.join(plugin_dir, module_name + "_meta.json")
+                if os.path.exists(metadata_path):
+                    with open(metadata_path, "r", encoding="utf-8") as f:
+                        metadata = json.load(f)
+
+                desc = metadata.get("description", "No description.")
+                version = metadata.get("version", "1.0")
+                author = metadata.get("author", "Unknown")
+
+                ttk.Label(frame, text=f"📦 {desc}", font=("Segoe UI", 8), wraplength=400).grid(row=1, column=0, columnspan=2, sticky="w")
+                ttk.Label(frame, text=f"👤 {author} | 🔢 v{version}", font=("Segoe UI", 7), foreground="gray").grid(row=2, column=0, columnspan=2, sticky="w")
+
+                reload_label = ttk.Label(frame, text="🔄", cursor="hand2")
+                reload_label.grid(row=0, column=1, sticky="e", padx=5)
+                reload_label.bind("<Button-1>", lambda e, name=module_name, var=var: toggle_plugin(name, var))
+
+            except Exception as e:
+                ttk.Label(frame, text=f"[Error loading plugin]: {e}", foreground="red").grid(row=1, column=0, columnspan=2)
+
+    ttk.Button(top, text="Save Changes", command=guardar_config).pack(pady=10)
 
 def make_file_hide(path):
     FILE_ATTRIBUTE_HIDDEN = 0x02
@@ -4464,15 +4645,16 @@ def open_tasks_projects(project_path):
 
 def show_dashboard_proyect(project_path):
     dashboard = tk.Toplevel(orga)
-    dashboard.title("Project Resumen")
+    dashboard.title("Project Summary")
     dashboard.iconbitmap(path)
 
     frame = ttk.Frame(dashboard)
-    frame.pack(fill='both', expand=True, padx=5, pady=5)
+    frame.pack(fill='both', expand=True, padx=10, pady=10)
 
     total_files = 0
     total_folders = 0
     total_size = 0
+    total_tests = 0
     extensions = Counter()
 
     for folder, subdirs, files in os.walk(project_path):
@@ -4492,6 +4674,24 @@ def show_dashboard_proyect(project_path):
             ext = os.path.splitext(file)[1].lower()
             extensions[ext] += 1
 
+            # Detectar archivos de test comunes
+            if file.lower().startswith("test_") or file.endswith((".spec.js", ".spec.ts", ".test.js", ".test.ts")):
+                total_tests += 1
+
+    # Tamaño de versiones
+    versions_folder = os.path.join("projects_versions")
+    version_size = 0
+    version_count = 0
+    if os.path.exists(versions_folder):
+        for foldername, _, filenames in os.walk(versions_folder):
+            for f in filenames:
+                try:
+                    version_size += os.path.getsize(os.path.join(foldername, f))
+                except:
+                    continue
+            version_count += 1
+
+    # Tareas pendientes
     task_path = os.path.join(project_path, ".organizer_tasks.json")
     pending_task = 0
     if os.path.exists(task_path):
@@ -4503,6 +4703,7 @@ def show_dashboard_proyect(project_path):
         except:
             pass
 
+    # Última modificación
     try:
         last_mod = max(
             os.path.getmtime(os.path.join(dp, f))
@@ -4513,21 +4714,33 @@ def show_dashboard_proyect(project_path):
     except:
         last_date = "Not available"
 
-    data = [
-        f"📁 Folders: {total_folders}",
-        f"📄 Files: {total_files}",
-        f"📦 Total Size: {round(total_size / 1024, 2)} KB",
-        f"🕓 Last Modification: {last_date}",
-        f"📝 Pending Tasks: {pending_task}"
-    ]
+    # 🧾 Sección básica
+    ttk.Label(frame, text="📊 General", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    ttk.Label(frame, text=f"📁 Folders: {total_folders}").pack(anchor="w")
+    ttk.Label(frame, text=f"📄 Files: {total_files}").pack(anchor="w")
+    ttk.Label(frame, text=f"📦 Size: {round(total_size / 1024, 2)} KB").pack(anchor="w")
+    ttk.Label(frame, text=f"🕓 Last Modified: {last_date}").pack(anchor="w")
 
-    for line in data:
-        ttk.Label(frame, text=line).pack(anchor="w", pady=2)
+    ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=5)
 
+    # 🧪 Test y tareas
+    ttk.Label(frame, text="🛠 Dev Info", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    ttk.Label(frame, text=f"🧪 Test files: {total_tests}").pack(anchor="w")
+    ttk.Label(frame, text=f"📝 Pending Tasks: {pending_task}").pack(anchor="w")
+
+    ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=5)
+
+    # 🔁 Versionado
+    ttk.Label(frame, text="🧬 Versions", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    ttk.Label(frame, text=f"🧾 Saved versions: {version_count}").pack(anchor="w")
+    ttk.Label(frame, text=f"💾 Version folder size: {round(version_size / 1024, 2)} KB").pack(anchor="w")
+
+    # 🧠 Extensiones y lenguajes
     if extensions:
-        ttk.Label(frame, text="🧠 Detected Languages / File Types:").pack(anchor="w", pady=5)
+        ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=5)
+        ttk.Label(frame, text="🧠 File Types / Languages", font=("Segoe UI", 10, "bold")).pack(anchor="w")
         for ext, count in extensions.most_common(10):
-            ttk.Label(frame, text=f"  • {ext or '[no extension]'}: {count} file(s)").pack(anchor="w")
+            ttk.Label(frame, text=f"  • {ext or '[no extension]'}: {count}").pack(anchor="w")
 
 def open_sandbox():
     sandbox = tk.Toplevel(orga)
@@ -4664,49 +4877,115 @@ def open_link_panel(project_path):
     ttk.Button(win, text="Delete Selected", command=delete_link).pack(pady=5)
     ttk.Button(win, text="Open Selected", command=open_selected).pack(pady=5)
 
+def calcular_resumen_proyecto(project_path):
+    resumen = {
+        "folders": 0,
+        "files": 0,
+        "size": 0,
+        "tests": 0,
+        "tasks": 0,
+        "exts": Counter(),
+        "resources": [],
+        "tasks_list": []
+    }
+
+    for folder, subdirs, files in os.walk(project_path):
+        if "projects_versions" in folder:
+            continue
+        resumen["folders"] += len(subdirs)
+        resumen["files"] += len(files)
+        for file in files:
+            file_path = os.path.join(folder, file)
+            try:
+                resumen["size"] += os.path.getsize(file_path)
+            except:
+                continue
+            ext = os.path.splitext(file)[1].lower()
+            resumen["exts"][ext] += 1
+            if file.startswith("test_") or file.endswith((".spec.js", ".test.js", ".test.py", ".spec.ts", ".test.ts")):
+                resumen["tests"] += 1
+
+    # Tareas
+    task_path = os.path.join(project_path, ".organizer_tasks.json")
+    if os.path.exists(task_path):
+        try:
+            quit_attribute_only_read_hide(task_path)
+            with open(task_path, "r", encoding="utf-8") as f:
+                tasks = json.load(f)
+                resumen["tasks"] = sum(1 for t in tasks if not t.get("done"))
+                resumen["tasks_list"] = tasks
+        except:
+            pass
+
+    # Recursos
+    links_path = os.path.join(project_path, ".organizer_links.json")
+    if os.path.exists(links_path):
+        try:
+            with open(links_path, "r", encoding="utf-8") as f:
+                resumen["resources"] = json.load(f)
+        except:
+            pass
+
+    return resumen
+
+def renderizar_sidebar(project_path, resumen):
+    for widget in sidebar.winfo_children():
+        widget.destroy()
+
+    # 📊 DASHBOARD RESUMEN
+    ttk.Label(sidebar, text="📊 Project Summary", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=5, pady=(5, 2))
+    ttk.Label(sidebar, text=f"📁 Folders: {resumen['folders']}").pack(anchor="w", padx=5)
+    ttk.Label(sidebar, text=f"📄 Files: {resumen['files']}").pack(anchor="w", padx=5)
+    ttk.Label(sidebar, text=f"📦 Size: {round(resumen['size'] / 1024, 2)} KB").pack(anchor="w", padx=5)
+    ttk.Label(sidebar, text=f"🧪 Tests: {resumen['tests']}").pack(anchor="w", padx=5)
+    ttk.Label(sidebar, text=f"📝 Tasks: {resumen['tasks']}").pack(anchor="w", padx=5)
+
+    ttk.Button(sidebar, text="Full Dashboard", command=lambda: show_dashboard_proyect(project_path)).pack(anchor="w", padx=5, pady=6)
+    ttk.Separator(sidebar).pack(fill="x", pady=5)
+
+    # ✅ TASKS
+    ttk.Label(sidebar, text="✅ Tasks").pack(anchor="w", padx=5, pady=5)
+    for task in resumen["tasks_list"]:
+        var = tk.BooleanVar(value=task["done"])
+        ttk.Checkbutton(sidebar, text=task["text"], variable=var, state="disabled").pack(anchor="w", padx=15)
+
+    ttk.Button(sidebar, text="Edit Tasks", command=lambda: open_tasks_projects(project_path)).pack(fill="x", padx=5, pady=5)
+    ttk.Separator(sidebar).pack(fill="x", pady=5)
+    
+    # 🔗 RESOURCES
+    ttk.Label(sidebar, text="🔗 Resources").pack(anchor="w", padx=5, pady=5)
+    for link in resumen["resources"]:
+        label = ttk.Label(sidebar, text=f"{link['label']}", foreground="blue", cursor="hand2")
+        label.pack(anchor="w", padx=15, pady=2)
+        label.bind("<Button-1>", lambda e, url=link["url"]: webbrowser.open(url))
+
+    # 🔧 BOTONES
+    ttk.Separator(sidebar).pack(fill="x", pady=5)
+    ttk.Button(sidebar, text="Edit Links", command=lambda: open_link_panel(project_path)).pack(fill="x", padx=5, pady=5)
+
+
 def update_sidebar_project(event=None):
     sidebar.grid(row=4, column=2, padx=5, pady=5, sticky="ns")
     for widget in sidebar.winfo_children():
         widget.destroy()
-        
+
     selection = tree.selection()
     if not selection:
         return
-    
+
     item_id = selection[0]
     values = tree.item(item_id, "values")
     if len(values) < 4:
         return
-    
+
     project_path = values[3]
-    
-    ttk.Label(sidebar, text="✅ Tasks").pack(anchor="w", padx=5, pady=5)
-    task_path = os.path.join(project_path, ".organizer_tasks.json")
-    if os.path.exists(task_path):
-        with open(task_path, "r", encoding="utf-8") as f:
-            tasks = json.load(f)
-        for task in tasks:
-            var = tk.BooleanVar(value=task["done"])
-            ttk.Checkbutton(sidebar, text=task["text"], variable=var, state="disable").pack(anchor="w", padx=5)
-            
-            
-    ttk.Label(sidebar, text="🔗 Resources").pack(anchor="w", padx=5, pady=5)
-    links_path = os.path.join(project_path, ".organizer_links.json")
-    if os.path.exists(links_path):
-        with open(links_path, "r", encoding="utf-8") as f:
-            links = json.load(f)
 
-        for link in links:
-            def open_link(url=link["url"]):
-                webbrowser.open(url)
+    def cargar_sidebar_en_hilo():
+        resumen = calcular_resumen_proyecto(project_path)
+        orga.after(0, lambda: renderizar_sidebar(project_path, resumen))
 
-            label = ttk.Label(sidebar, text=f"{link['label']}", foreground="blue", cursor="hand2")
-            label.pack(anchor="w", padx=15, pady=2)
-            label.bind("<Button-1>", lambda e, url=link["url"]: webbrowser.open(url))
-    
-    ttk.Separator(sidebar).pack(fill="x", pady=5)
-    ttk.Button(sidebar, text="Edit Tasks", command=lambda: open_tasks_projects(project_path)).pack(fill="x", padx=5, pady=5)
-    ttk.Button(sidebar, text="Edit Links", command=lambda: open_link_panel(project_path)).pack(fill="x", padx=5, pady=5)
+    threading.Thread(target=cargar_sidebar_en_hilo, daemon=True).start()
+
 
 menu_name = "Organizer"
 description_menu = "Open Organizer"
@@ -4932,6 +5211,7 @@ menu_settings = tk.Menu(menu, tearoff=0)
 menu.add_command(label="Settings", command=setting_window)   
 help_menu = tk.Menu(menu, tearoff=0)
 menu.add_cascade(label="Help", menu=help_menu)
+help_menu.add_command(label="Plugins", command=lambda: gestor_plugins(plugin_api))
 help_menu.add_command(label="InfoVersion", command=ver_info)
 help_menu.add_command(label="Documentation", command=show_docu)
 
@@ -5022,6 +5302,13 @@ version_label.grid(row=8, column=1, pady=5, padx=5, sticky="se")
 
 main_frame.grid_rowconfigure(4, weight=1)
 
+plugin_api = PluginAPI(
+    main_window=main_frame,
+    menu=menu_archivo,
+    sidebar=sidebar,
+    tree=tree,
+)
+
 def obtener_nombre_y_ruta(path_origen):
     if os.path.isdir(path_origen):
         nombre_directorio = os.path.basename(path_origen)
@@ -5069,11 +5356,12 @@ if len(sys.argv) > 1:
     open_project_file(sys.argv[1],)
 
 crear_base_datos()
-show_projects_thread()
+orga.after(0, mostrar_proyectos)
 set_default_theme()
 thread_check_update()
 thread_sinc()
 initialize_backup_schedule()
 asociate_files_extension()
 start_observer_dropzone()
+load_plugins(plugin_api)
 orga.mainloop()
