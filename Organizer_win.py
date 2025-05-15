@@ -55,6 +55,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from tkinterdnd2 import DND_FILES, TkinterDnD
 from collections import Counter
+from PIL import Image, ImageTk
 
 
 main_version = "ver.1.9.7"
@@ -5297,6 +5298,42 @@ def show_project_hierarchy_map(project_path):
     search_entry.bind("<KeyRelease>", lambda e: rebuild_tree_async())
     rebuild_tree()
 
+path = resource_path("software.ico")
+path2 = resource_path2("software.png")
+
+def show_splash(duration=2500):
+    splash = tk.Toplevel()
+    splash.overrideredirect(True)
+    splash.configure(bg="#222")
+    
+    width, height = 450, 300
+    x = (splash.winfo_screenwidth() - width) // 2
+    y = (splash.winfo_screenheight() - height) // 2
+    splash.geometry(f"{width}x{height}+{x}+{y}")
+
+    # 📷 Cargar el logo
+    try:
+        logo_img = Image.open(resource_path("software.png"))
+        logo_img = logo_img.resize((100, 100))
+        logo_photo = ImageTk.PhotoImage(logo_img)
+
+        img_label = ttk.Label(splash, image=logo_photo)
+        img_label.image = logo_photo
+        img_label.pack(pady=(30, 10))
+    except Exception as e:
+        print("Error cargando logo:", e)
+
+    ttk.Label(splash, text="🧠 Organizer", font=("Segoe UI", 16, "bold")).pack()
+
+    progress = ttk.Progressbar(splash, mode="indeterminate", length=200)
+    progress.pack(pady=20)
+    progress.start(10)
+
+    def close_splash():
+        splash.destroy()
+        orga.deiconify()
+
+    splash.after(duration, close_splash)
 
 menu_name = "Organizer"
 description_menu = "Open Organizer"
@@ -5304,12 +5341,12 @@ ruta_exe = os.path.abspath(sys.argv[0])
 ruta_icono = ruta_exe
 ruta_db = ruta_exe
 orga = ThemedTk()
+orga.withdraw()
+show_splash(duration=3000)
 orga.tk.call('package', 'require', 'tkdnd')
 orga.title('Project Organizer')
 orga.geometry("1230x500")
 orga.resizable(True, True)
-path = resource_path("software.ico")
-path2 = resource_path2("./software.png")
 orga.iconbitmap(path)
 temas = orga.get_themes()
 ttkbootstrap_themes = ttk_themes()
