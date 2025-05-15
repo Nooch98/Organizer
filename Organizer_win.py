@@ -56,6 +56,9 @@ from watchdog.events import FileSystemEventHandler
 from tkinterdnd2 import DND_FILES, TkinterDnD
 from collections import Counter
 from PIL import Image, ImageTk
+from ttkbootstrap import utility
+from ttkbootstrap.tooltip import ToolTip
+from uuid import uuid4
 
 
 main_version = "ver.1.9.7"
@@ -258,21 +261,37 @@ def gestor_plugins(api, config_path="plugin_config.json"):
 
     ttk.Button(top, text="Save Changes", command=guardar_config).pack(pady=10)
 
-def show_notification(message, duration=3000, bg="#2c3e50", fg="white"):
-    notif = tk.Toplevel(orga)
-    notif.overrideredirect(True)  # Quitar bordes
-    notif.attributes("-topmost", True)
-    notif.configure(bg=bg)
+def show_notification(message, duration=3000, type_="info"):
+    styles = {
+        "info":     {"bg": "#3498db", "fg": "white", "icon": "ℹ️"},
+        "success":  {"bg": "#27ae60", "fg": "white", "icon": "✅"},
+        "warning":  {"bg": "#f39c12", "fg": "black", "icon": "⚠️"},
+        "error":    {"bg": "#e74c3c", "fg": "white", "icon": "❌"},
+    }
 
-    # Contenido
-    label = ttk.Label(notif, text=message, background=bg, foreground=fg, anchor="center", font=("Segoe UI", 9, "bold"))
+    style = styles.get(type_, styles["info"])
+    full_msg = f"{style['icon']} {message}"
+
+    notif = tk.Toplevel(orga)
+    notif.overrideredirect(True)
+    notif.attributes("-topmost", True)
+    notif.configure(bg=style["bg"])
+
+    label = ttk.Label(
+        notif, text=full_msg,
+        background=style["bg"], foreground=style["fg"],
+        anchor="center", font=("Segoe UI", 9, "bold")
+    )
     label.pack(ipadx=10, ipady=5)
 
-    # Posición: esquina superior derecha de la ventana principal
+    # Posicionar en esquina inferior derecha de la ventana principal
     orga.update_idletasks()
-    x = orga.winfo_x() + orga.winfo_width() - 250
-    y = orga.winfo_y() + 40
-    notif.geometry(f"230x40+{x}+{y}")
+    notif.update_idletasks()
+    notif_width = 240
+    notif_height = 40
+    x = orga.winfo_x() + orga.winfo_width() - notif_width - 20
+    y = orga.winfo_y() + orga.winfo_height() - notif_height - 20
+    notif.geometry(f"{notif_width}x{notif_height}+{x}+{y}")
 
     notif.after(duration, notif.destroy)
 
@@ -282,14 +301,14 @@ def make_file_hide(path):
     try:
         ctypes.windll.kernel32.SetFileAttributesW(path, FILE_ATTRIBUTE_HIDDEN)
     except Exception as e:
-        show_notification(f"[ERROR] The file could not be hidden: {e}")
+        show_notification(f"[ERROR] The file could not be hidden: {e}", type_="error")
         
 def quit_attribute_only_read_hide(path):
     try:
         FILE_ATTRIBUTE_NORMAL = 0x80
         ctypes.windll.kernel32.SetFileAttributesW(path, FILE_ATTRIBUTE_NORMAL)
     except Exception as e:
-         show_notification(f"[ERROR] Attributes could not be cleared: {e}")
+         show_notification(f"[ERROR] Attributes could not be cleared: {e}", type_="error")
 
 def search_github_key():
     posible_name = ["GITHUB", "TOKEN", "API", "KEY", "SECRET"]
@@ -700,12 +719,12 @@ def abrir_proyecto(id_proyecto, ruta, editor):
                 process.append(terminal_process)
                 abrir_editor_thread(ruta, id_proyecto)
             else:
-                show_notification(f"{editor} Not found")
+                show_notification(f"{editor} Not found", type_="warning")
 
             threading.Thread(target=monitor_processes_and_sync, args=(process, id_proyecto, ruta, ruta_copia), daemon=True).start()
 
         except Exception as e:
-            show_notification(f"An error occurred while opening the project. Check the editor path and project files. Error: {str(e)}")
+            show_notification(f"An error occurred while opening the project. Check the editor path and project files. Error: {str(e)}", type_="error")
 
     threading.Thread(target=execute_project_on_subprocess, daemon=True).start()
     
@@ -4605,7 +4624,7 @@ def show_versions_historial(project_path):
                 else:
                     shutil.copy2(src, dst)
 
-            show_notification(f"✅ Project restored to version: {version_name}")
+            show_notification(f"✅ Project restored to version: {version_name}", type_="success")
             mostrar_proyectos()
 
         except Exception as e:
@@ -4912,11 +4931,19 @@ def open_link_panel(project_path):
     ttk.Button(win, text="Delete Selected", command=delete_link).pack(pady=5)
     ttk.Button(win, text="Open Selected", command=open_selected).pack(pady=5)
 
-def restore_version_from_sidebar(project_path, project_name, version_name):
+def restore_version_from_sidebar(project_path, version_name):
+    project_name = os.path.basename(project_path)
     origin_path = os.path.join("projects_versions", project_name, version_name)
 
     if not os.path.exists(origin_path):
-        ms.showerror("Error", f"Version folder not found:\n{origin_path}")
+        ms.showerror("Restore Error", f"Version not found:\n{origin_path}")
+        return
+
+    confirm = ms.askyesno(
+        "Confirm Restore",
+        f"Do you want to restore version '{version_name}'?\nThis will overwrite the current project:\n{project_path}"
+    )
+    if not confirm:
         return
 
     try:
@@ -4937,10 +4964,10 @@ def restore_version_from_sidebar(project_path, project_name, version_name):
             else:
                 shutil.copy2(src, dst)
 
-        show_notification(f"✅ Restored version: {version_name}")
-        mostrar_proyectos()
+        show_notification(f"Restored version: {version_name}", type_="success")
+        orga.after(500, mostrar_proyectos)  # Refrescar UI
     except Exception as e:
-        ms.showerror("Restore Error", f"Failed to restore version:\n{e}")
+        ms.showerror("Restore Error", f"Failed to restore:\n{e}")
 
 def calcular_resumen_proyecto(project_path):
     resumen = {
@@ -4995,56 +5022,173 @@ def renderizar_sidebar(project_path, resumen):
     for widget in sidebar.winfo_children():
         widget.destroy()
 
-    ttk.Label(sidebar, text="📊 Project Summary", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=5, pady=(5, 2))
-    ttk.Label(sidebar, text=f"📁 Folders: {resumen['folders']}").pack(anchor="w", padx=5)
-    ttk.Label(sidebar, text=f"📄 Files: {resumen['files']}").pack(anchor="w", padx=5)
-    ttk.Label(sidebar, text=f"📦 Size: {round(resumen['size'] / 1024, 2)} KB").pack(anchor="w", padx=5)
-    ttk.Label(sidebar, text=f"🧪 Tests: {resumen['tests']}").pack(anchor="w", padx=5)
-    ttk.Label(sidebar, text=f"📝 Tasks: {resumen['tasks']}").pack(anchor="w", padx=5)
+    def create_section(title, emoji="📁"):
+        frame = ttk.LabelFrame(sidebar, text=f"{emoji} {title}", bootstyle="info")
+        frame.pack(fill="x", padx=6, pady=6)
+        return frame
 
-    ttk.Button(sidebar, text="📊 Full Dashboard", command=lambda: show_dashboard_proyect(project_path)).pack(anchor="w", padx=5, pady=6)
-    ttk.Separator(sidebar).pack(fill="x", pady=5)
+    def guardar_tasks():
+        task_path = os.path.join(project_path, ".organizer_tasks.json")
+        with open(task_path, "w", encoding="utf-8") as f:
+            json.dump(resumen["tasks_list"], f, indent=2)
 
-    ttk.Label(sidebar, text="✅ Tasks").pack(anchor="w", padx=5, pady=5)
-    for task in resumen["tasks_list"]:
-        var = tk.BooleanVar(value=task["done"])
-        ttk.Checkbutton(sidebar, text=task["text"], variable=var, state="disabled").pack(anchor="w", padx=15)
+    def guardar_links():
+        link_path = os.path.join(project_path, ".organizer_links.json")
+        with open(link_path, "w", encoding="utf-8") as f:
+            json.dump(resumen["resources"], f, indent=2)
 
-    ttk.Button(sidebar, text="✏️ Edit Tasks", command=lambda: open_tasks_projects(project_path)).pack(fill="x", padx=5, pady=5)
-    ttk.Separator(sidebar).pack(fill="x", pady=5)
+    # -- SUMMARY SECTION --
+    summary_frame = create_section("Project Summary", "📊")
+    ttk.Label(summary_frame, text=f"📁 Folders: {resumen['folders']}").pack(anchor="w", padx=5, pady=2)
+    ttk.Label(summary_frame, text=f"📄 Files: {resumen['files']}").pack(anchor="w", padx=5, pady=2)
+    ttk.Label(summary_frame, text=f"📦 Size: {round(resumen['size'] / 1024, 2)} KB").pack(anchor="w", padx=5, pady=2)
+    ttk.Label(summary_frame, text=f"🧪 Tests: {resumen['tests']}").pack(anchor="w", padx=5, pady=2)
+    ttk.Label(summary_frame, text=f"📝 Pending Tasks: {resumen['tasks']}").pack(anchor="w", padx=5, pady=2)
 
-    ttk.Label(sidebar, text="🔗 Resources").pack(anchor="w", padx=5, pady=5)
-    for link in resumen["resources"]:
-        label = ttk.Label(sidebar, text=f"{link['label']}", foreground="blue", cursor="hand2")
-        label.pack(anchor="w", padx=15, pady=2)
-        label.bind("<Button-1>", lambda e, url=link["url"]: webbrowser.open(url))
+    ttk.Button(summary_frame, text="📈 Full Dashboard", command=lambda: show_dashboard_proyect(project_path), bootstyle="outline-info").pack(fill="x", padx=5, pady=5)
 
-    ttk.Button(sidebar, text="🔧 Edit Links", command=lambda: open_link_panel(project_path)).pack(fill="x", padx=5, pady=5)
+    # -- TASKS SECTION --
+    tasks_frame = create_section("Tasks", "✅")
 
-    ttk.Separator(sidebar).pack(fill="x", pady=5)
-    ttk.Label(sidebar, text="🕓 Versions").pack(anchor="w", padx=5, pady=5)
-    project_name = os.path.basename(project_path)
-    versions_file = os.path.join("projects_versions", project_name, "versions.json")
-
-    if os.path.exists(versions_file):
+    def guardar_tasks():
         try:
-            with open(versions_file, "r", encoding="utf-8") as f:
-                versions = json.load(f)
-
-            for version in reversed(versions[-3:]):
-                def restore_v(vn=version["name"]):
-                    confirm = ms.askyesno("Restore", f"Restore version '{vn}'?")
-                    if confirm:
-                        restore_version_from_sidebar(project_path, project_name, vn)
-
-                label = ttk.Label(sidebar, text=f"↩️ {version['date']}", foreground="blue", cursor="hand2")
-                label.pack(anchor="w", padx=15, pady=2)
-                label.bind("<Button-1>", lambda e, vn=version["name"]: restore_v(vn))
-
-            if len(versions) > 3:
-                ttk.Button(sidebar, text="📂 View All Versions", command=lambda: show_versions_historial(project_path)).pack(anchor="w", padx=5, pady=5)
+            task_path = os.path.join(project_path, ".organizer_tasks.json")
+            with open(task_path, "w", encoding="utf-8") as f:
+                json.dump(resumen["tasks_list"], f, indent=4)
+            show_notification("Tasks updated", type_="success")
         except Exception as e:
-            ttk.Label(sidebar, text="⚠️ Failed to load versions").pack(anchor="w", padx=10)
+            ms.showerror("Error", f"Failed to save tasks:\n{e}")
+
+    def toggle_task(idx, var):
+        resumen["tasks_list"][idx]["done"] = var.get()
+        guardar_tasks()
+        update_sidebar_project()
+
+    def delete_task(idx):
+        del resumen["tasks_list"][idx]
+        guardar_tasks()
+        update_sidebar_project()
+
+    for i, task in enumerate(resumen["tasks_list"]):
+        row = ttk.Frame(tasks_frame)
+        row.pack(fill="x", padx=5, pady=1)
+
+        var = tk.BooleanVar(value=task["done"])
+        cb = ttk.Checkbutton(
+            row, text=task["text"], variable=var,
+            command=lambda idx=i, v=var: toggle_task(idx, v)
+        )
+        cb.pack(side="left", expand=True, anchor="w")
+
+        icon = ttk.Label(row, text="🗑", cursor="hand2", foreground="red")
+        icon.pack(side="right", padx=4)
+        icon.bind("<Button-1>", lambda e, idx=i: delete_task(idx))
+        ToolTip(icon, text="Delete")
+
+    def add_task():
+        new = simpledialog.askstring("➕ New Task", "Enter task:")
+        if new:
+            resumen["tasks_list"].append({"text": new, "done": False})
+            guardar_tasks()
+            update_sidebar_project()
+
+    ttk.Button(tasks_frame, text="➕ Add Task", command=add_task, bootstyle="secondary").pack(fill="x", padx=5, pady=5)
+    ttk.Button(tasks_frame, text="✏️ Edit Tasks", command=lambda: open_tasks_projects(project_path), bootstyle="outline").pack(fill="x", padx=5, pady=2)
+
+    # -- LINKS SECTION --
+    links_frame = create_section("Resources", "🔗")
+
+    def delete_link(i):
+        del resumen["resources"][i]
+        guardar_links()
+        update_sidebar_project()
+
+    for i, link in enumerate(resumen["resources"]):
+        row = ttk.Frame(links_frame)
+        row.pack(fill="x", padx=5, pady=2)
+        lbl = ttk.Label(row, text=f"🌐 {link['label']}", foreground="blue", cursor="hand2")
+        lbl.pack(side="left", expand=True, anchor="w")
+        lbl.bind("<Button-1>", lambda e, url=link["url"]: webbrowser.open(url))
+        ToolTip(lbl, text=link["url"])
+
+        icon = ttk.Label(row, text="🗑", cursor="hand2", foreground="red")
+        icon.pack(side="right", padx=4)
+        icon.bind("<Button-1>", lambda e, i=i: delete_link(i))
+        ToolTip(icon, text="Delete")
+
+    def add_link():
+        label = simpledialog.askstring("Label", "Enter label:")
+        url = simpledialog.askstring("URL", "Enter URL:")
+        if label and url:
+            resumen["resources"].append({"label": label, "url": url})
+            guardar_links()
+            update_sidebar_project()
+
+    ttk.Button(links_frame, text="➕ Add Link", command=add_link, bootstyle="secondary").pack(fill="x", padx=5, pady=5)
+    ttk.Button(links_frame, text="🔧 Edit Links", command=lambda: open_link_panel(project_path), bootstyle="outline").pack(fill="x", padx=5, pady=2)
+
+    # -- VERSIONS SECTION --
+    versions_metadata = os.path.join("projects_versions", os.path.basename(project_path), "versions.json")
+    if os.path.exists(versions_metadata):
+        try:
+            with open(versions_metadata, "r", encoding="utf-8") as f:
+                versions = json.load(f)
+        except Exception as e:
+            versions = []
+            show_notification(f"Error loading versions: {e}", type_="error")
+
+        if versions:
+            versions_frame = create_section("Versions", "🕓")
+            for v in versions[-3:][::-1]:
+                label = f"{v['name']} ({v['date']})"
+                btn = ttk.Button(
+                    versions_frame,
+                    text=label,
+                    bootstyle="link",
+                    command=lambda vn=v["name"]: restore_version_from_sidebar(project_path, vn)
+                )
+                btn.pack(anchor="w", padx=10, pady=2)
+            ttk.Button(versions_frame, text="🗂 View All", command=lambda: show_versions_historial(project_path), bootstyle="outline").pack(fill="x", padx=5, pady=5)
+            
+    # -- BOARD SECTION --
+    priority_fg_colors = {
+        "high": "#e74c3c",    # Rojo fuerte
+        "medium": "#f39c12",  # Amarillo mostaza
+        "low": "#27ae60"      # Verde
+    }
+    
+    board_section = create_section("Board", "🗂")
+
+    board_path = os.path.join(project_path, ".organizer_board.json")
+    if os.path.exists(board_path):
+        try:
+            with open(board_path, "r", encoding="utf-8") as f:
+                board_data = json.load(f)
+        except:
+            board_data = {}
+    else:
+        board_data = {}
+
+    for col in ["To Do", "In Progress", "Done"]:
+        ttk.Label(board_section, text=f"📌 {col}", font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=5, pady=(4, 1))
+        for card in board_data.get(col, [])[:2]:
+            emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(card.get("priority", "medium"), "⚪")
+            fg_color = priority_fg_colors.get(card.get("priority", "medium"), "#555")
+            label = ttk.Label(
+                board_section,
+                text=f"{emoji} {card['text']}",
+                wraplength=240,
+                font=("Segoe UI", 8),
+                foreground=fg_color,
+            )
+            label.pack(anchor="w", padx=12, pady=1)
+
+    ttk.Button(
+        board_section,
+        text="📝 Open Board",
+        command=lambda: open_trello_board(project_path),
+        bootstyle="outline-info"
+    ).pack(fill="x", padx=6, pady=6)
 
 def update_sidebar_project(event=None):
     sidebar.grid(row=4, column=2, padx=5, pady=5, sticky="ns")
@@ -5067,6 +5211,228 @@ def update_sidebar_project(event=None):
         orga.after(0, lambda: renderizar_sidebar(project_path, resumen))
 
     threading.Thread(target=cargar_sidebar_en_hilo, daemon=True).start()
+
+def open_trello_board(project_path):
+    window = tk.Toplevel(orga)
+    window.title("🗂 Trello-style Board")
+    window.geometry("1100x650")
+    window.iconbitmap(path)
+    window.minsize(900, 600)
+
+    board_file = os.path.join(project_path, ".organizer_board.json")
+
+    if os.path.exists(board_file):
+        with open(board_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    else:
+        data = {
+            "To Do": [],
+            "In Progress": [],
+            "Done": []
+        }
+
+    columns = list(data.keys())
+    cards = data
+    column_frames = {}
+    collapsed_columns = set()
+
+    priority_colors = {
+        "high": "#e74c3c",
+        "medium": "#f39c12",
+        "low": "#27ae60"
+    }
+
+    priority_emojis = {
+        "high": "🔴",
+        "medium": "🟡",
+        "low": "🟢"
+    }
+
+    search_var = tk.StringVar()
+    search_frame = ttk.Frame(window)
+    search_frame.pack(fill="x", padx=10, pady=(8, 0))
+    ttk.Label(search_frame, text="🔍 Search:", font=("Segoe UI", 9, "bold")).pack(side="left")
+    search_entry = ttk.Entry(search_frame, textvariable=search_var, width=40)
+    search_entry.pack(side="left", padx=5)
+    ttk.Button(search_frame, text="🔃 Refresh", command=lambda: render_board(), bootstyle="secondary").pack(side="right")
+
+    board_frame = ttk.Frame(window)
+    board_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+    drag_data = {"text": "", "source": ""}
+
+    def save_board():
+        with open(board_file, "w", encoding="utf-8") as f:
+            json.dump(cards, f, indent=2)
+        update_sidebar_project()
+
+    def ask_card_details(existing=None):
+        top = tk.Toplevel(window)
+        top.title("📝 Card Details")
+        top.geometry("300x160")
+        top.grab_set()
+
+        ttk.Label(top, text="Card Text:", font=("Segoe UI", 10)).pack(pady=(10, 2))
+        entry = ttk.Entry(top, width=35)
+        entry.insert(0, existing["text"] if existing else "")
+        entry.pack(pady=5)
+
+        ttk.Label(top, text="Priority:", font=("Segoe UI", 10)).pack(pady=(10, 2))
+        priority_var = tk.StringVar(value=existing["priority"] if existing else "medium")
+        combo = ttk.Combobox(top, textvariable=priority_var, values=["low", "medium", "high"], state="readonly")
+        combo.pack()
+
+        result = {}
+
+        def submit():
+            text = entry.get().strip()
+            if not text:
+                ms.showwarning("Empty", "Card text cannot be empty")
+                return
+            result["text"] = text
+            result["priority"] = priority_var.get()
+            top.destroy()
+
+        ttk.Button(top, text="Save", command=submit).pack(pady=10)
+        top.wait_window()
+        return result if result else None
+
+    def render_board():
+        query = search_var.get().strip().lower()
+        for col in columns:
+            frame = column_frames[col]
+
+            for widget in frame.card_container.winfo_children():
+                widget.destroy()
+
+            if col in collapsed_columns:
+                frame.card_container.pack_forget()
+                frame.counter_label.config(text="(collapsed)")
+            else:
+                if not frame.card_container.winfo_ismapped():
+                    frame.card_container.pack(fill="both", expand=True, pady=(0,5))
+                    frame.card_container.lift(frame.action_frame)
+
+                frame.counter_label.config(text=f"Cards: {len(cards[col])}")
+
+                filtered = [c for c in cards[col] if query in c["text"].lower()] if query else cards[col]
+
+                for i, card in enumerate(filtered):
+                    text, priority = card["text"], card.get("priority", "medium")
+                    emoji = priority_emojis.get(priority, "")
+                    color = priority_colors.get(priority, "#000")
+
+                    row = ttk.Frame(frame.card_container)
+                    row.pack(fill="x", padx=3, pady=3)
+
+                    label = ttk.Label(
+                        row,
+                        text=f"{emoji} {text}",
+                        foreground=color,
+                        anchor="w",
+                        font=("Segoe UI", 9),
+                        wraplength=240,
+                        cursor="hand2"
+                    )
+                    label.pack(side="left", fill="x", expand=True)
+                    label.bind("<Double-Button-1>", lambda e, c=card, col=col: edit_card(col, c))
+                    label.bind("<ButtonPress-1>", lambda e, text=text, src=col: start_drag(e, text, src))
+
+                    ToolTip(label, text=f"Priority: {priority.capitalize()}")
+
+                    delete = ttk.Label(row, text="🗑", foreground="red", cursor="hand2")
+                    delete.pack(side="right", padx=5)
+                    delete.bind("<Button-1>", lambda e, i=i, col=col: delete_card(col, i))
+
+    def delete_card(col, idx):
+        del cards[col][idx]
+        render_board()
+        save_board()
+
+    def clear_column(col):
+        if ms.askyesno("Clear Column", f"Delete ALL cards in '{col}'?"):
+            cards[col].clear()
+            render_board()
+            save_board()
+
+    def edit_card(col, card):
+        updated = ask_card_details(existing=card)
+        if updated:
+            card.update(updated)
+            render_board()
+            save_board()
+
+    def start_drag(event, text, source_col):
+        drag_data["text"] = text
+        drag_data["source"] = source_col
+        window.bind("<B1-Motion>", dragging)
+        window.bind("<ButtonRelease-1>", drop_card)
+
+    def dragging(event): pass
+
+    def drop_card(event):
+        x, y = event.x_root, event.y_root
+        for col in columns:
+            frame = column_frames[col]
+            if frame.winfo_rootx() < x < frame.winfo_rootx() + frame.winfo_width() and \
+               frame.winfo_rooty() < y < frame.winfo_rooty() + frame.winfo_height():
+                move_card(drag_data["text"], drag_data["source"], col)
+                break
+        window.unbind("<B1-Motion>")
+        window.unbind("<ButtonRelease-1>")
+        drag_data["text"] = ""
+        drag_data["source"] = ""
+
+    def move_card(text, from_col, to_col):
+        if from_col == to_col:
+            return
+        found = None
+        for card in cards[from_col]:
+            if card["text"] == text:
+                found = card
+                break
+        if found:
+            cards[from_col].remove(found)
+            cards[to_col].append(found)
+            render_board()
+            save_board()
+
+    for col in columns:
+        col_frame = ttk.Frame(board_frame, relief="ridge", borderwidth=2)
+        col_frame.pack(side="left", fill="both", expand=True, padx=6, pady=5)
+        column_frames[col] = col_frame
+
+        title_frame = ttk.Frame(col_frame)
+        title_frame.pack(fill="x", pady=(5, 0))
+
+        col_label = ttk.Label(title_frame, text=f"{col}", font=("Segoe UI", 10, "bold"))
+        col_label.pack(side="left", padx=5)
+
+        counter_label = ttk.Label(title_frame, text="", font=("Segoe UI", 9, "italic"))
+        counter_label.pack(side="right", padx=5)
+        col_frame.counter_label = counter_label
+
+        card_container = ttk.Frame(col_frame)
+        card_container.pack(fill="both", expand=True, pady=(0,5))
+        col_frame.card_container = card_container
+
+        action_frame = ttk.Frame(col_frame)
+        action_frame.pack(pady=5, fill="x")
+        col_frame.action_frame = action_frame
+
+        ttk.Button(action_frame, text="➕ Add", command=lambda c=col: add_card(c), bootstyle="success").pack(side="left", padx=3)
+        ttk.Button(action_frame, text="🪑 Clear", command=lambda c=col: clear_column(c), bootstyle="danger").pack(side="right", padx=3)
+
+    def add_card(col):
+        result = ask_card_details()
+        if result:
+            cards[col].append(result)
+            render_board()
+            save_board()
+
+    search_var.trace_add("write", lambda *_: render_board())
+    render_board()
+
 
 def show_project_hierarchy_map(project_path):
     window = tk.Toplevel(orga)
