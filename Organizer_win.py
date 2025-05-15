@@ -257,20 +257,38 @@ def gestor_plugins(api, config_path="plugin_config.json"):
 
     ttk.Button(top, text="Save Changes", command=guardar_config).pack(pady=10)
 
+def show_notification(message, duration=3000, bg="#2c3e50", fg="white"):
+    notif = tk.Toplevel(orga)
+    notif.overrideredirect(True)  # Quitar bordes
+    notif.attributes("-topmost", True)
+    notif.configure(bg=bg)
+
+    # Contenido
+    label = ttk.Label(notif, text=message, background=bg, foreground=fg, anchor="center", font=("Segoe UI", 9, "bold"))
+    label.pack(ipadx=10, ipady=5)
+
+    # Posición: esquina superior derecha de la ventana principal
+    orga.update_idletasks()
+    x = orga.winfo_x() + orga.winfo_width() - 250
+    y = orga.winfo_y() + 40
+    notif.geometry(f"230x40+{x}+{y}")
+
+    notif.after(duration, notif.destroy)
+
 def make_file_hide(path):
     FILE_ATTRIBUTE_HIDDEN = 0x02
     
     try:
         ctypes.windll.kernel32.SetFileAttributesW(path, FILE_ATTRIBUTE_HIDDEN)
     except Exception as e:
-        ms.showerror("ERROR", f"[ERROR] The file could not be hidden: {e}")
+        show_notification(f"[ERROR] The file could not be hidden: {e}")
         
 def quit_attribute_only_read_hide(path):
     try:
         FILE_ATTRIBUTE_NORMAL = 0x80
         ctypes.windll.kernel32.SetFileAttributesW(path, FILE_ATTRIBUTE_NORMAL)
     except Exception as e:
-        ms.showerror("ERROR", f"[ERROR] Attributes could not be cleared: {e}")
+         show_notification(f"[ERROR] Attributes could not be cleared: {e}")
 
 def search_github_key():
     posible_name = ["GITHUB", "TOKEN", "API", "KEY", "SECRET"]
@@ -681,12 +699,12 @@ def abrir_proyecto(id_proyecto, ruta, editor):
                 process.append(terminal_process)
                 abrir_editor_thread(ruta, id_proyecto)
             else:
-                ms.showerror("ERROR", f"{editor} Not found")
+                show_notification(f"{editor} Not found")
 
             threading.Thread(target=monitor_processes_and_sync, args=(process, id_proyecto, ruta, ruta_copia), daemon=True).start()
 
         except Exception as e:
-            ms.showerror("ERROR", f"An error occurred while opening the project. Check the editor path and project files. Error: {str(e)}")
+            show_notification(f"An error occurred while opening the project. Check the editor path and project files. Error: {str(e)}")
 
     threading.Thread(target=execute_project_on_subprocess, daemon=True).start()
     
@@ -2558,6 +2576,7 @@ def show_context_menu(event):
         ("Save version", lambda: promp_coment_and_save_version(tree.item(tree.selection())['values'][3])),
         ("Show Versions History", lambda: show_versions_historial(tree.item(tree.selection())['values'][3])),
         ("Show Resumen", lambda: show_dashboard_proyect(tree.item(tree.selection())['values'][3])),
+        ("TreeMap", lambda: show_project_hierarchy_map(tree.item(tree.selection())['values'][3])),
         ("Delete", lambda: eliminar_proyecto(tree.item(tree.selection())['values'][1], tree.item(tree.selection())['values'][3])),
         ("Notes", lambda: open_project_notes(tree.item(tree.selection())['values'][3])),
         ("Sync Files Locals", lambda: sync_repo_files(tree.item(tree.selection())['values'][4], tree.item(tree.selection())['values'][3])),
@@ -4544,29 +4563,52 @@ def show_versions_historial(project_path):
         
     def restore():
         selection = tree.selection()
-        if selection:
-            version_name = selection[0]
-            origin_path = os.path.join(project_path, "projects_versions", project_name, version_name)
-            confirm = ms.askyesno("Confirm", f"You want restore {version_name}?\n This will overwrite the current project ")
-            if confirm:
-                for item in os.listdir(project_path):
-                    if item not in ["projects_versions"]:
-                        item_path = os.path.join(project_path, item)
-                        if os.path.isdir(item_path):
-                            shutil.rmtree(item_path)
-                        else:
-                            os.remove(item_path)
+        if not selection:
+            ms.showwarning("Warning", "No version selected.")
+            return
 
-                for item in os.listdir(origin_path):
-                    src = os.path.join(origin_path, item)
-                    dst = os.path.join(project_path, item)
-                    if os.path.isdir(src):
-                        shutil.copytree(src, dst)
-                    else:
-                        shutil.copy2(src, dst)
-                
-                ms.showinfo("Restored", "Version successfully restored")
-                mostrar_proyectos()
+        version_name = selection[0]
+        if not version_name.startswith("v_"):
+            ms.showerror("Error", "Invalid version selected.")
+            return
+
+        project_base = os.path.dirname(os.path.abspath(__file__))
+        origin_path = os.path.join(project_base, "projects_versions", project_name, version_name)
+
+        if not os.path.exists(origin_path):
+            ms.showerror("Error", f"Version folder not found:\n{origin_path}")
+            return
+
+        confirm = ms.askyesno(
+            "Confirm Restore",
+            f"Do you want to restore version '{version_name}'?\nThis will overwrite the current project:\n{project_path}"
+        )
+        if not confirm:
+            return
+
+        try:
+            for item in os.listdir(project_path):
+                if item == "projects_versions":
+                    continue
+                item_path = os.path.join(project_path, item)
+                if os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                else:
+                    os.remove(item_path)
+
+            for item in os.listdir(origin_path):
+                src = os.path.join(origin_path, item)
+                dst = os.path.join(project_path, item)
+                if os.path.isdir(src):
+                    shutil.copytree(src, dst)
+                else:
+                    shutil.copy2(src, dst)
+
+            show_notification(f"✅ Project restored to version: {version_name}")
+            mostrar_proyectos()
+
+        except Exception as e:
+            ms.showerror("Restore Error", f"Failed to restore version:\n{e}")
                 
     btn_restore = ttk.Button(window, text="Restore version", command=restore)
     btn_restore.pack(padx=5, pady=5)
@@ -4674,11 +4716,9 @@ def show_dashboard_proyect(project_path):
             ext = os.path.splitext(file)[1].lower()
             extensions[ext] += 1
 
-            # Detectar archivos de test comunes
             if file.lower().startswith("test_") or file.endswith((".spec.js", ".spec.ts", ".test.js", ".test.ts")):
                 total_tests += 1
 
-    # Tamaño de versiones
     versions_folder = os.path.join("projects_versions")
     version_size = 0
     version_count = 0
@@ -4691,7 +4731,6 @@ def show_dashboard_proyect(project_path):
                     continue
             version_count += 1
 
-    # Tareas pendientes
     task_path = os.path.join(project_path, ".organizer_tasks.json")
     pending_task = 0
     if os.path.exists(task_path):
@@ -4703,7 +4742,6 @@ def show_dashboard_proyect(project_path):
         except:
             pass
 
-    # Última modificación
     try:
         last_mod = max(
             os.path.getmtime(os.path.join(dp, f))
@@ -4714,7 +4752,6 @@ def show_dashboard_proyect(project_path):
     except:
         last_date = "Not available"
 
-    # 🧾 Sección básica
     ttk.Label(frame, text="📊 General", font=("Segoe UI", 10, "bold")).pack(anchor="w")
     ttk.Label(frame, text=f"📁 Folders: {total_folders}").pack(anchor="w")
     ttk.Label(frame, text=f"📄 Files: {total_files}").pack(anchor="w")
@@ -4723,19 +4760,16 @@ def show_dashboard_proyect(project_path):
 
     ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=5)
 
-    # 🧪 Test y tareas
     ttk.Label(frame, text="🛠 Dev Info", font=("Segoe UI", 10, "bold")).pack(anchor="w")
     ttk.Label(frame, text=f"🧪 Test files: {total_tests}").pack(anchor="w")
     ttk.Label(frame, text=f"📝 Pending Tasks: {pending_task}").pack(anchor="w")
 
     ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=5)
 
-    # 🔁 Versionado
     ttk.Label(frame, text="🧬 Versions", font=("Segoe UI", 10, "bold")).pack(anchor="w")
     ttk.Label(frame, text=f"🧾 Saved versions: {version_count}").pack(anchor="w")
     ttk.Label(frame, text=f"💾 Version folder size: {round(version_size / 1024, 2)} KB").pack(anchor="w")
 
-    # 🧠 Extensiones y lenguajes
     if extensions:
         ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=5)
         ttk.Label(frame, text="🧠 File Types / Languages", font=("Segoe UI", 10, "bold")).pack(anchor="w")
@@ -4877,6 +4911,36 @@ def open_link_panel(project_path):
     ttk.Button(win, text="Delete Selected", command=delete_link).pack(pady=5)
     ttk.Button(win, text="Open Selected", command=open_selected).pack(pady=5)
 
+def restore_version_from_sidebar(project_path, project_name, version_name):
+    origin_path = os.path.join("projects_versions", project_name, version_name)
+
+    if not os.path.exists(origin_path):
+        ms.showerror("Error", f"Version folder not found:\n{origin_path}")
+        return
+
+    try:
+        for item in os.listdir(project_path):
+            if item == "projects_versions":
+                continue
+            item_path = os.path.join(project_path, item)
+            if os.path.isdir(item_path):
+                shutil.rmtree(item_path)
+            else:
+                os.remove(item_path)
+
+        for item in os.listdir(origin_path):
+            src = os.path.join(origin_path, item)
+            dst = os.path.join(project_path, item)
+            if os.path.isdir(src):
+                shutil.copytree(src, dst)
+            else:
+                shutil.copy2(src, dst)
+
+        show_notification(f"✅ Restored version: {version_name}")
+        mostrar_proyectos()
+    except Exception as e:
+        ms.showerror("Restore Error", f"Failed to restore version:\n{e}")
+
 def calcular_resumen_proyecto(project_path):
     resumen = {
         "folders": 0,
@@ -4905,7 +4969,6 @@ def calcular_resumen_proyecto(project_path):
             if file.startswith("test_") or file.endswith((".spec.js", ".test.js", ".test.py", ".spec.ts", ".test.ts")):
                 resumen["tests"] += 1
 
-    # Tareas
     task_path = os.path.join(project_path, ".organizer_tasks.json")
     if os.path.exists(task_path):
         try:
@@ -4917,7 +4980,6 @@ def calcular_resumen_proyecto(project_path):
         except:
             pass
 
-    # Recursos
     links_path = os.path.join(project_path, ".organizer_links.json")
     if os.path.exists(links_path):
         try:
@@ -4932,7 +4994,6 @@ def renderizar_sidebar(project_path, resumen):
     for widget in sidebar.winfo_children():
         widget.destroy()
 
-    # 📊 DASHBOARD RESUMEN
     ttk.Label(sidebar, text="📊 Project Summary", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=5, pady=(5, 2))
     ttk.Label(sidebar, text=f"📁 Folders: {resumen['folders']}").pack(anchor="w", padx=5)
     ttk.Label(sidebar, text=f"📄 Files: {resumen['files']}").pack(anchor="w", padx=5)
@@ -4940,29 +5001,49 @@ def renderizar_sidebar(project_path, resumen):
     ttk.Label(sidebar, text=f"🧪 Tests: {resumen['tests']}").pack(anchor="w", padx=5)
     ttk.Label(sidebar, text=f"📝 Tasks: {resumen['tasks']}").pack(anchor="w", padx=5)
 
-    ttk.Button(sidebar, text="Full Dashboard", command=lambda: show_dashboard_proyect(project_path)).pack(anchor="w", padx=5, pady=6)
+    ttk.Button(sidebar, text="📊 Full Dashboard", command=lambda: show_dashboard_proyect(project_path)).pack(anchor="w", padx=5, pady=6)
     ttk.Separator(sidebar).pack(fill="x", pady=5)
 
-    # ✅ TASKS
     ttk.Label(sidebar, text="✅ Tasks").pack(anchor="w", padx=5, pady=5)
     for task in resumen["tasks_list"]:
         var = tk.BooleanVar(value=task["done"])
         ttk.Checkbutton(sidebar, text=task["text"], variable=var, state="disabled").pack(anchor="w", padx=15)
 
-    ttk.Button(sidebar, text="Edit Tasks", command=lambda: open_tasks_projects(project_path)).pack(fill="x", padx=5, pady=5)
+    ttk.Button(sidebar, text="✏️ Edit Tasks", command=lambda: open_tasks_projects(project_path)).pack(fill="x", padx=5, pady=5)
     ttk.Separator(sidebar).pack(fill="x", pady=5)
-    
-    # 🔗 RESOURCES
+
     ttk.Label(sidebar, text="🔗 Resources").pack(anchor="w", padx=5, pady=5)
     for link in resumen["resources"]:
         label = ttk.Label(sidebar, text=f"{link['label']}", foreground="blue", cursor="hand2")
         label.pack(anchor="w", padx=15, pady=2)
         label.bind("<Button-1>", lambda e, url=link["url"]: webbrowser.open(url))
 
-    # 🔧 BOTONES
-    ttk.Separator(sidebar).pack(fill="x", pady=5)
-    ttk.Button(sidebar, text="Edit Links", command=lambda: open_link_panel(project_path)).pack(fill="x", padx=5, pady=5)
+    ttk.Button(sidebar, text="🔧 Edit Links", command=lambda: open_link_panel(project_path)).pack(fill="x", padx=5, pady=5)
 
+    ttk.Separator(sidebar).pack(fill="x", pady=5)
+    ttk.Label(sidebar, text="🕓 Versions").pack(anchor="w", padx=5, pady=5)
+    project_name = os.path.basename(project_path)
+    versions_file = os.path.join("projects_versions", project_name, "versions.json")
+
+    if os.path.exists(versions_file):
+        try:
+            with open(versions_file, "r", encoding="utf-8") as f:
+                versions = json.load(f)
+
+            for version in reversed(versions[-3:]):
+                def restore_v(vn=version["name"]):
+                    confirm = ms.askyesno("Restore", f"Restore version '{vn}'?")
+                    if confirm:
+                        restore_version_from_sidebar(project_path, project_name, vn)
+
+                label = ttk.Label(sidebar, text=f"↩️ {version['date']}", foreground="blue", cursor="hand2")
+                label.pack(anchor="w", padx=15, pady=2)
+                label.bind("<Button-1>", lambda e, vn=version["name"]: restore_v(vn))
+
+            if len(versions) > 3:
+                ttk.Button(sidebar, text="📂 View All Versions", command=lambda: show_versions_historial(project_path)).pack(anchor="w", padx=5, pady=5)
+        except Exception as e:
+            ttk.Label(sidebar, text="⚠️ Failed to load versions").pack(anchor="w", padx=10)
 
 def update_sidebar_project(event=None):
     sidebar.grid(row=4, column=2, padx=5, pady=5, sticky="ns")
@@ -4985,6 +5066,236 @@ def update_sidebar_project(event=None):
         orga.after(0, lambda: renderizar_sidebar(project_path, resumen))
 
     threading.Thread(target=cargar_sidebar_en_hilo, daemon=True).start()
+
+def show_project_hierarchy_map(project_path):
+    window = tk.Toplevel(orga)
+    window.title("Project Structure Map")
+    window.geometry("1000x650")
+    window.iconbitmap(path)
+
+    topbar = ttk.Frame(window)
+    topbar.pack(fill="x", padx=10, pady=5)
+
+    ttk.Label(topbar, text="🔍 Search:").pack(side="left")
+    search_var = tk.StringVar()
+    search_entry = ttk.Entry(topbar, textvariable=search_var, width=40)
+    search_entry.pack(side="left", padx=5)
+
+    main_frame = ttk.Frame(window)
+    main_frame.pack(fill="both", expand=True)
+
+    left_frame = ttk.Frame(main_frame)
+    left_frame.pack(side="left", fill="both", expand=True)
+
+    canvas = tk.Canvas(left_frame, bg="white", highlightthickness=0)
+    vsb = ttk.Scrollbar(left_frame, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=vsb.set)
+
+    vsb.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+
+    content_frame = ttk.Frame(canvas)
+    canvas_window = canvas.create_window((0, 0), window=content_frame, anchor="nw")
+
+    preview_frame = ttk.Frame(main_frame, width=350)
+    preview_frame.pack(side="right", fill="both", expand=False)
+    ttk.Label(preview_frame, text="📄 File Preview", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=10, pady=5)
+
+    preview_code = CodeView(preview_frame, wrap="none", font=("Consolas", 10))
+    preview_code.pack(fill="both", expand=True, padx=5, pady=5)
+
+    code_languages = {
+        ".py": "python", ".js": "javascript", ".html": "html", ".css": "css", ".json": "json",
+        ".java": "java", ".c": "c", ".cpp": "cpp", ".sh": "bash", ".xml": "xml", ".yml": "yaml",
+        ".md": "markdown", ".rb": "ruby", ".php": "php", ".ts": "typescript"
+    }
+
+    def update_scroll_region(event=None):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+    content_frame.bind("<Configure>", update_scroll_region)
+
+    label_font = ("Segoe UI", 9)
+    box_height = 22
+    spacing = 6
+    indent = 25
+    expanded_dirs = set()
+    search_lock = threading.Lock()
+    search_thread = None
+
+    icon_map = {
+        ".py": "🐍", ".js": "🟨", ".html": "🌐", ".css": "🎨", ".json": "🗂",
+        ".txt": "📄", ".md": "📘", ".exe": "🧱", ".png": "🖼", ".jpg": "📷",
+        ".java": "☕", ".c": "🔧", ".cpp": "➕", ".sh": "🐚", ".bat": "⚙️",
+        ".csv": "📊", ".xml": "📰"
+    }
+
+    color_map = {
+        ".py": "#3572A5", ".js": "#f1e05a", ".html": "#e34c26", ".css": "#563d7c", ".json": "#cbcb41",
+        ".txt": "#555", ".md": "#083fa1", ".exe": "#999", ".png": "#679", ".jpg": "#756", ".jpeg": "#756",
+        ".java": "#b07219", ".c": "#555555", ".cpp": "#f34b7d", ".sh": "#89e051", ".bat": "#8f8f8f",
+        ".csv": "#22863a", ".xml": "#006", ".yml": "#cb1717"
+    }
+
+    def get_icon_color(path, is_dir):
+        if is_dir:
+            return "📂" if path in expanded_dirs else "📁", "#1976d2"
+        ext = os.path.splitext(path)[1].lower()
+        return icon_map.get(ext, "📄"), color_map.get(ext, "#bbbbbb")
+
+    def draw_tree(path, x, y, depth=0, max_depth=30):
+        if depth > max_depth or os.path.islink(path):
+            return y
+
+        skip_dirs = {".git", "__pycache__", "venv", "node_modules", "env"}
+        is_dir = os.path.isdir(path)
+        name = os.path.basename(path)
+
+        if name in skip_dirs:
+            return y
+
+        arrow_expanded = "▼"
+        arrow_collapsed = "▶"
+
+        arrow = ""
+        if is_dir:
+            arrow = arrow_expanded if path in expanded_dirs else arrow_collapsed
+        else:
+            arrow = " "
+
+        emoji, base_color = get_icon_color(path, is_dir)
+        search = search_var.get().lower()
+        match = search in name.lower() if search else False
+
+        file_count = ""
+        if is_dir:
+            try:
+                contents = os.listdir(path)
+                file_count = f" ({len(contents)})"
+            except:
+                contents = []
+                file_count = ""
+        else:
+            contents = []
+
+        display_name = f"{arrow} {emoji} {name}{file_count}"
+        node_color = "#d63384" if match else base_color
+        font_style = ("Segoe UI", 9, "underline bold") if match else label_font
+
+        node_id = canvas.create_text(x, y, anchor="nw", text=display_name, font=font_style, fill=node_color, tags=("node", path))
+
+        def on_enter(e):
+            canvas.itemconfig(node_id, fill="#007acc")
+        def on_leave(e):
+            canvas.itemconfig(node_id, fill=node_color)
+
+        canvas.tag_bind(node_id, "<Enter>", on_enter)
+        canvas.tag_bind(node_id, "<Leave>", on_leave)
+
+        def toggle(event, current=path):
+            if is_dir:
+                if current in expanded_dirs:
+                    expanded_dirs.remove(current)
+                else:
+                    expanded_dirs.add(current)
+                rebuild_tree()
+            else:
+                show_preview(current)
+
+        canvas.tag_bind(node_id, "<Button-1>", toggle)
+
+        next_y = y + box_height + spacing
+
+        if is_dir and path in expanded_dirs:
+            for item in sorted(contents):
+                child = os.path.join(path, item)
+                if os.path.exists(child):
+                    next_y = draw_tree(child, x + indent, next_y, depth + 1, max_depth)
+
+        return next_y
+    
+    def expand_matching_dirs(path, search_text, max_depth=30, depth=0):
+        if depth > max_depth or os.path.islink(path):
+            return False
+
+        is_dir = os.path.isdir(path)
+        name = os.path.basename(path)
+        skip_dirs = {".git", "__pycache__", "venv", "node_modules", "env"}
+
+        if name in skip_dirs:
+            return False
+
+        match_found = search_text in name.lower()
+
+        if is_dir:
+            try:
+                children = os.listdir(path)
+            except:
+                children = []
+
+            child_matches = False
+            for child in children:
+                child_path = os.path.join(path, child)
+                if expand_matching_dirs(child_path, search_text, max_depth, depth + 1):
+                    child_matches = True
+
+            if child_matches or match_found:
+                expanded_dirs.add(path)
+                return True
+            else:
+                if path in expanded_dirs:
+                    expanded_dirs.remove(path)
+                return False
+        else:
+            return match_found
+
+    def rebuild_tree():
+        canvas.delete("all")
+        draw_tree(project_path, 10, 10)
+
+    def do_search_and_expand(search_text):
+        with search_lock:
+            expanded_dirs.clear()
+            if search_text:
+                expand_matching_dirs(project_path, search_text)
+            orga.after(0, rebuild_tree)
+
+    def rebuild_tree_async():
+        nonlocal search_thread
+        search_text = search_var.get().lower().strip()
+
+        if search_thread and search_thread.is_alive():
+            pass
+
+        else:
+            search_thread = threading.Thread(target=do_search_and_expand, args=(search_text,), daemon=True)
+            search_thread.start()
+
+    def show_preview(file_path):
+        preview_code.configure(state="normal")
+        preview_code.delete("1.0", "end")
+
+        ext = os.path.splitext(file_path)[1].lower()
+
+        if ext in [".exe", ".png", ".jpg", ".jpeg", ".ico", ".dll"]:
+            preview_code.insert("1.0", f"[Binary or unsupported file: {ext}]")
+            preview_code.configure(state="disabled")
+            return
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read(20000)
+
+            lang = pygments.lexers.get_lexer_for_filename(file_path)
+            preview_code.configure(lexer=lang)
+            preview_code.insert("1.0", content)
+        except Exception as e:
+            preview_code.insert("1.0", f"[Error reading file: {e}]")
+            preview_code.configure(lexer=None)
+
+        preview_code.configure(state="disabled")
+
+    search_entry.bind("<KeyRelease>", lambda e: rebuild_tree_async())
+    rebuild_tree()
 
 
 menu_name = "Organizer"
@@ -5315,7 +5626,7 @@ def obtener_nombre_y_ruta(path_origen):
         ruta_directorio = path_origen
         ms.showinfo("Organizer", f"[DROP] Directorio: {nombre_directorio}\nRuta: {ruta_directorio}")
     else:
-        ms.showerror("ERROR", f"[DROP] Ignorado: {path_origen} (no es un directorio)")
+        ms.showwarning("Organizer", f"[DROP] Ignorado: {path_origen} (no es un directorio)")
 
 def on_drop(event):
     paths = event.data.strip().split()
