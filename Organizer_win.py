@@ -27,8 +27,7 @@ import base64
 import hashlib
 import ctypes
 import contextlib
-import importlib
-import traceback
+import argparse
 #--------------------------------------------------------#
 from tkinter import Listbox, OptionMenu, StringVar, filedialog, simpledialog
 from tkinter.simpledialog import askstring 
@@ -83,6 +82,14 @@ vcs_githubconfigfile = ".myvcs/github_config.json"
 selected_file = None
 file_name = None
 loaded_plugins = {}
+
+EXT_TO_LANG_CLI = {
+    ".py": "Python", ".js": "JavaScript", ".jsx": "JavaScript", ".ts": "TypeScript",
+    ".tsx": "TypeScript", ".java": "Java", ".c": "C", ".cpp": "C++", ".h": "C/C++",
+    ".cs": "C#", ".go": "Go", ".rs": "Rust", ".html": "HTML", ".css": "CSS",
+    ".json": "JSON", ".sh": "Shell", ".php": "PHP", ".dart": "Dart", ".kt": "Kotlin",
+    ".swift": "Swift", ".rb": "Ruby", ".lua": "Lua",
+}
 
 class PluginAPI:
     def __init__(self, main_window, menu, sidebar, tree, sandbox_fn=None):
@@ -455,7 +462,25 @@ def actualizar_estado_proyecto(id_proyecto, sincronizado):
     
     conn.commit()
     conn.close()
+
+def registry_activity(name, project_path):
+    activity_file = "organizer_recent.json"
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    entry = {"name": name, "path": project_path, "timestamp": now}
     
+    try:
+        with open(activity_file, "r", encoding="utf-8") as f:
+            data  = json.load(f)
+            
+    except:
+        data = []
+        
+    data = [item for item in data if item["path"] != project_path]
+    data.insert(0, entry)
+    data = data[:10]
+    with open(activity_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
 # Función para sincronizar proyectos que estaban abiertos en un editor al iniciar la app
 def sincronizar_proyectos_abiertos():
     conn = sqlite3.connect(db_path)
@@ -686,6 +711,8 @@ def abrir_proyecto(id_proyecto, ruta, editor):
 
     ultima_sincronizacion = obtener_ultima_sincronizacion(id_proyecto)
     sincronizar_diferencial(ruta_formateada, ruta_copia, ultima_sincronizacion)
+    
+    registry_activity(nombre_proyecto, ruta_formateada)
 
     def execute_project_on_subprocess():
         try:
@@ -5046,9 +5073,95 @@ def renderizar_sidebar(project_path, resumen):
     ttk.Label(summary_frame, text=f"📝 Pending Tasks: {resumen['tasks']}").pack(anchor="w", padx=5, pady=2)
 
     ttk.Button(summary_frame, text="📈 Full Dashboard", command=lambda: show_dashboard_proyect(project_path), bootstyle="outline-info").pack(fill="x", padx=5, pady=5)
+    
+    # -- LANGUAGE BREAKDOWN SECTION --
+    lang_frame = create_section("Languages", "🧪")
 
-    # -- TASKS SECTION --
-    tasks_frame = create_section("Tasks", "✅")
+    EXT_TO_LANG = {
+        ".py": "Python",
+        ".js": "JavaScript",
+        ".jsx": "JavaScript",
+        ".ts": "TypeScript",
+        ".tsx": "TypeScript",
+        ".java": "Java",
+        ".c": "C",
+        ".cpp": "C++",
+        ".h": "C/C++",
+        ".cs": "C#",
+        ".go": "Go",
+        ".rs": "Rust",
+        ".html": "HTML",
+        ".css": "CSS",
+        ".json": "JSON",
+        ".sh": "Shell",
+        ".php": "PHP",
+        ".dart": "Dart",
+        ".kt": "Kotlin",
+        ".swift": "Swift",
+        ".rb": "Ruby",
+        ".lua": "Lua",
+    }
+
+    LANG_COLORS = {
+        "Python": "#3572A5",
+        "JavaScript": "#f1e05a",
+        "TypeScript": "#2b7489",
+        "Java": "#b07219",
+        "C": "#555555",
+        "C++": "#f34b7d",
+        "C/C++": "#6e4c13",
+        "C#": "#178600",
+        "Go": "#00ADD8",
+        "Rust": "#dea584",
+        "HTML": "#e34c26",
+        "CSS": "#563d7c",
+        "JSON": "#292929",
+        "Shell": "#89e051",
+        "PHP": "#4F5D95",
+        "Dart": "#00B4AB",
+        "Kotlin": "#F18E33",
+        "Swift": "#ffac45",
+        "Ruby": "#701516",
+        "Lua": "#000080"
+    }
+
+    lang_counter = {}
+
+    for ext, count in resumen["exts"].items():
+        if count <= 0:
+            continue
+        lang = EXT_TO_LANG.get(ext)
+        if lang:
+            lang_counter[lang] = lang_counter.get(lang, 0) + count
+
+    if not lang_counter:
+        ttk.Label(lang_frame, text="No code files detected", foreground="gray").pack(anchor="w", padx=10)
+    else:
+        total = sum(lang_counter.values())
+        sorted_langs = sorted(lang_counter.items(), key=lambda x: x[1], reverse=True)
+
+        for lang, count in sorted_langs:
+            percent = round((count / total) * 100)
+            if percent == 0:
+                continue
+
+            row = ttk.Frame(lang_frame)
+            row.pack(anchor="w", padx=10, pady=2, fill="x")
+
+            # Color indicator
+            color = LANG_COLORS.get(lang, "#888888")
+            canvas = tk.Canvas(row, width=10, height=10, highlightthickness=0)
+            canvas.create_oval(2, 2, 9, 9, fill=color, outline=color)
+            canvas.pack(side="left", padx=(0, 6))
+
+            # Language label
+            label = ttk.Label(row, text=f"{lang} ({percent}%)", font=("Segoe UI", 9))
+            label.pack(side="left", anchor="w")
+
+            ToolTip(label, text=f"{count} file(s)")
+
+        # -- TASKS SECTION --
+        tasks_frame = create_section("Tasks", "✅")
 
     def guardar_tasks():
         try:
@@ -5677,7 +5790,6 @@ def show_splash(duration=2500):
     y = (splash.winfo_screenheight() - height) // 2
     splash.geometry(f"{width}x{height}+{x}+{y}")
 
-    # 📷 Cargar el logo
     try:
         logo_img = Image.open(resource_path("software.png"))
         logo_img = logo_img.resize((100, 100))
@@ -5687,19 +5799,162 @@ def show_splash(duration=2500):
         img_label.image = logo_photo
         img_label.pack(pady=(30, 10))
     except Exception as e:
-        print("Error cargando logo:", e)
+        ms.showerror("ERROR", "Error logo loading:", e)
 
-    ttk.Label(splash, text="🧠 Organizer", font=("Segoe UI", 16, "bold")).pack()
+    ttk.Label(splash, text="Organizer", font=("Segoe UI", 16, "bold")).pack()
 
-    progress = ttk.Progressbar(splash, mode="indeterminate", length=200)
+    progress = ttk.Progressbar(splash, mode="determinate", length=200, maximum=100)
     progress.pack(pady=20)
-    progress.start(10)
+    
+    ttk.Label(splash, text=f"{main_version}", font=("Segoe UI", 16, "bold")).pack()
+
+    step_delay = 50
+    steps = duration // step_delay
+    increment = 100 / steps
+
+    def update_progress(i=0):
+        if i <= steps:
+            progress["value"] = i * increment
+            splash.after(step_delay, lambda: update_progress(i + 1))
+        else:
+            splash.destroy()
+            orga.deiconify()
 
     def close_splash():
         splash.destroy()
         orga.deiconify()
 
+    update_progress()
     splash.after(duration, close_splash)
+
+def run_cli_commands():
+    parser = argparse.ArgumentParser(description="Organizer CLI")
+    
+    parser.add_argument("--list-projects", action="store_true", help="List all projects")
+    parser.add_argument("--add-project", nargs=2, metavar=('name', 'path'), help="Add a new project")
+    parser.add_argument("--desc", help="Project description")
+    parser.add_argument("--lang", help="Project language")
+    parser.add_argument("--repo", help="Project repository URL")
+    parser.add_argument("--open-project", help="Open a project by name")
+    parser.add_argument("--version", action="store_true", help="Show Version Organizer")
+    parser.add_argument("--list-task", metavar="PROJECT", help="List tasks of project")
+    parser.add_argument("--add-task", nargs=2, metavar=("PROJECT", "TASK"), help="Add task to project")
+    parser.add_argument("--complete-task", nargs=2, metavar=("PROJECT", "INDEX"), help="Complete task by index")
+    parser.add_argument("--get-language", metavar="PROJECT", help="Get language usage of project")
+    parser.add_argument("--list-versions", metavar="PROJECT", help="List versions of project")
+
+    args = parser.parse_args()
+    
+    def task_file(project): return os.path.join(project, ".organizer_tasks.json")
+    def board_path(project): return os.path.join("projects_versions", os.path.basename(project), "versions.json")
+
+    def load_json(path):
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return []
+
+    def save_json(path, data):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+
+    if args.list_projects:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT nombre, ruta FROM proyectos")
+        proyectos = cursor.fetchall()
+        conn.close()
+
+        print("📁 Projects:")
+        for name, path in proyectos:
+            print(f" - {name}: {path}")
+        return True
+
+    if args.add_project:
+        name, path = args.add_project
+        description = args.desc or ""
+        language = args.lang or ""
+        repo = args.repo or ""
+        insertar_proyecto(name, description, path, repo)
+        print(f"✅ Project '{name}' added.")
+        return True
+
+    if args.open_project:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT ruta FROM proyectos WHERE nombre=?", (args.open_project,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            ruta = row[0]
+            abrir_threading("", ruta, selected_editor.get())
+            print(f"🚀 Opening project '{args.open_project}'...")
+        else:
+            print("❌ Project not found")
+        return True
+    
+    if args.version:
+        print(f"Organizer version {version}")
+        return True
+    
+    if args.list_versions:
+        versions = load_json(board_path(args.list_versions))
+        for v in versions:
+            print(f"{v['name']} - {v['date']} :: {v.get('coment', '')}")
+        return True
+    
+    if args.list_task:
+        tasks = load_json(task_file(args.list_task))
+        for i, t in enumerate(tasks):
+            status = "✅" if t.get("done") else "❌"
+            print(f"{i}. {status} {t['text']}")
+        return True
+    
+    if args.add_task:
+        path, text = args.add_task
+        tasks = load_json(task_file(path))
+        tasks.append({"text": text, "done": False})
+        save_json(task_file(path), tasks)
+        print("✅ Task added.")
+        return True
+    
+    if args.complete_task:
+        path, idx = args.complete_task
+        tasks = load_json(task_file(path))
+        idx = int(idx)
+        if 0 <= idx < len(tasks):
+            tasks[idx]["done"] = True
+            save_json(task_file(path), tasks)
+            print(f"✅ Task {idx} marked as completed.")
+        else:
+            print("❌ Invalid task index.")
+        return True
+    
+    if args.get_language:
+        from collections import Counter
+        ext_counter = Counter()
+
+        for folder, _, files in os.walk(args.get_language):
+            if "projects_versions" in folder:
+                continue
+            for f in files:
+                ext = os.path.splitext(f)[1].lower()
+                ext_counter[ext] += 1
+
+        lang_counter = {}
+        for ext, count in ext_counter.items():
+            lang = EXT_TO_LANG_CLI.get(ext)
+            if lang:
+                lang_counter[lang] = lang_counter.get(lang, 0) + count
+
+        total = sum(lang_counter.values())
+        for lang, count in sorted(lang_counter.items(), key=lambda x: x[1], reverse=True):
+            percent = round((count / total) * 100, 2)
+            print(f"{lang}: {percent}%")
+
+        return True
+
+    return False
 
 menu_name = "Organizer"
 description_menu = "Open Organizer"
@@ -6065,6 +6320,9 @@ def start_observer_dropzone():
 
 main_frame.drop_target_register(DND_FILES)
 main_frame.dnd_bind('<<Drop>>', on_drop)
+
+if run_cli_commands():
+    sys.exit()
 
 if len(sys.argv) > 1:
     open_project_file(sys.argv[1],)
