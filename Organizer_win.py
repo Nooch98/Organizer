@@ -82,6 +82,7 @@ vcs_githubconfigfile = ".myvcs/github_config.json"
 selected_file = None
 file_name = None
 loaded_plugins = {}
+plugin_settings_registry = []
 
 EXT_TO_LANG_CLI = {
     ".py": "Python", ".js": "JavaScript", ".jsx": "JavaScript", ".ts": "TypeScript",
@@ -99,6 +100,7 @@ class PluginAPI:
         self.tree = tree
         self.sandbox_fn = sandbox_fn
         self._menu_commands = {}
+        self._commands = {}
         
     def get_selected_project_path(self):
         selection = self.tree.selection()
@@ -128,11 +130,54 @@ class PluginAPI:
     def add_sidebar_widget(self, widget):
         widget.pack(in_=self.sidebar, anchor="w", padx=5, pady=5)
         
-    def add_main_button(self, text, command):
+    def add_main_button(self, text, command, row=99, column=0, **grid_kwargs):
         btn = ttk.Button(self.main_window, text=text, command=command)
-        btn.pack(padx=5, pady=5)
+        btn.grid(row=row, column=column, padx=5, pady=5, **grid_kwargs)
         return btn
+    
+    def register_settings_section(self, name, frame_builder):
+        plugin_settings_registry.append((name, frame_builder))
+        
+    def unregister_settings_section(self, title):
+        global plugin_settings_registry
+        plugin_settings_registry = [entry for entry in plugin_settings_registry if entry[0] != title]
+        
+    def register_command(self, name, func, description=""):
+        self._commands[name] = {
+            "callback": func,
+            "description": description
+        }
 
+    def run_command(self, name):
+        if name in self._commands:
+            self._commands[name]["callback"]()
+        else:
+            raise ValueError(f"Command '{name}' not found.")
+
+class CollapsibleSection(ttk.LabelFrame):
+    def __init__(self, parent, title, *args, **kwargs):
+        super().__init__(parent, text=title, *args, **kwargs)
+        self.columnconfigure(0, weight=1)
+
+        # Etiqueta colapsable/expandible
+        self.toggle_label = ttk.Label(self, text="▾", cursor="hand2", bootstyle="inverted-info")
+        self.toggle_label.grid(row=0, column=0, sticky="ne", padx=4, pady=2)
+        self.toggle_label.bind("<Button-1>", lambda e: self.toggle())
+
+        # Contenedor de contenido
+        self.content_frame = ttk.Frame(self)
+        self.content_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+
+        self.collapsed = False
+
+    def toggle(self):
+        if self.collapsed:
+            self.content_frame.grid()
+            self.toggle_label.config(text="▾")
+        else:
+            self.content_frame.grid_remove()
+            self.toggle_label.config(text="▸")
+        self.collapsed = not self.collapsed
 
 def load_plugins(api, config_path="plugin_config.json"):
     plugin_dir = os.path.join(os.getcwd(), "plugins")
@@ -3261,6 +3306,9 @@ def setting_window():
     list_settings.insert(tk.END, "TTKTheme")
     list_settings.insert(tk.END, "System Startup")
     list_settings.insert(tk.END, "Context Menu Windows")
+    for plugin_section, _ in plugin_settings_registry:
+        list_settings.insert(tk.END, plugin_section)
+    
     
     def hide_frames():
         theme_frame.grid_forget()
@@ -3309,8 +3357,8 @@ def setting_window():
                 
                 rutas_editores[programa] = entry
 
-            aceptar_btn = ttk.Button(editor_frame, text="Confirm", command=guardar_y_cerrar)
-            aceptar_btn.grid(row=len(editores_disponibles), column=0, columnspan=3, padx=5, pady=5)
+                aceptar_btn = ttk.Button(editor_frame, text="Confirm", command=guardar_y_cerrar)
+                aceptar_btn.grid(row=len(editores_disponibles), column=0, columnspan=3, padx=5, pady=5)
         
         elif item == "Open Ai":
             hide_frames()
@@ -3542,6 +3590,13 @@ def setting_window():
             
             yes = ttk.Button(windows_context, text="Yes", command=lambda: delete_context_menu(menu_name))
             yes.grid(row=3, columnspan=2, padx=2, pady=2, sticky="nsew")
+            
+        for plugin_section, frame_builder in plugin_settings_registry:
+            if item == plugin_section:
+                hide_frames()
+                plugin_frame = ttk.Frame(main_frame)
+                plugin_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+                frame_builder(plugin_frame)
     
     list_settings.bind("<Double-1>", select_user_config)
     main_frame.grid_rowconfigure(0, weight=1)
@@ -4661,7 +4716,10 @@ def show_versions_historial(project_path):
     btn_restore.pack(padx=5, pady=5)
 
 def open_tasks_projects(project_path):
+    import re
+
     task_path = os.path.join(project_path, ".organizer_tasks.json")
+    scan_config_path = os.path.join(project_path, ".organizer_taskscan.json")
 
     if not os.path.exists(task_path):
         with open(task_path, "w", encoding="utf-8") as f:
@@ -4672,7 +4730,7 @@ def open_tasks_projects(project_path):
         tasks = json.load(f)
 
     window = tk.Toplevel(orga)
-    window.title("Project Task")
+    window.title("Project Tasks")
     window.geometry("400x500")
     window.iconbitmap(path)
 
@@ -4685,7 +4743,6 @@ def open_tasks_projects(project_path):
         new = []
         for text, var in entrys:
             new.append({"text": text.get(), "done": var.get()})
-
         quit_attribute_only_read_hide(task_path)
         with open(task_path, "w", encoding="utf-8") as f:
             json.dump(new, f, indent=4)
@@ -4695,10 +4752,8 @@ def open_tasks_projects(project_path):
         text = new_task_entry.get().strip()
         if text:
             var = tk.BooleanVar()
-            entry = ttk.Checkbutton(list_frame, text=text, variable=var)
-            entry.pack(anchor="w")
             entrys.append((tk.StringVar(value=text), var))
-            entry.config(variable=var)
+            ttk.Checkbutton(list_frame, text=text, variable=var).pack(anchor="w")
             new_task_entry.delete(0, "end")
             save_task()
 
@@ -4713,24 +4768,160 @@ def open_tasks_projects(project_path):
     def delete_complete_task():
         for widget in list_frame.winfo_children():
             widget.destroy()
-        filtered_task = [(t, v) for (t, v) in entrys if not v.get()]
+        filtered = [(t, v) for (t, v) in entrys if not v.get()]
         entrys.clear()
-        entrys.extend(filtered_task)
+        entrys.extend(filtered)
         for text, var in entrys:
             chk = ttk.Checkbutton(list_frame, textvariable=text, variable=var)
             chk.pack(anchor="w")
         save_task()
+
+    def import_tasks_from_code():
+        if not os.path.exists(scan_config_path):
+            ms.showwarning("Missing Config", "No .organizer_taskscan.json found.")
+            return
+
+        try:
+            with open(scan_config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            paths = config.get("paths", [])
+        except Exception as e:
+            ms.showerror("Error", f"Failed to read .organizer_taskscan.json:\n{e}")
+            return
+
+        patterns = [
+            r"#\s*(TODO|BUG|FIX)\s*[:：]\s*(.+)",
+            r"//\s*(TODO|BUG|FIX)\s*[:：]\s*(.+)"
+        ]
+        new_tasks = []
+
+        for rel_path in paths:
+            abs_path = os.path.join(project_path, rel_path)
+            if os.path.isfile(abs_path):
+                files_to_check = [abs_path]
+            elif os.path.isdir(abs_path):
+                files_to_check = []
+                for root, _, files in os.walk(abs_path):
+                    for file in files:
+                        if file.endswith((".py", ".js", ".ts", ".java", ".c", ".cpp")):
+                            files_to_check.append(os.path.join(root, file))
+            else:
+                continue
+
+            for file_path in files_to_check:
+                try:
+                    rel_file_path = os.path.relpath(file_path, project_path).replace("\\", "/")
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            for pat in patterns:
+                                match = re.search(pat, line.strip())
+                                if match:
+                                    task_text = match.group(2).strip()
+                                    new_tasks.append({
+                                        "text": task_text,
+                                        "done": False,
+                                        "source": "code",
+                                        "file": rel_file_path
+                                    })
+                except:
+                    continue
+
+        count = 0
+        for task in new_tasks:
+            task_text = task["text"]
+            if not any(task_text == t.get() for (t, _) in entrys):
+                var = tk.BooleanVar()
+                tvar = tk.StringVar(value=task_text)
+                chk = ttk.Checkbutton(list_frame, textvariable=tvar, variable=var)
+                chk.pack(anchor="w")
+                entrys.append((tvar, var))
+                tasks.append(task)
+                count += 1
+
+        if count:
+            save_task()
+            ms.showinfo("Tasks Imported", f"{count} tasks added from code.")
+        else:
+            ms.showinfo("No New Tasks", "No new TODO/BUG/FIX comments found.")
 
     load_task()
 
     new_task_entry = ttk.Entry(window)
     new_task_entry.pack(fill="x", padx=5, pady=5)
 
-    btn_agree = ttk.Button(window, text="Agree task", command=agree_task)
-    btn_agree.pack(padx=5, pady=5)
+    ttk.Button(window, text="➕ Add Task", command=agree_task).pack(side="left", padx=5, pady=5)
+    ttk.Button(window, text="🧹 Delete Completed", command=delete_complete_task).pack(side="left", padx=5, pady=5)
+    ttk.Button(window, text="📂 Import tasks from code", command=import_tasks_from_code).pack(side="left", padx=5, pady=5)
 
-    btn_delete = ttk.Button(window, text="Delete complete task", command=delete_complete_task)
-    btn_delete.pack(padx=5, pady=5)
+# TODO: Mejorar las task y su UI    
+def open_taskscan_config(project_path):
+    config_file = os.path.join(project_path, ".organizer_taskscan.json")
+
+    if os.path.exists(config_file):
+        with open(config_file, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    else:
+        config = {"paths": []}
+
+    paths = config.get("paths", [])
+
+    window = tk.Toplevel(orga)
+    window.title("📂 Configure Task Scan Paths")
+    window.geometry("500x420")
+    window.iconbitmap(path)
+
+    ttk.Label(window, text="🔍 Paths to scan for code tasks", font=("Segoe UI", 10, "bold")).pack(pady=10)
+
+    listbox = tk.Listbox(window, selectmode="single", height=12)
+    listbox.pack(fill="both", expand=True, padx=10, pady=5)
+
+    for p in paths:
+        listbox.insert("end", p)
+
+    def save_config():
+        new_paths = list(listbox.get(0, "end"))
+        with open(config_file, "w", encoding="utf-8") as f:
+            json.dump({"paths": new_paths}, f, indent=4)
+        make_file_hide(config_file)
+        show_notification("Scan paths updated", type_="success")
+        window.destroy()
+
+    def add_path():
+        selected = filedialog.askopenfilename(
+            title="Select file or folder",
+            initialdir=project_path
+        )
+        if not selected:
+            return
+
+        rel = os.path.relpath(selected, start=project_path).replace("\\", "/")
+        if rel not in listbox.get(0, "end"):
+            listbox.insert("end", rel)
+
+    def add_folder():
+        folder = filedialog.askdirectory(
+            title="Select folder",
+            initialdir=project_path
+        )
+        if not folder:
+            return
+
+        rel = os.path.relpath(folder, start=project_path).replace("\\", "/")
+        if rel not in listbox.get(0, "end"):
+            listbox.insert("end", rel)
+
+    def delete_selected():
+        selected = listbox.curselection()
+        if selected:
+            listbox.delete(selected[0])
+
+    button_frame = ttk.Frame(window)
+    button_frame.pack(pady=10)
+
+    ttk.Button(button_frame, text="📄 Add File", command=add_path, bootstyle="secondary").pack(side="left", padx=5)
+    ttk.Button(button_frame, text="📁 Add Folder", command=add_folder, bootstyle="secondary").pack(side="left", padx=5)
+    ttk.Button(button_frame, text="🗑 Delete", command=delete_selected, bootstyle="danger").pack(side="left", padx=5)
+    ttk.Button(button_frame, text="💾 Save", command=save_config, bootstyle="success").pack(side="right", padx=5)
 
 def show_dashboard_proyect(project_path):
     dashboard = tk.Toplevel(orga)
@@ -4992,7 +5183,7 @@ def restore_version_from_sidebar(project_path, version_name):
                 shutil.copy2(src, dst)
 
         show_notification(f"Restored version: {version_name}", type_="success")
-        orga.after(500, mostrar_proyectos)  # Refrescar UI
+        orga.after(500, mostrar_proyectos)
     except Exception as e:
         ms.showerror("Restore Error", f"Failed to restore:\n{e}")
 
@@ -5045,14 +5236,15 @@ def calcular_resumen_proyecto(project_path):
 
     return resumen
 
+# BUG: Fix problem when reloading the sidebar it disappears for a few seconds
 def renderizar_sidebar(project_path, resumen):
     for widget in sidebar.winfo_children():
         widget.destroy()
 
     def create_section(title, emoji="📁"):
-        frame = ttk.LabelFrame(sidebar, text=f"{emoji} {title}", bootstyle="info")
-        frame.pack(fill="x", padx=6, pady=6)
-        return frame
+        section = CollapsibleSection(sidebar, f"{emoji} {title}", bootstyle="info")
+        section.pack(fill="x", padx=6, pady=6)
+        return section.content_frame
 
     def guardar_tasks():
         task_path = os.path.join(project_path, ".organizer_tasks.json")
@@ -5063,16 +5255,6 @@ def renderizar_sidebar(project_path, resumen):
         link_path = os.path.join(project_path, ".organizer_links.json")
         with open(link_path, "w", encoding="utf-8") as f:
             json.dump(resumen["resources"], f, indent=2)
-
-    # -- SUMMARY SECTION --
-    summary_frame = create_section("Project Summary", "📊")
-    ttk.Label(summary_frame, text=f"📁 Folders: {resumen['folders']}").pack(anchor="w", padx=5, pady=2)
-    ttk.Label(summary_frame, text=f"📄 Files: {resumen['files']}").pack(anchor="w", padx=5, pady=2)
-    ttk.Label(summary_frame, text=f"📦 Size: {round(resumen['size'] / 1024, 2)} KB").pack(anchor="w", padx=5, pady=2)
-    ttk.Label(summary_frame, text=f"🧪 Tests: {resumen['tests']}").pack(anchor="w", padx=5, pady=2)
-    ttk.Label(summary_frame, text=f"📝 Pending Tasks: {resumen['tasks']}").pack(anchor="w", padx=5, pady=2)
-
-    ttk.Button(summary_frame, text="📈 Full Dashboard", command=lambda: show_dashboard_proyect(project_path), bootstyle="outline-info").pack(fill="x", padx=5, pady=5)
     
     # -- LANGUAGE BREAKDOWN SECTION --
     lang_frame = create_section("Languages", "🧪")
@@ -5148,20 +5330,18 @@ def renderizar_sidebar(project_path, resumen):
             row = ttk.Frame(lang_frame)
             row.pack(anchor="w", padx=10, pady=2, fill="x")
 
-            # Color indicator
             color = LANG_COLORS.get(lang, "#888888")
             canvas = tk.Canvas(row, width=10, height=10, highlightthickness=0)
             canvas.create_oval(2, 2, 9, 9, fill=color, outline=color)
             canvas.pack(side="left", padx=(0, 6))
 
-            # Language label
             label = ttk.Label(row, text=f"{lang} ({percent}%)", font=("Segoe UI", 9))
             label.pack(side="left", anchor="w")
 
             ToolTip(label, text=f"{count} file(s)")
 
-        # -- TASKS SECTION --
-        tasks_frame = create_section("Tasks", "✅")
+    # -- TASKS SECTION --
+    tasks_frame = create_section("Tasks", "✅")
 
     def guardar_tasks():
         try:
@@ -5182,16 +5362,82 @@ def renderizar_sidebar(project_path, resumen):
         guardar_tasks()
         update_sidebar_project()
 
+    def auto_import_code_tasks():
+        import re
+        config_path = os.path.join(project_path, ".organizer_taskscan.json")
+        if not os.path.exists(config_path):
+            return
+
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            paths = config.get("paths", [])
+        except:
+            return
+
+        patterns = [
+            r"#\s*(TODO|BUG|FIX)\s*[:：]\s*(.+)",
+            r"//\s*(TODO|BUG|FIX)\s*[:：]\s*(.+)"
+        ]
+        existing_texts = {t["text"] for t in resumen["tasks_list"]}
+
+        for rel_path in paths:
+            abs_path = os.path.join(project_path, rel_path)
+            if os.path.isfile(abs_path):
+                files = [abs_path]
+            elif os.path.isdir(abs_path):
+                files = []
+                for root, _, filenames in os.walk(abs_path):
+                    for fname in filenames:
+                        if fname.endswith((".py", ".js", ".ts", ".java", ".c", ".cpp")):
+                            files.append(os.path.join(root, fname))
+            else:
+                continue
+
+            for fpath in files:
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        for line in f:
+                            for pat in patterns:
+                                match = re.search(pat, line.strip())
+                                if match:
+                                    txt = match.group(2).strip()
+                                    if txt not in existing_texts:
+                                        resumen["tasks_list"].append({
+                                            "text": txt,
+                                            "done": False,
+                                            "source": "code",
+                                            "file": os.path.relpath(fpath, project_path).replace("\\", "/")
+                                        })
+                                        existing_texts.add(txt)
+                except:
+                    continue
+
+        guardar_tasks()
+
+    auto_import_code_tasks()
+    
+    config_btn = ttk.Label(tasks_frame, text="⚙️", cursor="hand2")
+    config_btn.pack(anchor="e", padx=6, pady=(0, 4))
+    config_btn.bind("<Button-1>", lambda e: open_taskscan_config(project_path))
+    ToolTip(config_btn, text="Edit scanned files/folders")
+
     for i, task in enumerate(resumen["tasks_list"]):
         row = ttk.Frame(tasks_frame)
         row.pack(fill="x", padx=5, pady=1)
 
         var = tk.BooleanVar(value=task["done"])
+        is_code_task = task.get("source") == "code"
+        display_text = f"🧩 {task['text']}" if is_code_task else task["text"]
+
         cb = ttk.Checkbutton(
-            row, text=task["text"], variable=var,
+            row, text=display_text, variable=var,
             command=lambda idx=i, v=var: toggle_task(idx, v)
         )
         cb.pack(side="left", expand=True, anchor="w")
+
+        if is_code_task and task.get("file"):
+            ToolTip(cb, text=f"{task['file']}")
 
         icon = ttk.Label(row, text="🗑", cursor="hand2", foreground="red")
         icon.pack(side="right", padx=4)
@@ -5201,7 +5447,11 @@ def renderizar_sidebar(project_path, resumen):
     def add_task():
         new = simpledialog.askstring("➕ New Task", "Enter task:")
         if new:
-            resumen["tasks_list"].append({"text": new, "done": False})
+            resumen["tasks_list"].append({
+                "text": new,
+                "done": False,
+                "source": "manual"
+            })
             guardar_tasks()
             update_sidebar_project()
 
@@ -5265,9 +5515,9 @@ def renderizar_sidebar(project_path, resumen):
             
     # -- BOARD SECTION --
     priority_fg_colors = {
-        "high": "#e74c3c",    # Rojo fuerte
-        "medium": "#f39c12",  # Amarillo mostaza
-        "low": "#27ae60"      # Verde
+        "high": "#e74c3c",
+        "medium": "#f39c12",
+        "low": "#27ae60"
     }
     
     board_section = create_section("Board", "🗂")
@@ -5304,7 +5554,7 @@ def renderizar_sidebar(project_path, resumen):
     ).pack(fill="x", padx=6, pady=6)
 
 def update_sidebar_project(event=None):
-    sidebar.grid(row=4, column=2, padx=5, pady=5, sticky="ns")
+    sidebar.grid(row=0, column=1, padx=5, pady=5, sticky="ns")
     for widget in sidebar.winfo_children():
         widget.destroy()
 
@@ -5546,11 +5796,11 @@ def open_trello_board(project_path):
     search_var.trace_add("write", lambda *_: render_board())
     render_board()
 
-
 def show_project_hierarchy_map(project_path):
     window = tk.Toplevel(orga)
     window.title("Project Structure Map")
     window.geometry("1000x650")
+    window.transient() 
     window.iconbitmap(path)
 
     topbar = ttk.Frame(window)
@@ -5777,6 +6027,7 @@ def show_project_hierarchy_map(project_path):
     search_entry.bind("<KeyRelease>", lambda e: rebuild_tree_async())
     rebuild_tree()
 
+
 path = resource_path("software.ico")
 path2 = resource_path2("software.png")
 
@@ -5802,15 +6053,39 @@ def show_splash(duration=2500):
         ms.showerror("ERROR", "Error logo loading:", e)
 
     ttk.Label(splash, text="Organizer", font=("Segoe UI", 16, "bold")).pack()
-
-    progress = ttk.Progressbar(splash, mode="determinate", length=200, maximum=100)
-    progress.pack(pady=20)
     
     ttk.Label(splash, text=f"{main_version}", font=("Segoe UI", 16, "bold")).pack()
+    
+    style = ttk.Style()
+    style.configure("Custom.Horizontal.TProgressbar", troughcolor="#333", background="#27ae60", thickness=12, borderwidth=0)
+    
+    progress = ttk.Progressbar(splash, mode="determinate", length=240, style="Custom.Horizontal.TProgressbar", maximum=100)
+    progress.pack(pady=20)
+    
+    messages = [
+        "Loading modules...",
+        "Initializing plugins...",
+        "Scanning projects...",
+        "Syncing configuration...",
+        "Preparing UI...",
+        "Starting Organizer..."
+    ]
+    
+    loading_label = ttk.Label(splash, text=messages[0], background="#222", foreground="#aaa", font=("Segoe UI", 9))
+    loading_label.pack()
 
     step_delay = 50
     steps = duration // step_delay
     increment = 100 / steps
+    message_interval = 600
+    msg_index = 0
+    
+    def rotate_message():
+        nonlocal msg_index
+        msg_index = (msg_index + 1) % len(messages)
+        loading_label.config(text=messages[msg_index])
+        if splash.winfo_exists():
+            splash.after(message_interval, rotate_message)
 
     def update_progress(i=0):
         if i <= steps:
@@ -5825,6 +6100,7 @@ def show_splash(duration=2500):
         orga.deiconify()
 
     update_progress()
+    splash.after(message_interval, rotate_message)
     splash.after(duration, close_splash)
 
 def run_cli_commands():
@@ -5845,8 +6121,11 @@ def run_cli_commands():
 
     args = parser.parse_args()
     
-    def task_file(project): return os.path.join(project, ".organizer_tasks.json")
-    def board_path(project): return os.path.join("projects_versions", os.path.basename(project), "versions.json")
+    def task_file(project):
+        return os.path.join(project, ".organizer_tasks.json")
+    
+    def board_path(project):
+        return os.path.join("projects_versions", os.path.basename(project), "versions.json")
 
     def load_json(path):
         if os.path.exists(path):
@@ -5956,11 +6235,68 @@ def run_cli_commands():
 
     return False
 
+def open_command_palette(plugin_api=None):
+    palette = tk.Toplevel(orga)
+    palette.title("Command Palette")
+    palette.geometry("520x320")
+    palette.transient(orga)
+    palette.grab_set()
+
+    palette.configure(bg="#2b2b2b")
+    x = (palette.winfo_screenwidth() - 520) // 2
+    y = (palette.winfo_screenheight() - 320) // 2
+    palette.geometry(f"+{x}+{y}")
+
+    entry_var = tk.StringVar()
+    entry = ttk.Entry(palette, textvariable=entry_var, font=("Segoe UI", 11))
+    entry.pack(fill="x", padx=12, pady=(12, 5))
+
+    listbox = tk.Listbox(palette, font=("Segoe UI", 10), activestyle="dotbox", height=12)
+    listbox.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+
+    all_commands = []
+    if plugin_api and hasattr(plugin_api, "_commands"):
+        for name, meta in plugin_api._commands.items():
+            desc = meta.get("description", "")
+            all_commands.append((name, desc))
+
+    def render_commands(filter_txt=""):
+        listbox.delete(0, "end")
+        for cmd, desc in all_commands:
+            if filter_txt.lower() in cmd.lower() or filter_txt.lower() in desc.lower():
+                listbox.insert("end", f"{cmd} — {desc}")
+
+    render_commands()
+
+    entry_var.trace_add("write", lambda *_: render_commands(entry_var.get()))
+
+    def execute_selected():
+        if not listbox.curselection():
+            return
+        selected = listbox.get(listbox.curselection()[0])
+        command = selected.split(" — ")[0].strip()
+        if plugin_api:
+            try:
+                plugin_api.run_command(command)
+            except Exception as e:
+                ms.showerror("Command Error", f"Error running command '{command}':\n{e}")
+        palette.destroy()
+
+    entry.bind("<Return>", lambda e: execute_selected())
+    listbox.bind("<Double-1>", lambda e: execute_selected())
+    entry.bind("<Escape>", lambda e: palette.destroy())
+    listbox.bind("<Escape>", lambda e: palette.destroy())
+
+    palette.deiconify()
+    entry.focus_set()
+
+
 menu_name = "Organizer"
 description_menu = "Open Organizer"
 ruta_exe = os.path.abspath(sys.argv[0])
 ruta_icono = ruta_exe
 ruta_db = ruta_exe
+
 orga = ThemedTk()
 orga.withdraw()
 show_splash(duration=3000)
@@ -5978,7 +6314,7 @@ check_var = tk.IntVar(value=saved_state if saved_state else (1 if is_in_startup(
 main_frame = ttk.Frame(orga, bootstyle="default")
 main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
 
-sidebar = ttk.Frame(main_frame, width=300)
+sidebar = ttk.Frame(orga, width=300)
 
 orga.grid_rowconfigure(0, weight=1)
 orga.grid_columnconfigure(0, weight=1)
@@ -6154,7 +6490,6 @@ def install_editor(name=""):
 
 filas_ocultas = set()
 
-# Establecer temas y editor
 editores_disponibles = ["Visual Studio Code", "Sublime Text", "Atom", "Vim", "Emacs", 
                         "Notepad++", "Brackets", "TextMate", "Geany", "gedit", 
                         "Nano", "Kate", "Bluefish", "Eclipse", "IntelliJ IDEA", 
@@ -6163,7 +6498,6 @@ editores_disponibles = ["Visual Studio Code", "Sublime Text", "Atom", "Vim", "Em
 
 lenguajes = ["Python", "NodeJS", "bun", "React", "Vue", "C++", "C#", "Rust", "Go", "flutter"]
 
-# Menú
 menu = tk.Menu(orga)
 orga.config(menu=menu)
 menu_archivo = tk.Menu(menu, tearoff=0)
@@ -6184,7 +6518,6 @@ help_menu.add_command(label="Plugins", command=lambda: gestor_plugins(plugin_api
 help_menu.add_command(label="InfoVersion", command=ver_info)
 help_menu.add_command(label="Documentation", command=show_docu)
 
-# Labels y campos de entrada
 ttk.Label(main_frame, text="Name:", bootstyle='info').grid(row=0, column=0, padx=5, pady=5, sticky="w")
 nombre_entry = ttk.Entry(main_frame, width=170)
 nombre_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
@@ -6197,8 +6530,6 @@ ttk.Label(main_frame, text="Repository URL:", bootstyle='info').grid(row=2, colu
 repo_entry = ttk.Entry(main_frame, width=170)
 repo_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
 
-
-# Árbol de proyectos
 tree = ttk.Treeview(
     main_frame,
     columns=('id','Description', 'Language', 'Path', 'Repository'),
@@ -6222,18 +6553,14 @@ tree.bind("<Button-3>", show_context_menu)
 tree.bind("<<TreeviewOpen>>", load_project_structure_on_expand)
 tree.bind("<<TreeviewSelect>>", update_sidebar_project)
 
-# Drag and drop label
 label_drop = ttk.Label(main_frame, text="Drop here your folder", bootstyle="info")
 label_drop.grid(row=5, columnspan=2, padx=5, pady=5)
 
-
-# Campo de búsqueda
 ttk.Label(main_frame, text="Search Project:", bootstyle='info').grid(row=6, column=0, padx=5, pady=5, sticky="w")
 search_entry = ttk.Entry(main_frame, width=170)
 search_entry.grid(row=6, column=1, padx=5, pady=5, sticky="ew")
 search_entry.bind("<KeyRelease>", on_key_release)
 
-# Selector de editor
 selected_editor = tk.StringVar()
 editor_options = [
     "Select a Editor", "Visual Studio Code", "Sublime Text", "Atom", "Vim", "Emacs", 
@@ -6252,17 +6579,16 @@ def obtener_datos_seleccionado(tree):
     seleccionados = tree.selection()
     if not seleccionados:
         ms.showinfo("Error", "No project selected.")
-        return None, None  # Retorna valores None si no hay selección
+        return None, None
     item_seleccionado = seleccionados[0]
     item_data = tree.item(item_seleccionado)['values']
     id_proyecto = item_data[1]  # id
     ruta = item_data[3]  # ruta
     return id_proyecto, ruta
 
-# Botones de acción
 btn_abrir = ttk.Button(main_frame, text='Open Project', command=lambda: abrir_threading(
-    *obtener_datos_seleccionado(tree),  # Desempaqueta id_proyecto y ruta
-    selected_editor.get()  # Editor seleccionado
+    *obtener_datos_seleccionado(tree),
+    selected_editor.get()
 ), bootstyle='success')
 btn_abrir.grid(row=8, column=0, columnspan=2, pady=10, padx=5, sticky="s")
 
@@ -6277,6 +6603,9 @@ plugin_api = PluginAPI(
     sidebar=sidebar,
     tree=tree,
 )
+
+plugin_api.register_command("refresh_sidebar", update_sidebar_project, "Refresca el panel lateral")
+plugin_api.register_command("open_terminal", lambda: os.system("start cmd"), "Abre una terminal de sistema")
 
 def obtener_nombre_y_ruta(path_origen):
     if os.path.isdir(path_origen):
@@ -6320,6 +6649,8 @@ def start_observer_dropzone():
 
 main_frame.drop_target_register(DND_FILES)
 main_frame.dnd_bind('<<Drop>>', on_drop)
+orga.bind_all("<Control-Shift-P>", lambda e: open_command_palette(plugin_api))
+
 
 if run_cli_commands():
     sys.exit()
