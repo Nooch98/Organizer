@@ -28,6 +28,7 @@ import hashlib
 import ctypes
 import contextlib
 import argparse
+import difflib
 #--------------------------------------------------------#
 from tkinter import Listbox, OptionMenu, StringVar, filedialog, simpledialog
 from tkinter.simpledialog import askstring 
@@ -39,12 +40,11 @@ from github import Auth, Github
 from openai import OpenAI
 from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
-from _internal.jedi import plugins
 from chlorophyll import CodeView
 from pathlib import Path
 from ttkbootstrap.constants import *
 from ttkbootstrap.widgets import Progressbar
-from git import Repo
+from git import GitCommandError, InvalidGitRepositoryError, Repo
 from tkinter.colorchooser import askcolor
 from datetime import datetime
 from pygments.lexers.markup import MarkdownLexer
@@ -83,6 +83,7 @@ selected_file = None
 file_name = None
 loaded_plugins = {}
 plugin_settings_registry = []
+float_win = None
 
 EXT_TO_LANG_CLI = {
     ".py": "Python", ".js": "JavaScript", ".jsx": "JavaScript", ".ts": "TypeScript",
@@ -184,7 +185,6 @@ def load_plugins(api, config_path="plugin_config.json"):
     os.makedirs(plugin_dir, exist_ok=True)
     sys.path.insert(0, plugin_dir)
 
-    # Leer configuración de activación
     if os.path.exists(config_path):
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
@@ -336,7 +336,6 @@ def show_notification(message, duration=3000, type_="info"):
     )
     label.pack(ipadx=10, ipady=5)
 
-    # Posicionar en esquina inferior derecha de la ventana principal
     orga.update_idletasks()
     notif.update_idletasks()
     notif_width = 240
@@ -452,38 +451,32 @@ def check_new_version():
 def thread_check_update():
     threading.Thread(target=check_new_version, daemon=True).start()
 
-# Función para obtener la ruta base de la carpeta de proyectos de la app
 def obtener_carpeta_proyectos_app():
-    # Obtener la ruta de la carpeta _internal/projects en el directorio de instalación de la app
     ruta_base_app = Path(__file__).parent  # Obtiene la ruta donde está instalada la app
     carpeta_proyectos = ruta_base_app / "_internal" / "projects"
-    
-    # Crear la carpeta si no existe
+
     carpeta_proyectos.mkdir(parents=True, exist_ok=True)
     
     return carpeta_proyectos
 
-# Ejemplo de uso en la función de sincronización
 def obtener_ruta_copia_proyecto(nombre_proyecto):
     carpeta_proyectos = obtener_carpeta_proyectos_app()
     ruta_copia = carpeta_proyectos / nombre_proyecto
-    ruta_copia.mkdir(parents=True, exist_ok=True)  # Asegurarse de que la carpeta del proyecto existe
+    ruta_copia.mkdir(parents=True, exist_ok=True)
     return ruta_copia
 
 def obtener_info_proyecto(id_proyecto):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    
-    # Obtener ruta y nombre del proyecto de la tabla de proyectos
+
     cursor.execute("SELECT ruta, nombre FROM proyectos WHERE id=?", (id_proyecto,))
     resultado = cursor.fetchone()
     if resultado:
         ruta_usuario, nombre_proyecto = resultado
         ruta_copia = os.path.join("MisProyectos", nombre_proyecto)
-        
-        # Obtener estado de sincronización de la tabla estado_proyectos
+
         cursor.execute("SELECT abierto_editor, ultima_sincronizacion FROM estado_proyectos WHERE id_proyecto=?", (id_proyecto,))
-        estado = cursor.fetchone() or (0, None)  # Estado por defecto si no existe
+        estado = cursor.fetchone() or (0, None)
         
         conn.close()
         return ruta_usuario, ruta_copia, estado[0], estado[1]
@@ -492,20 +485,41 @@ def obtener_info_proyecto(id_proyecto):
     return None, None, None, None
 
 # Función para actualizar el estado de sincronización en la tabla estado_proyectos
-def actualizar_estado_proyecto(id_proyecto, sincronizado):
+def actualizar_estado_proyecto(id_proyecto, sincronizado, editor_usado=None):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+
+    now = datetime.now().isoformat()
+
+    if editor_usado is None:
+        editor_usado = obtener_editor_por_defecto()
     
-    # Crear o actualizar registro en estado_proyectos
     cursor.execute("""
-        INSERT INTO estado_proyectos (id_proyecto, abierto_editor, ultima_sincronizacion)
-        VALUES (?, ?, ?)
+        INSERT INTO estado_proyectos (id_proyecto, abierto_editor, ultima_sincronizacion, editor_utilizado)
+        VALUES (?, ?, ?, ?)
         ON CONFLICT(id_proyecto) DO UPDATE SET
             abierto_editor = ?,
-            ultima_sincronizacion = ?
-    """, (id_proyecto, int(sincronizado), datetime.now(), int(sincronizado), datetime.now()))
-    
+            ultima_sincronizacion = ?,
+            editor_utilizado = ?
+    """, (
+        id_proyecto, int(sincronizado), now, editor_usado,
+        int(sincronizado), now, editor_usado
+    ))
+
     conn.commit()
+    conn.close()
+
+def asegurar_editor_utilizado_column():
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute("PRAGMA table_info(estado_proyectos)")
+    columnas = [col[1] for col in cursor.fetchall()]
+
+    if "editor_utilizado" not in columnas:
+        cursor.execute("ALTER TABLE estado_proyectos ADD COLUMN editor_utilizado TEXT")
+        conn.commit()
+
     conn.close()
 
 def registry_activity(name, project_path):
@@ -725,31 +739,49 @@ def detectar_editores_disponibles():
 
 def cargar_configuracion_editores():
     try:
-        with open(archivo_configuracion_editores, "r") as archivo_configuracion:
+        with open(archivo_configuracion_editores, "r", encoding="utf-8") as archivo_configuracion:
             configuracion = json.load(archivo_configuracion)
             return configuracion
     except FileNotFoundError:
         ms.showwarning("WARNING", f"Config file not found")
         return None
 
-def guardar_configuracion_editores(rutas_editores):
+def guardar_configuracion_editores(rutas_editores, editor_por_defecto=None):
     configuracion = {}
     for editor, entry in rutas_editores.items():
         ruta = entry.get()
         if ruta:
             configuracion[editor] = ruta
-    with open(archivo_configuracion_editores, "w") as archivo_configuracion:
-        json.dump(configuracion, archivo_configuracion)
+
+    if editor_por_defecto:
+        configuracion["default"] = editor_por_defecto
+
+    with open(archivo_configuracion_editores, "w", encoding="utf-8") as archivo_configuracion:
+        json.dump(configuracion, archivo_configuracion, indent=4)
+        
+def obtener_editor_por_defecto():
+    config = cargar_configuracion_editores()
+    if not config:
+        return None
+    predeterminado = config.get("default")
+    return config.get(predeterminado) if predeterminado else None
 
 def abrir_proyecto(id_proyecto, ruta, editor):
     ruta_formateada = ruta.replace("/", "\\")
 
     configuracion_editores = cargar_configuracion_editores()
-    ruta_editor = configuracion_editores.get(editor) if configuracion_editores and editor in configuracion_editores else None
+    ruta_editor = None
+    
+    if editor and configuracion_editores:
+        ruta_editor = configuracion_editores.get(editor)
+
+    if not ruta_editor and configuracion_editores:
+        editor_por_defecto = configuracion_editores.get("default")
+        ruta_editor = configuracion_editores.get(editor_por_defecto)
 
     if not ruta_editor:
         editores_disponibles = detectar_editores_disponibles()
-        ruta_editor = editores_disponibles.get(editor)
+        ruta_editor = editores_disponibles.get(editor or editor_por_defecto)
 
     nombre_proyecto = os.path.basename(ruta)
     ruta_copia = obtener_ruta_copia_proyecto(nombre_proyecto)
@@ -800,7 +832,7 @@ def abrir_proyecto(id_proyecto, ruta, editor):
 
     threading.Thread(target=execute_project_on_subprocess, daemon=True).start()
     
-def monitor_processes_and_sync(processes, id_proyecto, ruta, ruta_copia):
+def monitor_processes_and_sync(processes, id_proyecto, ruta, ruta_copia, editor_usado=None):
     # Esperar a que todos los procesos finalicen
     for process in processes:
         process.wait()
@@ -809,7 +841,10 @@ def monitor_processes_and_sync(processes, id_proyecto, ruta, ruta_copia):
     sincronizar_diferencial(ruta, ruta_copia, ultima_sincronizacion)
 
     # Actualizar el estado del proyecto a cerrado
-    actualizar_estado_proyecto(id_proyecto, False)
+    if editor_usado is None:
+        editor_usado = obtener_editor_por_defecto()
+    
+    actualizar_estado_proyecto(id_proyecto, False, editor_usado)
 
 def abrir_threading(id_proyecto, ruta, editor):
     threading.Thread(target=abrir_proyecto, args=(id_proyecto, ruta, editor)).start()
@@ -2674,21 +2709,21 @@ def show_context_menu(event):
         ("Sync Files Locals", lambda: sync_repo_files(tree.item(tree.selection())['values'][4], tree.item(tree.selection())['values'][3])),
         ("Version Control", mostrar_control_versiones),
         ("Detect Dependencies", detectar_dependencias),
-        ("Git Init", lambda: git_init(selected_project_path)),
-        ("Git Add", lambda: git_add(selected_project_path)),
-        ("Git Commit", lambda: git_commit(selected_project_path)),
-        ("Git Status", lambda: git_status(selected_project_path)),
-        ("Git Log", lambda: git_log(selected_project_path)),
-        ("Git Diff", lambda: git_diff(selected_project_path)),
-        ("Git Pull", lambda: git_pull(selected_project_path)),
-        ("Git Push", lambda: git_push(selected_project_path)),
-        ("Git Branch", lambda: git_branch(selected_project_path)),
-        ("Git Checkout", lambda: git_checkout(selected_project_path)),
-        ("Git Merge", lambda: git_merge(selected_project_path)),
-        ("Git Remote", lambda: git_remote(selected_project_path)),
-        ("Git Fetch", lambda: git_fetch(selected_project_path)),
-        ("Git Reset", lambda: git_reset(selected_project_path)),
-        ("Git Revert", lambda: git_revert(selected_project_path))
+        #("Git Init", lambda: git_init(selected_project_path)),
+        #("Git Add", lambda: git_add(selected_project_path)),
+        #("Git Commit", lambda: git_commit(selected_project_path)),
+        #("Git Status", lambda: git_status(selected_project_path)),
+        #("Git Log", lambda: git_log(selected_project_path)),
+        #("Git Diff", lambda: git_diff(selected_project_path)),
+        #("Git Pull", lambda: git_pull(selected_project_path)),
+        #("Git Push", lambda: git_push(selected_project_path)),
+        #("Git Branch", lambda: git_branch(selected_project_path)),
+        #("Git Checkout", lambda: git_checkout(selected_project_path)),
+        #("Git Merge", lambda: git_merge(selected_project_path)),
+        #("Git Remote", lambda: git_remote(selected_project_path)),
+        #("Git Fetch", lambda: git_fetch(selected_project_path)),
+        #("Git Reset", lambda: git_reset(selected_project_path)),
+        #("Git Revert", lambda: git_revert(selected_project_path))
     ]
     rowid = tree.identify_row(event.y)
     if rowid:
@@ -3341,6 +3376,11 @@ def setting_window():
 
             def guardar_y_cerrar():
                 guardar_configuracion_editores(rutas_editores)
+                
+            def set_default_editor(editor_name):
+                configs_editors["default"] = editor_name
+                guardar_configuracion_editores(rutas_editores, configs_editors)
+                show_notification(f"'{editor_name}' set as default editor ✅")
             
             for i, programa in enumerate(editores_disponibles):
                 label = ttk.Label(editor_frame, text=programa)
@@ -3354,6 +3394,9 @@ def setting_window():
                 
                 btn = ttk.Button(editor_frame, text="Agree", command=lambda prog=programa, ent=entry: seleccionar_ruta_editor(prog, ent))
                 btn.grid(row=i, column=2, padx=5, pady=5)
+                
+                btn_default = ttk.Button(editor_frame, text="Set Default", command=lambda prog=programa: guardar_configuracion_editores(rutas_editores, editor_por_defecto=prog))
+                btn_default.grid(row=i, column=3, padx=5, pady=5)
                 
                 rutas_editores[programa] = entry
 
@@ -5236,13 +5279,94 @@ def calcular_resumen_proyecto(project_path):
 
     return resumen
 
-# BUG: Fix problem when reloading the sidebar it disappears for a few seconds
-def renderizar_sidebar(project_path, resumen):
+def cargar_sidebar_config(project_path):
+    config_path = os.path.join(project_path, ".organizer_sidebar_config.json")
+    default_config = {
+        "Languages": True,
+        "Dependencies": True,
+        "Git": True,
+        "Tasks": True,
+        "Links": True,
+        "Versions": True,
+        "Board": True
+    }
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                user_config = json.load(f)
+            return {**default_config, **user_config}
+        except Exception:
+            return default_config
+    return default_config
+
+def guardar_sidebar_config(project_path, config):
+    config_path = os.path.join(project_path, ".organizer_sidebar_config.json")
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=4)
+
+def open_sidebar_section_config_ui(project_path, current_config, refresh_callback=None):
+    win = tk.Toplevel()
+    win.title("Sidebar Configuration")
+    win.geometry("300x300")
+    win.iconbitmap(path)
+    win.resizable(False, False)
+
+    new_config = current_config.copy()
+    vars = {}
+
+    def save_and_close():
+        for k, var in vars.items():
+            new_config[k] = var.get()
+        guardar_sidebar_config(project_path, new_config)
+        if refresh_callback:
+            refresh_callback()
+        win.destroy()
+
+    for section, enabled in current_config.items():
+        var = tk.BooleanVar(value=enabled)
+        chk = ttk.Checkbutton(win, text=section, variable=var)
+        chk.pack(anchor="w", padx=10, pady=5)
+        vars[section] = var
+
+    ttk.Button(win, text="💾 Save", command=save_and_close).pack(pady=10)
+
+def renderizar_sidebar(project_path, resumen, container=None):
+    if container is None:
+        container = sidebar
+    
+    sidebar_config = cargar_sidebar_config(project_path)
+    
     for widget in sidebar.winfo_children():
         widget.destroy()
+        
+    if container == sidebar:
+        top_controls = ttk.Frame(container)
+        top_controls.pack(fill="x", padx=6, pady=(6, 0))
 
+        lbl_popout = ttk.Label(
+            top_controls,
+            text="↗️",
+            cursor="hand2",
+            bootstyle='info'
+        )
+        lbl_popout.pack(side="right", padx=(4, 0))
+        lbl_popout.bind("<Button-1>", lambda e: open_sidebar_floating(project_path, resumen))
+        ToolTip(lbl_popout, text="Open in floating window")
+
+        config_icon = ttk.Label(top_controls, text="⚙️", cursor="hand2")
+        config_icon.pack(side="right", padx=(0, 4))
+        config_icon.bind(
+            "<Button-1>",
+            lambda e: open_sidebar_section_config_ui(
+                project_path,
+                cargar_sidebar_config(project_path),
+                lambda: renderizar_sidebar(project_path, resumen, container)
+            )
+        )
+        ToolTip(config_icon, text="Customize sidebar sections")
+        
     def create_section(title, emoji="📁"):
-        section = CollapsibleSection(sidebar, f"{emoji} {title}", bootstyle="info")
+        section = CollapsibleSection(container, f"{emoji} {title}", bootstyle="info")
         section.pack(fill="x", padx=6, pady=6)
         return section.content_frame
 
@@ -5257,306 +5381,447 @@ def renderizar_sidebar(project_path, resumen):
             json.dump(resumen["resources"], f, indent=2)
     
     # -- LANGUAGE BREAKDOWN SECTION --
-    lang_frame = create_section("Languages", "🧪")
+    if sidebar_config.get("Languages", True):
+        lang_frame = create_section("Languages", "🧪")
 
-    EXT_TO_LANG = {
-        ".py": "Python",
-        ".js": "JavaScript",
-        ".jsx": "JavaScript",
-        ".ts": "TypeScript",
-        ".tsx": "TypeScript",
-        ".java": "Java",
-        ".c": "C",
-        ".cpp": "C++",
-        ".h": "C/C++",
-        ".cs": "C#",
-        ".go": "Go",
-        ".rs": "Rust",
-        ".html": "HTML",
-        ".css": "CSS",
-        ".json": "JSON",
-        ".sh": "Shell",
-        ".php": "PHP",
-        ".dart": "Dart",
-        ".kt": "Kotlin",
-        ".swift": "Swift",
-        ".rb": "Ruby",
-        ".lua": "Lua",
-    }
+        EXT_TO_LANG = {
+            ".py": "Python",
+            ".js": "JavaScript",
+            ".jsx": "JavaScript",
+            ".ts": "TypeScript",
+            ".tsx": "TypeScript",
+            ".java": "Java",
+            ".c": "C",
+            ".cpp": "C++",
+            ".h": "C/C++",
+            ".cs": "C#",
+            ".go": "Go",
+            ".rs": "Rust",
+            ".html": "HTML",
+            ".css": "CSS",
+            ".json": "JSON",
+            ".sh": "Shell",
+            ".php": "PHP",
+            ".dart": "Dart",
+            ".kt": "Kotlin",
+            ".swift": "Swift",
+            ".rb": "Ruby",
+            ".lua": "Lua",
+        }
 
-    LANG_COLORS = {
-        "Python": "#3572A5",
-        "JavaScript": "#f1e05a",
-        "TypeScript": "#2b7489",
-        "Java": "#b07219",
-        "C": "#555555",
-        "C++": "#f34b7d",
-        "C/C++": "#6e4c13",
-        "C#": "#178600",
-        "Go": "#00ADD8",
-        "Rust": "#dea584",
-        "HTML": "#e34c26",
-        "CSS": "#563d7c",
-        "JSON": "#292929",
-        "Shell": "#89e051",
-        "PHP": "#4F5D95",
-        "Dart": "#00B4AB",
-        "Kotlin": "#F18E33",
-        "Swift": "#ffac45",
-        "Ruby": "#701516",
-        "Lua": "#000080"
-    }
+        LANG_COLORS = {
+            "Python": "#3572A5",
+            "JavaScript": "#f1e05a",
+            "TypeScript": "#2b7489",
+            "Java": "#b07219",
+            "C": "#555555",
+            "C++": "#f34b7d",
+            "C/C++": "#6e4c13",
+            "C#": "#178600",
+            "Go": "#00ADD8",
+            "Rust": "#dea584",
+            "HTML": "#e34c26",
+            "CSS": "#563d7c",
+            "JSON": "#292929",
+            "Shell": "#89e051",
+            "PHP": "#4F5D95",
+            "Dart": "#00B4AB",
+            "Kotlin": "#F18E33",
+            "Swift": "#ffac45",
+            "Ruby": "#701516",
+            "Lua": "#000080"
+        }
 
-    lang_counter = {}
+        lang_counter = {}
 
-    for ext, count in resumen["exts"].items():
-        if count <= 0:
-            continue
-        lang = EXT_TO_LANG.get(ext)
-        if lang:
-            lang_counter[lang] = lang_counter.get(lang, 0) + count
-
-    if not lang_counter:
-        ttk.Label(lang_frame, text="No code files detected", foreground="gray").pack(anchor="w", padx=10)
-    else:
-        total = sum(lang_counter.values())
-        sorted_langs = sorted(lang_counter.items(), key=lambda x: x[1], reverse=True)
-
-        for lang, count in sorted_langs:
-            percent = round((count / total) * 100)
-            if percent == 0:
+        for ext, count in resumen["exts"].items():
+            if count <= 0:
                 continue
+            lang = EXT_TO_LANG.get(ext)
+            if lang:
+                lang_counter[lang] = lang_counter.get(lang, 0) + count
 
-            row = ttk.Frame(lang_frame)
-            row.pack(anchor="w", padx=10, pady=2, fill="x")
+        if not lang_counter:
+            ttk.Label(lang_frame, text="No code files detected", foreground="gray").pack(anchor="w", padx=10)
+        else:
+            total = sum(lang_counter.values())
+            sorted_langs = sorted(lang_counter.items(), key=lambda x: x[1], reverse=True)
 
-            color = LANG_COLORS.get(lang, "#888888")
-            canvas = tk.Canvas(row, width=10, height=10, highlightthickness=0)
-            canvas.create_oval(2, 2, 9, 9, fill=color, outline=color)
-            canvas.pack(side="left", padx=(0, 6))
-
-            label = ttk.Label(row, text=f"{lang} ({percent}%)", font=("Segoe UI", 9))
-            label.pack(side="left", anchor="w")
-
-            ToolTip(label, text=f"{count} file(s)")
-
-    # -- TASKS SECTION --
-    tasks_frame = create_section("Tasks", "✅")
-
-    def guardar_tasks():
-        try:
-            task_path = os.path.join(project_path, ".organizer_tasks.json")
-            with open(task_path, "w", encoding="utf-8") as f:
-                json.dump(resumen["tasks_list"], f, indent=4)
-            show_notification("Tasks updated", type_="success")
-        except Exception as e:
-            ms.showerror("Error", f"Failed to save tasks:\n{e}")
-
-    def toggle_task(idx, var):
-        resumen["tasks_list"][idx]["done"] = var.get()
-        guardar_tasks()
-        update_sidebar_project()
-
-    def delete_task(idx):
-        del resumen["tasks_list"][idx]
-        guardar_tasks()
-        update_sidebar_project()
-
-    def auto_import_code_tasks():
-        import re
-        config_path = os.path.join(project_path, ".organizer_taskscan.json")
-        if not os.path.exists(config_path):
-            return
-
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-            paths = config.get("paths", [])
-        except:
-            return
-
-        patterns = [
-            r"#\s*(TODO|BUG|FIX)\s*[:：]\s*(.+)",
-            r"//\s*(TODO|BUG|FIX)\s*[:：]\s*(.+)"
-        ]
-        existing_texts = {t["text"] for t in resumen["tasks_list"]}
-
-        for rel_path in paths:
-            abs_path = os.path.join(project_path, rel_path)
-            if os.path.isfile(abs_path):
-                files = [abs_path]
-            elif os.path.isdir(abs_path):
-                files = []
-                for root, _, filenames in os.walk(abs_path):
-                    for fname in filenames:
-                        if fname.endswith((".py", ".js", ".ts", ".java", ".c", ".cpp")):
-                            files.append(os.path.join(root, fname))
-            else:
-                continue
-
-            for fpath in files:
-                try:
-                    with open(fpath, "r", encoding="utf-8") as f:
-                        for line in f:
-                            for pat in patterns:
-                                match = re.search(pat, line.strip())
-                                if match:
-                                    txt = match.group(2).strip()
-                                    if txt not in existing_texts:
-                                        resumen["tasks_list"].append({
-                                            "text": txt,
-                                            "done": False,
-                                            "source": "code",
-                                            "file": os.path.relpath(fpath, project_path).replace("\\", "/")
-                                        })
-                                        existing_texts.add(txt)
-                except:
+            for lang, count in sorted_langs:
+                percent = round((count / total) * 100)
+                if percent == 0:
                     continue
 
-        guardar_tasks()
+                row = ttk.Frame(lang_frame)
+                row.pack(anchor="w", padx=10, pady=2, fill="x")
 
-    auto_import_code_tasks()
+                color = LANG_COLORS.get(lang, "#888888")
+                canvas = tk.Canvas(row, width=10, height=10, highlightthickness=0)
+                canvas.create_oval(2, 2, 9, 9, fill=color, outline=color)
+                canvas.pack(side="left", padx=(0, 6))
+
+                label = ttk.Label(row, text=f"{lang} ({percent}%)", font=("Segoe UI", 9))
+                label.pack(side="left", anchor="w")
+
+                ToolTip(label, text=f"{count} file(s)")
+
+    # -- DEPENDENCIES SECTION --
+    if sidebar_config.get("Dependencies", True):
+        deps_frame = create_section("Dependencies", "📦")
+        
+        def parse_dependencies():
+            deps = []
+            
+            req_path = os.path.join(project_path, "requirements.txt")
+            if os.path.exists(req_path):
+                try:
+                    with open(req_path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line and not line.startswith("#"):
+                                deps.append(line)
+                except Exception as e:
+                    deps.append(f"[ERROR reading requirements.txt: {e}]")
+                    
+            # Python - pyproject.toml
+            pyproject_path = os.path.join(project_path, "pyproject.toml")
+            if os.path.exists(pyproject_path):
+                try:
+                    import tomllib  # Python 3.11+
+                    with open(pyproject_path, "rb") as f:
+                        data = tomllib.load(f)
+                        requires = data.get("project", {}).get("dependencies", [])
+                        deps.extend(requires)
+                except Exception:
+                    pass
+
+            # JavaScript - package.json
+            package_json = os.path.join(project_path, "package.json")
+            if os.path.exists(package_json):
+                try:
+                    with open(package_json, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        for section in ("dependencies", "devDependencies"):
+                            for name, ver in data.get(section, {}).items():
+                                deps.append(f"{name} {ver}")
+                except Exception:
+                    pass
+
+            # Rust - Cargo.toml
+            cargo_toml = os.path.join(project_path, "Cargo.toml")
+            if os.path.exists(cargo_toml):
+                try:
+                    with open(cargo_toml, "r", encoding="utf-8") as f:
+                        for line in f:
+                            if "=" in line and "[" not in line and "version" not in line:
+                                deps.append(line.strip())
+                except Exception:
+                    pass
+
+            # Go - go.mod
+            go_mod = os.path.join(project_path, "go.mod")
+            if os.path.exists(go_mod):
+                try:
+                    with open(go_mod, "r", encoding="utf-8") as f:
+                        for line in f:
+                            if line.startswith("require"):
+                                deps.append(line.replace("require", "").strip())
+                except Exception:
+                    pass
+
+            return deps
+
+
+        dependencies = parse_dependencies()
+        if not dependencies:
+            ttk.Label(deps_frame, text="No dependencies found", foreground="gray").pack(anchor="w", padx=10, pady=5)
+        else:
+            for dep in dependencies[:25]:  # Limit display
+                lbl = ttk.Label(deps_frame, text=f"📄 {dep}", font=("Segoe UI", 9))
+                lbl.pack(anchor="w", padx=10, pady=1)
     
-    config_btn = ttk.Label(tasks_frame, text="⚙️", cursor="hand2")
-    config_btn.pack(anchor="e", padx=6, pady=(0, 4))
-    config_btn.bind("<Button-1>", lambda e: open_taskscan_config(project_path))
-    ToolTip(config_btn, text="Edit scanned files/folders")
+    # -- GIT SECTION --
+    if sidebar_config.get("Git", True):
+        try:
+            repo = Repo(project_path)
+            if not repo.bare:
+                git_frame = create_section("Git Status", "🌿")
+                
+                branch = repo.active_branch.name
+                ttk.Label(git_frame, text=f"🌿 Branch: {branch}").pack(anchor="w", padx=5, pady=5)
+                
+                changed = [item.a_path for item in repo.index.diff(None)]
+                if changed:
+                    ttk.Label(git_frame, text=f"✏️ Modified: {len(changed)}").pack(anchor="w", padx=5)
+                    for file in changed[:3]:
+                        ttk.Label(git_frame, text=f"• {file}", font=("Segoe UI", 8)).pack(anchor="w", padx=5)
+                        
+                
+                untracked = repo.untracked_files
+                if untracked:
+                    ttk.Label(git_frame, text=f"📦 Untracked: {len(untracked)}").pack(anchor="w", padx=5)
+                    for file in untracked[:3]:
+                        ttk.Label(git_frame, text=f"• {file}", font=("Segoe UI", 8)).pack(anchor="w", padx=5)
+                        
+                
+                try:
+                    last_commit = next(repo.iter_commits())
+                    date = time.strftime("%Y-%m-%d %H:%M", time.localtime(last_commit.committed_date))
+                    msg = last_commit.message.strip().split("\n")[0][:60]
+                    ttk.Label(git_frame, text=f"🕓 Last commit: {date}").pack(anchor="w", padx=5, pady=2)
+                    ttk.Label(git_frame, text=f"• {msg}", font=("Segoe UI", 8, "italic")).pack(anchor="w", padx=5)
+                except:
+                    pass
+        except (InvalidGitRepositoryError, GitCommandError):
+            pass
+    
+    # -- TASKS SECTION --
+    if sidebar_config.get("Tasks", True):
+        tasks_frame = create_section("Tasks", "✅")
 
-    for i, task in enumerate(resumen["tasks_list"]):
-        row = ttk.Frame(tasks_frame)
-        row.pack(fill="x", padx=5, pady=1)
+        def guardar_tasks():
+            try:
+                task_path = os.path.join(project_path, ".organizer_tasks.json")
+                with open(task_path, "w", encoding="utf-8") as f:
+                    json.dump(resumen["tasks_list"], f, indent=4)
+                show_notification("Tasks updated", type_="success")
+            except Exception as e:
+                ms.showerror("Error", f"Failed to save tasks:\n{e}")
 
-        var = tk.BooleanVar(value=task["done"])
-        is_code_task = task.get("source") == "code"
-        display_text = f"🧩 {task['text']}" if is_code_task else task["text"]
-
-        cb = ttk.Checkbutton(
-            row, text=display_text, variable=var,
-            command=lambda idx=i, v=var: toggle_task(idx, v)
-        )
-        cb.pack(side="left", expand=True, anchor="w")
-
-        if is_code_task and task.get("file"):
-            ToolTip(cb, text=f"{task['file']}")
-
-        icon = ttk.Label(row, text="🗑", cursor="hand2", foreground="red")
-        icon.pack(side="right", padx=4)
-        icon.bind("<Button-1>", lambda e, idx=i: delete_task(idx))
-        ToolTip(icon, text="Delete")
-
-    def add_task():
-        new = simpledialog.askstring("➕ New Task", "Enter task:")
-        if new:
-            resumen["tasks_list"].append({
-                "text": new,
-                "done": False,
-                "source": "manual"
-            })
+        def toggle_task(idx, var):
+            resumen["tasks_list"][idx]["done"] = var.get()
             guardar_tasks()
             update_sidebar_project()
 
-    ttk.Button(tasks_frame, text="➕ Add Task", command=add_task, bootstyle="secondary").pack(fill="x", padx=5, pady=5)
-    ttk.Button(tasks_frame, text="✏️ Edit Tasks", command=lambda: open_tasks_projects(project_path), bootstyle="outline").pack(fill="x", padx=5, pady=2)
+        def delete_task(idx):
+            del resumen["tasks_list"][idx]
+            guardar_tasks()
+            update_sidebar_project()
+
+        def auto_import_code_tasks():
+            import re
+            config_path = os.path.join(project_path, ".organizer_taskscan.json")
+            if not os.path.exists(config_path):
+                return
+
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                paths = config.get("paths", [])
+            except:
+                return
+
+            patterns = [
+                r"#\s*(TODO|BUG|FIX)\s*[:：]\s*(.+)",
+                r"//\s*(TODO|BUG|FIX)\s*[:：]\s*(.+)"
+            ]
+            existing_texts = {t["text"] for t in resumen["tasks_list"]}
+
+            for rel_path in paths:
+                abs_path = os.path.join(project_path, rel_path)
+                if os.path.isfile(abs_path):
+                    files = [abs_path]
+                elif os.path.isdir(abs_path):
+                    files = []
+                    for root, _, filenames in os.walk(abs_path):
+                        for fname in filenames:
+                            if fname.endswith((".py", ".js", ".ts", ".java", ".c", ".cpp")):
+                                files.append(os.path.join(root, fname))
+                else:
+                    continue
+
+                for fpath in files:
+                    try:
+                        with open(fpath, "r", encoding="utf-8") as f:
+                            for line in f:
+                                for pat in patterns:
+                                    match = re.search(pat, line.strip())
+                                    if match:
+                                        txt = match.group(2).strip()
+                                        if txt not in existing_texts:
+                                            resumen["tasks_list"].append({
+                                                "text": txt,
+                                                "done": False,
+                                                "source": "code",
+                                                "file": os.path.relpath(fpath, project_path).replace("\\", "/")
+                                            })
+                                            existing_texts.add(txt)
+                    except:
+                        continue
+
+            guardar_tasks()
+
+        auto_import_code_tasks()
+        
+        config_btn = ttk.Label(tasks_frame, text="⚙️", cursor="hand2")
+        config_btn.pack(anchor="e", padx=6, pady=(0, 4))
+        config_btn.bind("<Button-1>", lambda e: open_taskscan_config(project_path))
+        ToolTip(config_btn, text="Edit scanned files/folders")
+
+        for i, task in enumerate(resumen["tasks_list"]):
+            row = ttk.Frame(tasks_frame)
+            row.pack(fill="x", padx=5, pady=1)
+
+            var = tk.BooleanVar(value=task["done"])
+            is_code_task = task.get("source") == "code"
+            display_text = f"🧩 {task['text']}" if is_code_task else task["text"]
+
+            cb = ttk.Checkbutton(
+                row, text=display_text, variable=var,
+                command=lambda idx=i, v=var: toggle_task(idx, v)
+            )
+            cb.pack(side="left", expand=True, anchor="w")
+
+            if is_code_task and task.get("file"):
+                ToolTip(cb, text=f"{task['file']}")
+
+            icon = ttk.Label(row, text="🗑", cursor="hand2", foreground="red")
+            icon.pack(side="right", padx=4)
+            icon.bind("<Button-1>", lambda e, idx=i: delete_task(idx))
+            ToolTip(icon, text="Delete")
+
+        def add_task():
+            new = simpledialog.askstring("➕ New Task", "Enter task:")
+            if new:
+                resumen["tasks_list"].append({
+                    "text": new,
+                    "done": False,
+                    "source": "manual"
+                })
+                guardar_tasks()
+                update_sidebar_project()
+
+        ttk.Button(tasks_frame, text="➕ Add Task", command=add_task, bootstyle="secondary").pack(fill="x", padx=5, pady=5)
+        ttk.Button(tasks_frame, text="✏️ Edit Tasks", command=lambda: open_tasks_projects(project_path), bootstyle="outline").pack(fill="x", padx=5, pady=2)
 
     # -- LINKS SECTION --
-    links_frame = create_section("Resources", "🔗")
+    if sidebar_config.get("Links", True):
+        links_frame = create_section("Resources", "🔗")
 
-    def delete_link(i):
-        del resumen["resources"][i]
-        guardar_links()
-        update_sidebar_project()
-
-    for i, link in enumerate(resumen["resources"]):
-        row = ttk.Frame(links_frame)
-        row.pack(fill="x", padx=5, pady=2)
-        lbl = ttk.Label(row, text=f"🌐 {link['label']}", foreground="blue", cursor="hand2")
-        lbl.pack(side="left", expand=True, anchor="w")
-        lbl.bind("<Button-1>", lambda e, url=link["url"]: webbrowser.open(url))
-        ToolTip(lbl, text=link["url"])
-
-        icon = ttk.Label(row, text="🗑", cursor="hand2", foreground="red")
-        icon.pack(side="right", padx=4)
-        icon.bind("<Button-1>", lambda e, i=i: delete_link(i))
-        ToolTip(icon, text="Delete")
-
-    def add_link():
-        label = simpledialog.askstring("Label", "Enter label:")
-        url = simpledialog.askstring("URL", "Enter URL:")
-        if label and url:
-            resumen["resources"].append({"label": label, "url": url})
+        def delete_link(i):
+            del resumen["resources"][i]
             guardar_links()
             update_sidebar_project()
 
-    ttk.Button(links_frame, text="➕ Add Link", command=add_link, bootstyle="secondary").pack(fill="x", padx=5, pady=5)
-    ttk.Button(links_frame, text="🔧 Edit Links", command=lambda: open_link_panel(project_path), bootstyle="outline").pack(fill="x", padx=5, pady=2)
+        for i, link in enumerate(resumen["resources"]):
+            row = ttk.Frame(links_frame)
+            row.pack(fill="x", padx=5, pady=2)
+            lbl = ttk.Label(row, text=f"🌐 {link['label']}", foreground="blue", cursor="hand2")
+            lbl.pack(side="left", expand=True, anchor="w")
+            lbl.bind("<Button-1>", lambda e, url=link["url"]: webbrowser.open(url))
+            ToolTip(lbl, text=link["url"])
+
+            icon = ttk.Label(row, text="🗑", cursor="hand2", foreground="red")
+            icon.pack(side="right", padx=4)
+            icon.bind("<Button-1>", lambda e, i=i: delete_link(i))
+            ToolTip(icon, text="Delete")
+
+        def add_link():
+            label = simpledialog.askstring("Label", "Enter label:")
+            url = simpledialog.askstring("URL", "Enter URL:")
+            if label and url:
+                resumen["resources"].append({"label": label, "url": url})
+                guardar_links()
+                update_sidebar_project()
+
+        ttk.Button(links_frame, text="➕ Add Link", command=add_link, bootstyle="secondary").pack(fill="x", padx=5, pady=5)
+        ttk.Button(links_frame, text="🔧 Edit Links", command=lambda: open_link_panel(project_path), bootstyle="outline").pack(fill="x", padx=5, pady=2)
 
     # -- VERSIONS SECTION --
-    versions_metadata = os.path.join("projects_versions", os.path.basename(project_path), "versions.json")
-    if os.path.exists(versions_metadata):
-        try:
-            with open(versions_metadata, "r", encoding="utf-8") as f:
-                versions = json.load(f)
-        except Exception as e:
-            versions = []
-            show_notification(f"Error loading versions: {e}", type_="error")
+    if sidebar_config.get("Versions", True):
+        versions_metadata = os.path.join("projects_versions", os.path.basename(project_path), "versions.json")
+        if os.path.exists(versions_metadata):
+            try:
+                with open(versions_metadata, "r", encoding="utf-8") as f:
+                    versions = json.load(f)
+            except Exception as e:
+                versions = []
+                show_notification(f"Error loading versions: {e}", type_="error")
 
-        if versions:
-            versions_frame = create_section("Versions", "🕓")
-            for v in versions[-3:][::-1]:
-                label = f"{v['name']} ({v['date']})"
-                btn = ttk.Button(
-                    versions_frame,
-                    text=label,
-                    bootstyle="link",
-                    command=lambda vn=v["name"]: restore_version_from_sidebar(project_path, vn)
-                )
-                btn.pack(anchor="w", padx=10, pady=2)
-            ttk.Button(versions_frame, text="🗂 View All", command=lambda: show_versions_historial(project_path), bootstyle="outline").pack(fill="x", padx=5, pady=5)
+            if versions:
+                versions_frame = create_section("Versions", "🕓")
+                for v in versions[-3:][::-1]:
+                    label = f"{v['name']} ({v['date']})"
+                    btn = ttk.Button(
+                        versions_frame,
+                        text=label,
+                        bootstyle="link",
+                        command=lambda vn=v["name"]: restore_version_from_sidebar(project_path, vn)
+                    )
+                    btn.pack(anchor="w", padx=10, pady=2)
+                ttk.Button(versions_frame, text="🗂 View All", command=lambda: show_versions_historial(project_path), bootstyle="outline").pack(fill="x", padx=5, pady=5)
             
     # -- BOARD SECTION --
-    priority_fg_colors = {
-        "high": "#e74c3c",
-        "medium": "#f39c12",
-        "low": "#27ae60"
-    }
-    
-    board_section = create_section("Board", "🗂")
+    if sidebar_config.get("Board", True):
+        priority_fg_colors = {
+            "high": "#e74c3c",
+            "medium": "#f39c12",
+            "low": "#27ae60"
+        }
+        
+        board_section = create_section("Board", "🗂")
 
-    board_path = os.path.join(project_path, ".organizer_board.json")
-    if os.path.exists(board_path):
-        try:
-            with open(board_path, "r", encoding="utf-8") as f:
-                board_data = json.load(f)
-        except:
+        board_path = os.path.join(project_path, ".organizer_board.json")
+        if os.path.exists(board_path):
+            try:
+                with open(board_path, "r", encoding="utf-8") as f:
+                    board_data = json.load(f)
+            except:
+                board_data = {}
+        else:
             board_data = {}
-    else:
-        board_data = {}
 
-    for col in ["To Do", "In Progress", "Done"]:
-        ttk.Label(board_section, text=f"📌 {col}", font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=5, pady=(4, 1))
-        for card in board_data.get(col, [])[:2]:
-            emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(card.get("priority", "medium"), "⚪")
-            fg_color = priority_fg_colors.get(card.get("priority", "medium"), "#555")
-            label = ttk.Label(
-                board_section,
-                text=f"{emoji} {card['text']}",
-                wraplength=240,
-                font=("Segoe UI", 8),
-                foreground=fg_color,
-            )
-            label.pack(anchor="w", padx=12, pady=1)
+        for col in ["To Do", "In Progress", "Done"]:
+            ttk.Label(board_section, text=f"📌 {col}", font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=5, pady=(4, 1))
+            for card in board_data.get(col, [])[:2]:
+                emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(card.get("priority", "medium"), "⚪")
+                fg_color = priority_fg_colors.get(card.get("priority", "medium"), "#555")
+                label = ttk.Label(
+                    board_section,
+                    text=f"{emoji} {card['text']}",
+                    wraplength=240,
+                    font=("Segoe UI", 8),
+                    foreground=fg_color,
+                )
+                label.pack(anchor="w", padx=12, pady=1)
 
-    ttk.Button(
-        board_section,
-        text="📝 Open Board",
-        command=lambda: open_trello_board(project_path),
-        bootstyle="outline-info"
-    ).pack(fill="x", padx=6, pady=6)
+        ttk.Button(
+            board_section,
+            text="📝 Open Board",
+            command=lambda: open_trello_board(project_path),
+            bootstyle="outline-info"
+        ).pack(fill="x", padx=6, pady=6)
+    
+def open_sidebar_floating(project_path, resumen):
+    global float_win
+    
+    if float_win and float_win.winfo_exists():
+        float_win.lift()
+        return
+    
+    sidebar.grid_remove()
+    
+    float_win = tk.Toplevel(orga)
+    float_win.title("Organizer - Sidebar")
+    float_win.iconbitmap(path)
+    float_win.transient(orga)
+    float_win.protocol("WM_DELETE_WINDOW", lambda: close_sidebar_popout())
+    
+    float_sidebar = ttk.Frame(float_win)
+    float_sidebar.pack(fill='both', expand=True)
+    
+    renderizar_sidebar(project_path, resumen, container=float_sidebar)
+    
+def close_sidebar_popout():
+    global float_win
+    
+    float_win.destroy()
+    float_win = None
+    
+    sidebar.grid(row=0, column=1, padx=5, pady=5, sticky="ns")
 
 def update_sidebar_project(event=None):
     sidebar.grid(row=0, column=1, padx=5, pady=5, sticky="ns")
-    for widget in sidebar.winfo_children():
-        widget.destroy()
 
     selection = tree.selection()
     if not selection:
@@ -6246,7 +6511,7 @@ def open_command_palette(plugin_api=None):
     x = (palette.winfo_screenwidth() - 520) // 2
     y = (palette.winfo_screenheight() - 320) // 2
     palette.geometry(f"+{x}+{y}")
-
+    
     entry_var = tk.StringVar()
     entry = ttk.Entry(palette, textvariable=entry_var, font=("Segoe UI", 11))
     entry.pack(fill="x", padx=12, pady=(12, 5))
@@ -6290,6 +6555,221 @@ def open_command_palette(plugin_api=None):
     palette.deiconify()
     entry.focus_set()
 
+def abrir_fuzzy_finder(project_path):
+    finder = tk.Toplevel(orga)
+    finder.overrideredirect(True)
+    finder.configure(bg="#222")
+    finder.attributes("-topmost", True)
+    finder.grab_set()
+
+    w, h = 800, 490
+    x = orga.winfo_rootx() + (orga.winfo_width() - w) // 2
+    y = orga.winfo_rooty() + 60
+    finder.geometry(f"{w}x{h}+{x}+{y}")
+
+    frame = ttk.Frame(finder, padding=10)
+    frame.pack(fill="both", expand=True)
+
+    ttk.Label(frame, text="🔍 Search file", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+
+    query_var = tk.StringVar()
+    entry = ttk.Entry(frame, textvariable=query_var, font=("Segoe UI", 10))
+    entry.pack(fill="x", pady=(6, 8))
+    entry.focus()
+
+    content_frame = ttk.Frame(frame)
+    content_frame.pack(fill="both", expand=True)
+
+    listbox = tk.Listbox(content_frame, font=("Consolas", 9), width=40)
+    listbox.pack(side="left", fill="y")
+
+    preview = CodeView(content_frame, wrap="none", font=("Consolas", 9))
+    preview.pack(side="left", fill="both", expand=True, padx=(10, 0))
+
+    # 🔽 Barra inferior
+    status_bar = ttk.Frame(frame)
+    status_bar.pack(fill="x", side="bottom")
+    status_label = ttk.Label(status_bar, text="📄 No file selected", font=("Segoe UI", 9, "italic"))
+    status_label.pack(anchor="w", padx=5)
+
+    file_index = []
+
+    def index_files():
+        for root, _, filenames in os.walk(project_path):
+            for file in filenames:
+                full_path = os.path.join(root, file)
+                rel_path = os.path.relpath(full_path, start=project_path).replace("\\", "/")
+                file_index.append((file, rel_path, full_path))
+
+    threading.Thread(target=index_files, daemon=True).start()
+
+    def update_preview(path):
+        preview.configure(state="normal")
+        preview.delete("1.0", "end")
+        status_label.config(text="📄 Loading...")
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read(3000)
+
+            try:
+                lexer = get_lexer_for_filename(path)
+                preview.configure(lexer=lexer)
+            except ClassNotFound:
+                preview.configure(lexer=None)
+
+            preview.insert("1.0", content)
+            lines = content.count("\n") + 1
+            size_kb = os.path.getsize(path) / 1024
+            ext = os.path.splitext(path)[1]
+            name = os.path.basename(path)
+
+            status_label.config(
+                text=f"📄 {name}   |   🧾 {lines} lines   |   💾 {size_kb:.1f} KB   |   📦 {ext or 'unknown'}"
+            )
+
+        except Exception as e:
+            preview.insert("1.0", f"[Error previewing file: {e}]")
+            status_label.config(text="❌ Error loading file")
+
+        preview.configure(state="disabled")
+
+    def update_results(*args):
+        query = query_var.get().lower().strip()
+        listbox.delete(0, "end")
+        if not query or not file_index:
+            return
+        matches = difflib.get_close_matches(query, [f[1] for f in file_index], n=50, cutoff=0.2)
+        for match in matches:
+            listbox.insert("end", match)
+
+    def on_select(event=None):
+        try:
+            selected = listbox.get(listbox.curselection())
+            for name, rel_path, abs_path in file_index:
+                if rel_path == selected:
+                    update_preview(abs_path)
+                    return
+        except:
+            pass
+
+    def on_open(event=None):
+        try:
+            selected = listbox.get(listbox.curselection())
+            for _, rel, abs_path in file_index:
+                if rel == selected:
+                    finder.destroy()
+                    #abrir_editor_codigo(abs_path)
+                    break
+        except:
+            pass
+
+    listbox.bind("<<ListboxSelect>>", on_select)
+    listbox.bind("<Return>", on_open)
+    entry.bind("<Down>", lambda e: listbox.focus_set() or listbox.selection_set(0))
+
+    query_var.trace_add("write", update_results)
+    finder.bind("<Escape>", lambda e: finder.destroy())
+
+def search_on_files(project_path):
+    import queue
+    search_win = tk.Toplevel(orga)
+    search_win.title("🔎 Global Search")
+    search_win.geometry("800x600")
+    search_win.iconbitmap(path)
+    search_win.configure(bg="#222")
+    search_win.grab_set()
+
+    frame = ttk.Frame(search_win, padding=10)
+    frame.pack(fill="both", expand=True)
+
+    ttk.Label(frame, text="🔍 Search Text", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+
+    query_var = tk.StringVar()
+    entry = ttk.Entry(frame, textvariable=query_var, font=("Segoe UI", 10))
+    entry.pack(fill="x", pady=6)
+    entry.focus()
+
+    results_list = tk.Listbox(frame, font=("Consolas", 9), height=12)
+    results_list.pack(fill="both", expand=True, side="left", padx=(0, 5))
+
+    preview = CodeView(frame, wrap="none", height=15)
+    preview.pack(fill="both", expand=True, side="right")
+
+    status = ttk.Label(search_win, text="", anchor="w")
+    status.pack(fill="x", padx=10, pady=4)
+
+    result_queue = queue.Queue()
+
+    def search_in_files(query):
+        results = []
+        for root, _, files in os.walk(project_path):
+            for fname in files:
+                if not fname.endswith((".py", ".js", ".ts", ".java", ".c", ".cpp", ".json", ".txt")):
+                    continue
+                full_path = os.path.join(root, fname)
+                try:
+                    with open(full_path, "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                    for i, line in enumerate(lines):
+                        if query.lower() in line.lower():
+                            rel_path = os.path.relpath(full_path, project_path).replace("\\", "/")
+                            results.append((rel_path, i + 1, line.strip(), full_path))
+                except:
+                    continue
+        result_queue.put(results)
+
+    def do_search():
+        query = query_var.get().strip()
+        if not query:
+            return
+        results_list.delete(0, "end")
+        preview.configure(state="normal")
+        preview.delete("1.0", "end")
+        preview.configure(state="disabled")
+        status.config(text="Searching...")
+
+        threading.Thread(target=search_in_files, args=(query,), daemon=True).start()
+        check_results()
+
+    def check_results():
+        try:
+            results = result_queue.get_nowait()
+            for r in results:
+                results_list.insert("end", f"{r[0]} (line {r[1]})")
+            status.config(text=f"{len(results)} result(s) found.")
+            results_list.results = results
+        except queue.Empty:
+            search_win.after(100, check_results)
+
+    def show_preview(event):
+        selection = results_list.curselection()
+        if not selection:
+            return
+        idx = selection[0]
+        result = results_list.results[idx]
+        _, line_number, _, file_path = result
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            lexer = get_lexer_for_filename(file_path)
+            preview.configure(state="normal", lexer=lexer)
+            preview.delete("1.0", "end")
+            preview.insert("1.0", content)
+            preview.mark_set("insert", f"{line_number}.0")
+            preview.see(f"{line_number}.0")
+            preview.configure(state="disabled")
+        except Exception as e:
+            preview.configure(state="normal", lexer=lexer)
+            preview.delete("1.0", "end")
+            preview.insert("1.0", f"Error loading file:\n{e}")
+            preview.configure(state="disabled")
+
+    entry.bind("<Return>", lambda e: do_search())
+    results_list.bind("<<ListboxSelect>>", show_preview)
+    search_win.bind("<Escape>", lambda e: search_win.destroy())
 
 menu_name = "Organizer"
 description_menu = "Open Organizer"
@@ -6552,6 +7032,8 @@ tree.configure(yscrollcommand=scrollbar_y.set)
 tree.bind("<Button-3>", show_context_menu)
 tree.bind("<<TreeviewOpen>>", load_project_structure_on_expand)
 tree.bind("<<TreeviewSelect>>", update_sidebar_project)
+orga.bind_all("<Control-p>", lambda e: abrir_fuzzy_finder(tree.item(tree.selection())['values'][3]))
+orga.bind_all("<Control-f>", lambda e: search_on_files(tree.item(tree.selection())['values'][3]))
 
 label_drop = ttk.Label(main_frame, text="Drop here your folder", bootstyle="info")
 label_drop.grid(row=5, columnspan=2, padx=5, pady=5)
@@ -6582,7 +7064,7 @@ def obtener_datos_seleccionado(tree):
         return None, None
     item_seleccionado = seleccionados[0]
     item_data = tree.item(item_seleccionado)['values']
-    id_proyecto = item_data[1]  # id
+    id_proyecto = item_data[0]  # id
     ruta = item_data[3]  # ruta
     return id_proyecto, ruta
 
@@ -6604,8 +7086,8 @@ plugin_api = PluginAPI(
     tree=tree,
 )
 
-plugin_api.register_command("refresh_sidebar", update_sidebar_project, "Refresca el panel lateral")
-plugin_api.register_command("open_terminal", lambda: os.system("start cmd"), "Abre una terminal de sistema")
+plugin_api.register_command("refresh_sidebar", update_sidebar_project, "Refresh sidebar")
+plugin_api.register_command("open_terminal", lambda: os.system("start cmd"), "Open system terminal")
 
 def obtener_nombre_y_ruta(path_origen):
     if os.path.isdir(path_origen):
@@ -6659,6 +7141,7 @@ if len(sys.argv) > 1:
     open_project_file(sys.argv[1],)
 
 crear_base_datos()
+asegurar_editor_utilizado_column()
 orga.after(0, mostrar_proyectos)
 set_default_theme()
 thread_check_update()
