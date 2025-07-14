@@ -60,7 +60,7 @@ from ttkbootstrap.tooltip import ToolTip
 from uuid import uuid4
 
 
-main_version = "ver.1.9.7"
+main_version = "ver.2.0"
 version = str(main_version)
 base_path = os.path.dirname(os.path.abspath(sys.argv[0]))
 db_path = os.path.join(base_path, "proyectos.db")
@@ -73,7 +73,7 @@ selected_project_path = None
 text_editor = None
 app_name = "Organizer_win.exe"
 exe_path = os.path.abspath(sys.argv[0])
-current_version = "v1.9.7"
+current_version = "v2.0"
 
 # Integration with local control version app
 VCS_DIR = ".myvcs"
@@ -741,20 +741,36 @@ def cargar_configuracion_editores():
     try:
         with open(archivo_configuracion_editores, "r", encoding="utf-8") as archivo_configuracion:
             configuracion = json.load(archivo_configuracion)
+
+            if isinstance(configuracion.get("default"), dict):
+                default_dict = configuracion["default"]
+                if "default" in default_dict:
+                    configuracion["default"] = default_dict["default"]
+
             return configuracion
+
     except FileNotFoundError:
-        ms.showwarning("WARNING", f"Config file not found")
+        ms.showwarning("WARNING", "Config file not found")
+        return None
+    except json.JSONDecodeError:
+        ms.showerror("ERROR", "Config file is corrupted or invalid JSON")
         return None
 
 def guardar_configuracion_editores(rutas_editores, editor_por_defecto=None):
     configuracion = {}
+
     for editor, entry in rutas_editores.items():
         ruta = entry.get()
         if ruta:
             configuracion[editor] = ruta
 
     if editor_por_defecto:
-        configuracion["default"] = editor_por_defecto
+        if isinstance(editor_por_defecto, dict) and "default" in editor_por_defecto:
+            configuracion["default"] = editor_por_defecto["default"]
+        elif isinstance(editor_por_defecto, str):
+            configuracion["default"] = editor_por_defecto
+        else:
+            ms.showwarning("WARNING", "'default_editor' has an invalid format and will not be saved.")
 
     with open(archivo_configuracion_editores, "w", encoding="utf-8") as archivo_configuracion:
         json.dump(configuracion, archivo_configuracion, indent=4)
@@ -3368,40 +3384,42 @@ def setting_window():
         if item == "Editors Configure":
             hide_frames()
             editor_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+
             rutas_editores = {}
-    
-            configs_editors = cargar_configuracion_editores()
-            if configs_editors is None:
-                configs_editors = {}
+            configs_editors = cargar_configuracion_editores() or {}
 
             def guardar_y_cerrar():
-                guardar_configuracion_editores(rutas_editores)
-                
+                guardar_configuracion_editores(rutas_editores, configs_editors)
+                show_notification("Editor configuration saved")
+
             def set_default_editor(editor_name):
                 configs_editors["default"] = editor_name
                 guardar_configuracion_editores(rutas_editores, configs_editors)
                 show_notification(f"'{editor_name}' set as default editor ✅")
-            
+
             for i, programa in enumerate(editores_disponibles):
+                # Label
                 label = ttk.Label(editor_frame, text=programa)
-                label.grid(row=i, column=0, padx=5, pady=5)
-                
-                entry = ttk.Entry(editor_frame, width=80)
+                label.grid(row=i, column=0, padx=5, pady=5, sticky="w")
+
+                # Entry
+                entry = ttk.Entry(editor_frame, width=60)
                 entry.grid(row=i, column=1, padx=5, pady=5)
-                
                 if programa in configs_editors:
                     entry.insert(0, configs_editors[programa])
-                
-                btn = ttk.Button(editor_frame, text="Agree", command=lambda prog=programa, ent=entry: seleccionar_ruta_editor(prog, ent))
-                btn.grid(row=i, column=2, padx=5, pady=5)
-                
-                btn_default = ttk.Button(editor_frame, text="Set Default", command=lambda prog=programa: guardar_configuracion_editores(rutas_editores, editor_por_defecto=prog))
-                btn_default.grid(row=i, column=3, padx=5, pady=5)
-                
                 rutas_editores[programa] = entry
 
-                aceptar_btn = ttk.Button(editor_frame, text="Confirm", command=guardar_y_cerrar)
-                aceptar_btn.grid(row=len(editores_disponibles), column=0, columnspan=3, padx=5, pady=5)
+                # Agree button
+                agree_btn = ttk.Button(editor_frame, text="Agree", command=lambda p=programa, e=entry: seleccionar_ruta_editor(p, e))
+                agree_btn.grid(row=i, column=2, padx=2, pady=5)
+
+                # Set Default button
+                default_btn = ttk.Button(editor_frame, text="Set Default", command=lambda p=programa: set_default_editor(p))
+                default_btn.grid(row=i, column=3, padx=2, pady=5)
+
+                # Confirm button (individual)
+                confirm_btn = ttk.Button(editor_frame, text="Confirm", command=guardar_y_cerrar)
+                confirm_btn.grid(row=i, column=4, padx=2, pady=5)
         
         elif item == "Open Ai":
             hide_frames()
@@ -6296,7 +6314,7 @@ def show_project_hierarchy_map(project_path):
 path = resource_path("software.ico")
 path2 = resource_path2("software.png")
 
-def show_splash(duration=2500):
+def show_splash(duration=3000):
     splash = tk.Toplevel()
     splash.overrideredirect(True)
     splash.configure(bg="#222")
@@ -6307,7 +6325,7 @@ def show_splash(duration=2500):
     splash.geometry(f"{width}x{height}+{x}+{y}")
 
     try:
-        logo_img = Image.open(resource_path("software.png"))
+        logo_img = Image.open(path2)
         logo_img = logo_img.resize((100, 100))
         logo_photo = ImageTk.PhotoImage(logo_img)
 
@@ -6315,7 +6333,7 @@ def show_splash(duration=2500):
         img_label.image = logo_photo
         img_label.pack(pady=(30, 10))
     except Exception as e:
-        ms.showerror("ERROR", "Error logo loading:", e)
+        ms.showerror("ERROR", f"Error logo loading: {e}")
 
     ttk.Label(splash, text="Organizer", font=("Segoe UI", 16, "bold")).pack()
     
@@ -6771,6 +6789,7 @@ def search_on_files(project_path):
     results_list.bind("<<ListboxSelect>>", show_preview)
     search_win.bind("<Escape>", lambda e: search_win.destroy())
 
+
 menu_name = "Organizer"
 description_menu = "Open Organizer"
 ruta_exe = os.path.abspath(sys.argv[0])
@@ -6780,7 +6799,6 @@ ruta_db = ruta_exe
 orga = ThemedTk()
 orga.withdraw()
 show_splash(duration=3000)
-orga.tk.call('package', 'require', 'tkdnd')
 orga.title('Project Organizer')
 orga.geometry("1230x500")
 orga.resizable(True, True)
@@ -7035,9 +7053,6 @@ tree.bind("<<TreeviewSelect>>", update_sidebar_project)
 orga.bind_all("<Control-p>", lambda e: abrir_fuzzy_finder(tree.item(tree.selection())['values'][3]))
 orga.bind_all("<Control-f>", lambda e: search_on_files(tree.item(tree.selection())['values'][3]))
 
-label_drop = ttk.Label(main_frame, text="Drop here your folder", bootstyle="info")
-label_drop.grid(row=5, columnspan=2, padx=5, pady=5)
-
 ttk.Label(main_frame, text="Search Project:", bootstyle='info').grid(row=6, column=0, padx=5, pady=5, sticky="w")
 search_entry = ttk.Entry(main_frame, width=170)
 search_entry.grid(row=6, column=1, padx=5, pady=5, sticky="ew")
@@ -7088,49 +7103,6 @@ plugin_api = PluginAPI(
 
 plugin_api.register_command("refresh_sidebar", update_sidebar_project, "Refresh sidebar")
 plugin_api.register_command("open_terminal", lambda: os.system("start cmd"), "Open system terminal")
-
-def obtener_nombre_y_ruta(path_origen):
-    if os.path.isdir(path_origen):
-        nombre_directorio = os.path.basename(path_origen)
-        ruta_directorio = path_origen
-        ms.showinfo("Organizer", f"[DROP] Directorio: {nombre_directorio}\nRuta: {ruta_directorio}")
-    else:
-        ms.showwarning("Organizer", f"[DROP] Ignorado: {path_origen} (no es un directorio)")
-
-def on_drop(event):
-    paths = event.data.strip().split()
-    for p in paths:
-        ruta = p.strip("{}")
-        
-        nombre_directorio = os.path.basename(ruta)
-        description = "Project agreed with drag and drop"
-        repo = ""
-        
-        orga.after(0, lambda: insertar_proyecto(nombre_directorio, description, ruta, repo))
-        orga.after(0, mostrar_proyectos)
-
-class DropHandler(FileSystemEventHandler):
-    def on_created(self, event):
-        if event.is_directory:
-            name = os.path.basename(event.src_path)
-            description = "Project agreed with drag and drop"
-            repo = ""
-            path = event.src_path
-            orga.after(0, lambda: insertar_proyecto(name, description, path, repo))
-            orga.after(0, mostrar_proyectos)
-
-def start_observer_dropzone():
-    dropzone_path = os.path.join(base_path)
-    os.makedirs(dropzone_path, exist_ok=True)
-    
-    event_handler = DropHandler()
-    observer = Observer()
-    observer.schedule(event_handler, dropzone_path, recursive=False)
-    observer.daemon = True
-    observer.start()
-
-main_frame.drop_target_register(DND_FILES)
-main_frame.dnd_bind('<<Drop>>', on_drop)
 orga.bind_all("<Control-Shift-P>", lambda e: open_command_palette(plugin_api))
 
 
@@ -7148,6 +7120,5 @@ thread_check_update()
 thread_sinc()
 initialize_backup_schedule()
 asociate_files_extension()
-start_observer_dropzone()
 load_plugins(plugin_api)
 orga.mainloop()
