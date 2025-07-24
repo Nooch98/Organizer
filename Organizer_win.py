@@ -1,63 +1,26 @@
-import json
-import os
-import io
-import shutil
-import sqlite3
-import subprocess
-import sys
-import threading
-import git
-import time
-import webbrowser
+import json, os, io, shutil, sqlite3, subprocess, sys, threading, git, time, webbrowser, jedi, markdown, datetime, requests, pygments.lexers, platform, markdown2, glob, re, webview, base64, hashlib, ctypes, contextlib, argparse, difflib, urllib.request
 import tkinter as tk
-import jedi
-import markdown
-import datetime
-import requests
-import pygments.lexers
-import platform
-import subprocess
 import ttkbootstrap as ttk
-import markdown2
-import glob
-import re
 import xml.etree.ElementTree as ET
-import webview
-import base64
-import hashlib
-import ctypes
-import contextlib
-import argparse
-import difflib
 #--------------------------------------------------------#
-from tkinter import Listbox, OptionMenu, StringVar, filedialog, simpledialog
 from tkinter.simpledialog import askstring 
 from urllib.parse import urlparse
-from tkinter import messagebox as ms
-from tkinter import scrolledtext
-from bs4 import BeautifulSoup
-from github import Auth, Github
+from tkinter import messagebox as ms, scrolledtext, filedialog, simpledialog
+from github import Github
 from openai import OpenAI
 from tkhtmlview import HTMLLabel
 from ttkthemes import ThemedTk
 from chlorophyll import CodeView
 from pathlib import Path
 from ttkbootstrap.constants import *
-from ttkbootstrap.widgets import Progressbar
 from git import GitCommandError, InvalidGitRepositoryError, Repo
 from tkinter.colorchooser import askcolor
 from datetime import datetime
-from pygments.lexers.markup import MarkdownLexer
 from pygments.lexers import get_lexer_for_filename
 from pygments.util import ClassNotFound
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
-from tkinterdnd2 import DND_FILES, TkinterDnD
 from collections import Counter
 from PIL import Image, ImageTk
-from ttkbootstrap import utility
 from ttkbootstrap.tooltip import ToolTip
-from uuid import uuid4
 
 
 main_version = "ver.2.0"
@@ -92,6 +55,9 @@ EXT_TO_LANG_CLI = {
     ".json": "JSON", ".sh": "Shell", ".php": "PHP", ".dart": "Dart", ".kt": "Kotlin",
     ".swift": "Swift", ".rb": "Ruby", ".lua": "Lua",
 }
+
+PLUGIN_REPO_INDEX = "https://raw.githubusercontent.com/Nooch98/Organizer-Plugins/refs/heads/main/index.json"
+PLUGIN_REPO_BASE = "https://raw.githubusercontent.com/Nooch98/Organizer-Plugins/main/"
 
 class PluginAPI:
     def __init__(self, main_window, menu, sidebar, tree, sandbox_fn=None):
@@ -312,6 +278,83 @@ def gestor_plugins(api, config_path="plugin_config.json"):
                 ttk.Label(frame, text=f"[Error loading plugin]: {e}", foreground="red").grid(row=1, column=0, columnspan=2)
 
     ttk.Button(top, text="Save Changes", command=guardar_config).pack(pady=10)
+    ttk.Button(top, text="Marketplace", command=open_marketplace).pack(pady=10)
+
+def descargar_json(url):
+    with urllib.request.urlopen(url) as response:
+        return json.load(response)
+
+def descargar_y_instalar_plugin(nombre_plugin, repo_path):
+    plugin_url_base = f"{PLUGIN_REPO_BASE}{repo_path}/"
+    files = ["{}.py".format(nombre_plugin), "{}_meta.json".format(nombre_plugin)]
+
+    for file in files:
+        try:
+            file_url = plugin_url_base + file
+            plugin_dir = os.path.join("plugins", file)
+            with urllib.request.urlopen(file_url) as response:
+                with open(plugin_dir, "wb") as f:
+                    f.write(response.read())
+        except Exception as e:
+            ms.showerror("Marketplace", f"Failed to download {file}: {e}")
+            return
+
+    ms.showinfo("Marketplace", f"✅ {nombre_plugin} installed!")
+
+def open_marketplace():
+    top = tk.Toplevel()
+    top.title("Plugin Marketplace")
+    top.geometry("650x600")
+
+    canvas = tk.Canvas(top)
+    scrollbar = ttk.Scrollbar(top, orient="vertical", command=canvas.yview)
+    scrollable_frame = ttk.Frame(canvas)
+
+    scrollable_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    )
+
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+    try:
+        index = descargar_json(PLUGIN_REPO_INDEX)
+    except Exception as e:
+        ms.showerror("Marketplace", f"Failed to fetch plugin list:\n{e}")
+        return
+
+    for plugin in index:
+        frame = ttk.Frame(scrollable_frame, padding=10, relief="ridge")
+        frame.pack(fill="x", padx=10, pady=5)
+
+        # Título
+        ttk.Label(frame, text=f"🔌 {plugin['name']}  🔢 v{plugin['version']}", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+
+        # Autor
+        ttk.Label(frame, text=f"👤 {plugin['author']}", font=("Segoe UI", 8), foreground="gray").pack(anchor="w")
+
+        # Descripción corta
+        ttk.Label(frame, text=f"📄 {plugin['description']}", font=("Segoe UI", 9), wraplength=500).pack(anchor="w", pady=2)
+
+        # Long description si existe
+        if "long_description" in plugin:
+            ttk.Label(frame, text=plugin["long_description"], font=("Segoe UI", 8), foreground="gray", wraplength=500).pack(anchor="w", pady=2)
+
+        # Botones
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill="x", pady=5)
+
+        ttk.Button(btn_frame, text="🛠 Install / Update", command=lambda p=plugin: descargar_y_instalar_plugin(p["name"], p["repo_path"])).pack(side="right")
+
+        if "repository" in plugin:
+            ttk.Button(btn_frame, text="🔗 View Repo", command=lambda: webbrowser.open(plugin["repository"])).pack(side="right", padx=5)
+
+def plugin_needs_update(local_meta, remote_version):
+    return local_meta.get("version") != remote_version
 
 def show_notification(message, duration=3000, type_="info"):
     styles = {
@@ -6388,27 +6431,54 @@ def show_splash(duration=3000):
 
 def run_cli_commands():
     parser = argparse.ArgumentParser(description="Organizer CLI")
-    
-    parser.add_argument("--list-projects", action="store_true", help="List all projects")
-    parser.add_argument("--add-project", nargs=2, metavar=('name', 'path'), help="Add a new project")
-    parser.add_argument("--desc", help="Project description")
-    parser.add_argument("--lang", help="Project language")
-    parser.add_argument("--repo", help="Project repository URL")
-    parser.add_argument("--open-project", help="Open a project by name")
-    parser.add_argument("--version", action="store_true", help="Show Version Organizer")
-    parser.add_argument("--list-task", metavar="PROJECT", help="List tasks of project")
-    parser.add_argument("--add-task", nargs=2, metavar=("PROJECT", "TASK"), help="Add task to project")
-    parser.add_argument("--complete-task", nargs=2, metavar=("PROJECT", "INDEX"), help="Complete task by index")
-    parser.add_argument("--get-language", metavar="PROJECT", help="Get language usage of project")
-    parser.add_argument("--list-versions", metavar="PROJECT", help="List versions of project")
+    subparsers = parser.add_subparsers(dest="command")
+
+    # list-projects
+    subparsers.add_parser("list-projects", help="List all projects")
+
+    # add-project
+    add_project = subparsers.add_parser("add-project", help="Add a new project")
+    add_project.add_argument("name")
+    add_project.add_argument("path")
+    add_project.add_argument("--desc", default="")
+    add_project.add_argument("--lang", default="")
+    add_project.add_argument("--repo", default="")
+
+    # open-project
+    open_proj = subparsers.add_parser("open-project", help="Open a project by name")
+    open_proj.add_argument("name")
+
+    # version
+    subparsers.add_parser("version", help="Show Organizer version")
+
+    # task group
+    task = subparsers.add_parser("task", help="Task-related commands")
+    task_sub = task.add_subparsers(dest="task_cmd")
+
+    task_list = task_sub.add_parser("list", help="List tasks")
+    task_list.add_argument("project")
+
+    task_add = task_sub.add_parser("add", help="Add task")
+    task_add.add_argument("project")
+    task_add.add_argument("text")
+
+    task_done = task_sub.add_parser("complete", help="Mark task as completed")
+    task_done.add_argument("project")
+    task_done.add_argument("index", type=int)
+
+    # language usage
+    lang = subparsers.add_parser("get-language", help="Analyze language usage")
+    lang.add_argument("project")
+
+    # version list
+    ver = subparsers.add_parser("list-versions", help="List saved versions")
+    ver.add_argument("project")
 
     args = parser.parse_args()
-    
-    def task_file(project):
-        return os.path.join(project, ".organizer_tasks.json")
-    
-    def board_path(project):
-        return os.path.join("projects_versions", os.path.basename(project), "versions.json")
+
+    # Helper paths
+    def task_file(project): return os.path.join(project, ".organizer_tasks.json")
+    def versions_file(project): return os.path.join("projects_versions", os.path.basename(project), "versions.json")
 
     def load_json(path):
         if os.path.exists(path):
@@ -6420,84 +6490,60 @@ def run_cli_commands():
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
-    if args.list_projects:
+    # Execute commands
+    if args.command == "list-projects":
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         cursor.execute("SELECT nombre, ruta FROM proyectos")
-        proyectos = cursor.fetchall()
+        for name, path in cursor.fetchall():
+            print(f"📁 {name}: {path}")
         conn.close()
 
-        print("📁 Projects:")
-        for name, path in proyectos:
-            print(f" - {name}: {path}")
-        return True
+    elif args.command == "add-project":
+        insertar_proyecto(args.name, args.desc, args.path, args.repo)
+        print(f"✅ Project '{args.name}' added.")
 
-    if args.add_project:
-        name, path = args.add_project
-        description = args.desc or ""
-        language = args.lang or ""
-        repo = args.repo or ""
-        insertar_proyecto(name, description, path, repo)
-        print(f"✅ Project '{name}' added.")
-        return True
-
-    if args.open_project:
+    elif args.command == "open-project":
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT ruta FROM proyectos WHERE nombre=?", (args.open_project,))
+        cursor.execute("SELECT ruta FROM proyectos WHERE nombre=?", (args.name,))
         row = cursor.fetchone()
         conn.close()
         if row:
-            ruta = row[0]
-            abrir_threading("", ruta, selected_editor.get())
-            print(f"🚀 Opening project '{args.open_project}'...")
+            abrir_threading("", row[0], selected_editor.get())
+            print(f"🚀 Opening '{args.name}'...")
         else:
-            print("❌ Project not found")
-        return True
-    
-    if args.version:
-        print(f"Organizer version {version}")
-        return True
-    
-    if args.list_versions:
-        versions = load_json(board_path(args.list_versions))
-        for v in versions:
-            print(f"{v['name']} - {v['date']} :: {v.get('coment', '')}")
-        return True
-    
-    if args.list_task:
-        tasks = load_json(task_file(args.list_task))
-        for i, t in enumerate(tasks):
-            status = "✅" if t.get("done") else "❌"
-            print(f"{i}. {status} {t['text']}")
-        return True
-    
-    if args.add_task:
-        path, text = args.add_task
-        tasks = load_json(task_file(path))
-        tasks.append({"text": text, "done": False})
-        save_json(task_file(path), tasks)
-        print("✅ Task added.")
-        return True
-    
-    if args.complete_task:
-        path, idx = args.complete_task
-        tasks = load_json(task_file(path))
-        idx = int(idx)
-        if 0 <= idx < len(tasks):
-            tasks[idx]["done"] = True
-            save_json(task_file(path), tasks)
-            print(f"✅ Task {idx} marked as completed.")
-        else:
-            print("❌ Invalid task index.")
-        return True
-    
-    if args.get_language:
-        from collections import Counter
-        ext_counter = Counter()
+            print("❌ Project not found.")
 
-        for folder, _, files in os.walk(args.get_language):
-            if "projects_versions" in folder:
+    elif args.command == "version":
+        print(f"📦 Organizer version {version}")
+
+    elif args.command == "task":
+        project_path = resolver_ruta_proyecto(args.project)
+        if args.task_cmd == "list":
+            tasks = load_json(task_file(project_path))
+            for i, t in enumerate(tasks):
+                status = "✅" if t.get("done") else "❌"
+                print(f"{i}. {status} {t['text']}")
+        elif args.task_cmd == "add":
+            tasks = load_json(task_file(project_path))
+            tasks.append({"text": args.text, "done": False})
+            save_json(task_file(project_path), tasks)
+            print("📝 Task added.")
+        elif args.task_cmd == "complete":
+            tasks = load_json(task_file(project_path))
+            if 0 <= args.index < len(tasks):
+                tasks[args.index]["done"] = True
+                save_json(task_file(project_path), tasks)
+                print("✅ Task marked as done.")
+            else:
+                print("❌ Invalid task index.")
+
+    elif args.command == "get-language":
+        project_path = resolver_ruta_proyecto(args.project)
+        ext_counter = Counter()
+        for root, _, files in os.walk(project_path):
+            if "projects_versions" in root:
                 continue
             for f in files:
                 ext = os.path.splitext(f)[1].lower()
@@ -6514,9 +6560,32 @@ def run_cli_commands():
             percent = round((count / total) * 100, 2)
             print(f"{lang}: {percent}%")
 
-        return True
+    elif args.command == "list-versions":
+        project_path = resolver_ruta_proyecto(args.project)
+        versions = load_json(versions_file(project_path))
+        for v in versions:
+            print(f"{v['name']} - {v['date']} :: {v.get('coment', '')}")
 
-    return False
+    else:
+        return False
+        
+    return True
+
+def resolver_ruta_proyecto(input_path_o_nombre):
+    if os.path.isdir(input_path_o_nombre):
+        return input_path_o_nombre
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT ruta FROM proyectos WHERE nombre=?", (input_path_o_nombre,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return row[0]
+    else:
+        print(f"❌ No project found with name or path: '{input_path_o_nombre}'")
+        sys.exit(1)
 
 def open_command_palette(plugin_api=None):
     palette = tk.Toplevel(orga)
@@ -7105,20 +7174,23 @@ plugin_api.register_command("refresh_sidebar", update_sidebar_project, "Refresh 
 plugin_api.register_command("open_terminal", lambda: os.system("start cmd"), "Open system terminal")
 orga.bind_all("<Control-Shift-P>", lambda e: open_command_palette(plugin_api))
 
+def start_gui():
+    crear_base_datos()
+    asegurar_editor_utilizado_column()
+    orga.after(0, mostrar_proyectos)
+    set_default_theme()
+    thread_check_update()
+    thread_sinc()
+    initialize_backup_schedule()
+    asociate_files_extension()
+    load_plugins(plugin_api)
+    orga.mainloop()
 
-if run_cli_commands():
-    sys.exit()
+if __name__ == "__main__":
+    if run_cli_commands():
+        sys.exit()
 
-if len(sys.argv) > 1:
-    open_project_file(sys.argv[1],)
-
-crear_base_datos()
-asegurar_editor_utilizado_column()
-orga.after(0, mostrar_proyectos)
-set_default_theme()
-thread_check_update()
-thread_sinc()
-initialize_backup_schedule()
-asociate_files_extension()
-load_plugins(plugin_api)
-orga.mainloop()
+    if len(sys.argv) > 1:
+        open_project_file(sys.argv[1],)
+        
+    start_gui()
