@@ -3368,65 +3368,72 @@ def setting_window():
     config_window = ttk.Toplevel(orga)
     config_window.title("Settings")
     config_window.iconbitmap(path)
-    
-    main_frame = ttk.Frame(config_window)
-    main_frame.grid(row=0, column=0, sticky="nsew")
-    
-    theme_frame = ttk.Frame(main_frame)
-    ttktheme_frame = ttk.Frame(main_frame)
-    startup_frame = ttk.Frame(main_frame)
-    editor_frame = ttk.Frame(main_frame)
-    openai_frame = ttk.Frame(main_frame)
-    choco_frame = ttk.Frame(main_frame)
-    scoop_frame = ttk.Frame(main_frame)
-    editors_frame = ttk.Frame(main_frame)
-    lenguajes_frame = ttk.Frame(main_frame)
-    terminal_frame = ttk.Frame(main_frame)
-    backup_frame = ttk.Frame(main_frame)
-    windows_context = ttk.Frame(main_frame)
-    
-    list_settings = tk.Listbox(main_frame, height=33, width=40)
-    list_settings.grid(row=0, column=0, padx=2, pady=2, sticky="nsew")
-    
-    list_settings.insert(tk.END, "Editors Configure")
-    list_settings.insert(tk.END, "Open Ai")
-    list_settings.insert(tk.END, "Install Lenguajes")
-    list_settings.insert(tk.END, "Install choco")
-    list_settings.insert(tk.END, "Install scoop")
-    list_settings.insert(tk.END, "Install Editors")
-    list_settings.insert(tk.END, "Backup Settings")
-    list_settings.insert(tk.END, "Terminal Setting")
-    list_settings.insert(tk.END, "Theme")
-    list_settings.insert(tk.END, "TTKTheme")
-    list_settings.insert(tk.END, "System Startup")
-    list_settings.insert(tk.END, "Context Menu Windows")
-    for plugin_section, _ in plugin_settings_registry:
-        list_settings.insert(tk.END, plugin_section)
-    
-    
-    def hide_frames():
-        theme_frame.grid_forget()
-        ttktheme_frame.grid_forget()
-        startup_frame.grid_forget()
-        editor_frame.grid_forget()
-        openai_frame.grid_forget()
-        choco_frame.grid_forget()
-        scoop_frame.grid_forget()
-        editors_frame.grid_forget()
-        lenguajes_frame.grid_forget()
-        terminal_frame.grid_forget()
-        backup_frame.grid_forget()
-        windows_context.grid_forget()
-        
-    def select_user_config(event=None):
-        selection = list_settings.curselection()
-        if selection:
-            index = selection[0]
-            item = list_settings.get(index)
+    config_window.geometry("1000x650")
+    config_window.minsize(900, 550)
+
+    paned = ttk.PanedWindow(config_window, orient="horizontal")
+    paned.pack(fill="both", expand=True)
+
+    # Sidebar
+    list_frame = ttk.Frame(paned, padding=10)
+    list_settings = tk.Listbox(list_frame, width=30, height=30)
+    list_settings.pack(fill="both", expand=True)
+
+    options = [
+        "Editors Configure", "Open Ai", "Install Lenguajes", "Install choco",
+        "Install scoop", "Install Editors", "Backup Settings", "Terminal Setting",
+        "Theme", "TTKTheme", "System Startup", "Context Menu Windows"
+    ] + [section for section, _ in plugin_settings_registry]
+
+    for opt in options:
+        list_settings.insert(tk.END, opt)
+
+    paned.add(list_frame)
+
+    # Main content
+    content_frame = ttk.Frame(paned)
+    paned.add(content_frame, weight=1)
+
+    # All settings frames
+    frames = {
+        "Editors Configure": ttk.Frame(content_frame),
+        "Open Ai": ttk.Frame(content_frame),
+        "Install Lenguajes": ttk.Frame(content_frame),
+        "Install choco": ttk.Frame(content_frame),
+        "Install scoop": ttk.Frame(content_frame),
+        "Install Editors": ttk.Frame(content_frame),
+        "Backup Settings": ttk.Frame(content_frame),
+        "Terminal Setting": ttk.Frame(content_frame),
+        "Theme": ttk.Frame(content_frame),
+        "TTKTheme": ttk.Frame(content_frame),
+        "System Startup": ttk.Frame(content_frame),
+        "Context Menu Windows": ttk.Frame(content_frame),
+    }
+
+    plugin_frames = {
+        section: ttk.Frame(content_frame)
+        for section, _ in plugin_settings_registry
+    }
+
+    frames.update(plugin_frames)
+
+    for f in frames.values():
+        f.grid(row=0, column=0, sticky="nsew")
+        f.grid_remove()
+
+    def show_frame(name):
+        for f in frames.values():
+            f.grid_remove()
+        frame = frames[name]
+        frame.grid()
+        load_section(name, frame)
+
+    def load_section(item, frame):
+        for widget in frame.winfo_children():
+            widget.destroy()
             
         if item == "Editors Configure":
-            hide_frames()
-            editor_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+            frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
 
             rutas_editores = {}
             configs_editors = cargar_configuracion_editores() or {}
@@ -3442,52 +3449,50 @@ def setting_window():
 
             for i, programa in enumerate(editores_disponibles):
                 # Label
-                label = ttk.Label(editor_frame, text=programa)
+                label = ttk.Label(frame, text=programa)
                 label.grid(row=i, column=0, padx=5, pady=5, sticky="w")
 
                 # Entry
-                entry = ttk.Entry(editor_frame, width=60)
+                entry = ttk.Entry(frame, width=60)
                 entry.grid(row=i, column=1, padx=5, pady=5)
                 if programa in configs_editors:
                     entry.insert(0, configs_editors[programa])
                 rutas_editores[programa] = entry
 
                 # Agree button
-                agree_btn = ttk.Button(editor_frame, text="Agree", command=lambda p=programa, e=entry: seleccionar_ruta_editor(p, e))
+                agree_btn = ttk.Button(frame, text="Agree", command=lambda p=programa, e=entry: seleccionar_ruta_editor(p, e))
                 agree_btn.grid(row=i, column=2, padx=2, pady=5)
 
                 # Set Default button
-                default_btn = ttk.Button(editor_frame, text="Set Default", command=lambda p=programa: set_default_editor(p))
+                default_btn = ttk.Button(frame, text="Set Default", command=lambda p=programa: set_default_editor(p))
                 default_btn.grid(row=i, column=3, padx=2, pady=5)
 
                 # Confirm button (individual)
-                confirm_btn = ttk.Button(editor_frame, text="Confirm", command=guardar_y_cerrar)
+                confirm_btn = ttk.Button(frame, text="Confirm", command=guardar_y_cerrar)
                 confirm_btn.grid(row=i, column=4, padx=2, pady=5)
         
         elif item == "Open Ai":
-            hide_frames()
-            openai_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
-            titulo = ttk.Label(openai_frame, text="OpenAI Configuration")
+            frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+            titulo = ttk.Label(frame, text="OpenAI Configuration")
             titulo.grid(row=0, columnspan=2, pady=5, padx=5)
             
-            label = ttk.Label(openai_frame, text="OpenAI Api Key: ")
+            label = ttk.Label(frame, text="OpenAI Api Key: ")
             label.grid(row=1, column=0, pady=5, padx=5)
             
-            api_gpt_entry = ttk.Entry(openai_frame, width=50)
+            api_gpt_entry = ttk.Entry(frame, width=50)
             api_gpt_entry.grid(row=1, column=1, pady=5, padx=5)
             
             def guardar():
                 api_key = api_gpt_entry.get()
                 save_config_gpt(api_key)
             
-            sub_button = ttk.Button(openai_frame, text="Accept", command=guardar)
+            sub_button = ttk.Button(frame, text="Accept", command=guardar)
             sub_button.grid(row=2, columnspan=2, pady=5, padx=5)
         
         elif item == "Install Lenguajes":
-            hide_frames()
-            lenguajes_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+            frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
-            for widget in lenguajes_frame.winfo_children():
+            for widget in frame.winfo_children():
                 widget.destroy()
                 
             num_columns = 3
@@ -3495,39 +3500,36 @@ def setting_window():
             for index, lenguaje in enumerate(lenguajes):
                 row = index // num_columns
                 column = index % num_columns
-                button = ttk.Button(lenguajes_frame, text=lenguaje, command=lambda lenguaje=lenguaje: install_lenguaje(lenguaje))
+                button = ttk.Button(frame, text=lenguaje, command=lambda lenguaje=lenguaje: install_lenguaje(lenguaje))
                 button.grid(row=row, column=column, sticky="ew", padx=2, pady=2)
         
         elif item == "Install choco":
-            hide_frames()
-            choco_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
-            quest_label = ttk.Label(choco_frame, text="You want install pakage manager Chocolatey in your powersell")
+            frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+            quest_label = ttk.Label(frame, text="You want install pakage manager Chocolatey in your powersell")
             quest_label.grid(row=0,columnspan=2, sticky="ew")
             
-            yes_btn = ttk.Button(choco_frame, text="YES", command=install_choco)
+            yes_btn = ttk.Button(frame, text="YES", command=install_choco)
             yes_btn.grid(row=1, column=0, sticky="ew", padx=2, pady=2)
             
-            no_btn = ttk.Button(choco_frame, text="NO", command=hide_frames)
+            no_btn = ttk.Button(frame, text="NO")
             no_btn.grid(row=1, column=1, sticky="ew", padx=2, pady=2)
             
         
         elif item == "Install scoop":
-            hide_frames()
-            scoop_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
-            quest_label = ttk.Label(scoop_frame, text="You want install pakage manager Scoop in your powersell")
+            frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+            quest_label = ttk.Label(frame, text="You want install pakage manager Scoop in your powersell")
             quest_label.grid(row=0,columnspan=2, sticky="ew")
             
-            yes_btn = ttk.Button(scoop_frame, text="YES", command=install_scoop)
+            yes_btn = ttk.Button(frame, text="YES", command=install_scoop)
             yes_btn.grid(row=1, column=0, sticky="ew", padx=2, pady=2)
             
-            no_btn = ttk.Button(scoop_frame, text="NO", command=hide_frames)
+            no_btn = ttk.Button(frame, text="NO")
             no_btn.grid(row=1, column=1, sticky="ew", padx=2, pady=2)
         
         elif item == "Install Editors":
-            hide_frames()
-            editors_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+            frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
-            for widget in editors_frame.winfo_children():
+            for widget in frame.winfo_children():
                 widget.destroy()
 
             num_columns = 3
@@ -3535,47 +3537,45 @@ def setting_window():
             for index, editor in enumerate(editores_disponibles):
                 row = index // num_columns
                 column = index % num_columns
-                button = ttk.Button(editors_frame, text=editor, command=lambda editor=editor: install_editor(editor))
+                button = ttk.Button(frame, text=editor, command=lambda editor=editor: install_editor(editor))
                 button.grid(row=row, column=column, sticky="ew", padx=2, pady=2)
             
             
         elif item == "Backup Settings":
-            hide_frames()
-            backup_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+            frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
             global combo_frequency
             global status_label
             
             frequency_options = ["Daily", "Weekly", "Monthly"]
-            combo_frequency = ttk.Combobox(backup_frame, values=frequency_options)
+            combo_frequency = ttk.Combobox(frame, values=frequency_options)
             combo_frequency.set("Daily")
             combo_frequency.grid(row=0, columnspan=2, padx=2, pady=2)
             
-            status_label = ttk.Label(backup_frame, text="Backup")
+            status_label = ttk.Label(frame, text="Backup")
             status_label.grid(row=2, column=0, padx=2, pady=2)
             
-            btn_confirm = ttk.Button(backup_frame, text="Confirm", command=get_selected_frequency)
+            btn_confirm = ttk.Button(frame, text="Confirm", command=get_selected_frequency)
             btn_confirm.grid(row=1, column=0, padx=2, pady=2)
             
-            btn_backup_now = ttk.Button(backup_frame, text="Create Now", command=backup_thread)
+            btn_backup_now = ttk.Button(frame, text="Create Now", command=backup_thread)
             btn_backup_now.grid(row=1, column=1, padx=2, pady=2)
         
         elif item == "Terminal Setting":
-            hide_frames()
-            terminal_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+            frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
-            terminal_label = ttk.Label(terminal_frame, text="Select Terminal")
+            terminal_label = ttk.Label(frame, text="Select Terminal")
             terminal_label.grid(row=0, columnspan=2, padx=5, pady=5)
             
             selected_terminal = tk.StringVar()
             terminal_choices = ["Select Terminal", "Command Pormpt", "Windows Terminal", "PowerShell", "Git Bash", "wezterm", "Kitty", "Alacrity"]
-            terminal_menu = ttk.OptionMenu(terminal_frame, selected_terminal, *terminal_choices)
+            terminal_menu = ttk.OptionMenu(frame, selected_terminal, *terminal_choices)
             terminal_menu.grid(row=1, columnspan=2, pady=5, padx=5)
             
-            terminal_path_label = ttk.Label(terminal_frame, text="Terminal Executable Path: ")
+            terminal_path_label = ttk.Label(frame, text="Terminal Executable Path: ")
             terminal_path_label.grid(row=2, column=0, padx=5, pady=5)
             
-            terminal_path_entry = ttk.Entry(terminal_frame, width=50)
+            terminal_path_entry = ttk.Entry(frame, width=50)
             terminal_path_entry.grid(row=2, column=1, padx=5, pady=5)
             
             def save_settigns():
@@ -3590,14 +3590,13 @@ def setting_window():
                     json.dump(config, f)
                     
                     
-            save_button = ttk.Button(terminal_frame, text="Save", command=save_settigns)
+            save_button = ttk.Button(frame, text="Save", command=save_settigns)
             save_button.grid(row=3, columnspan=2, padx=5, pady=5)
         
         elif item == "Theme":
-            hide_frames()
-            theme_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+            frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
             
-            for widget in theme_frame.winfo_children():
+            for widget in frame.winfo_children():
                 widget.destroy()
 
             num_columns = 4
@@ -3607,7 +3606,7 @@ def setting_window():
                 row = index // num_columns
                 column = index % num_columns
 
-                preview = ttk.Frame(theme_frame, borderwidth=2, relief="ridge", padding=8)
+                preview = ttk.Frame(frame, borderwidth=2, relief="ridge", padding=8)
                 preview.grid(row=row, column=column, padx=5, pady=5, sticky="nsew")
 
                 ttk.Label(preview, text=theme, font=("Segoe UI", 9, "bold")).pack(anchor="center", pady=(0, 5))
@@ -3627,8 +3626,7 @@ def setting_window():
                     child.bind("<Button-1>", lambda e, t=theme: apply_theme(t))
 
         elif item == "TTKTheme":
-            hide_frames()
-            ttktheme_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+            frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
 
             def ttk_themes():
                 style = ttk.Style()
@@ -3641,7 +3639,7 @@ def setting_window():
 
             themes = ttk_themes()
 
-            for widget in ttktheme_frame.winfo_children():
+            for widget in frame.winfo_children():
                 widget.destroy()
 
             num_columns = 4
@@ -3651,7 +3649,7 @@ def setting_window():
                 row = index // num_columns
                 column = index % num_columns
 
-                preview = ttk.Frame(ttktheme_frame, borderwidth=2, relief="groove", padding=8)
+                preview = ttk.Frame(frame, borderwidth=2, relief="groove", padding=8)
                 preview.grid(row=row, column=column, padx=5, pady=5, sticky="nsew")
 
                 ttk.Label(preview, text=theme, font=("Segoe UI", 9, "bold")).pack(pady=(0, 5))
@@ -3664,45 +3662,42 @@ def setting_window():
                     child.bind("<Button-1>", lambda e, t=theme: change_ttktheme(t))
 
             # Botón para crear nuevo tema (si lo tienes definido)
-            ttk.Button(ttktheme_frame, text="🎨 Create Theme", command=create_theme).grid(
+            ttk.Button(frame, text="🎨 Create Theme", command=create_theme).grid(
                 row=row + 1, column=0, columnspan=num_columns, padx=10, pady=10, sticky="ew"
             )
         
         elif item == "System Startup":
-            hide_frames()
-            startup_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
-            quest_label = ttk.Label(startup_frame, text="You want this app to start with Windows")
+            frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+            quest_label = ttk.Label(frame, text="You want this app to start with Windows")
             quest_label.grid(row=0,column=0, padx=2, pady=2, sticky="ew")
             
-            check_btn = ttk.Checkbutton(startup_frame, variable=check_var, command=check_state)
+            check_btn = ttk.Checkbutton(frame, variable=check_var, command=check_state)
             check_btn.grid(row=0, column=1, sticky="ew", padx=2, pady=2)
             
         elif item == "Context Menu Windows":
-            hide_frames()
-            windows_context.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
-            q_label = ttk.Label(windows_context, text="You want agree the app to windows context menu")
+            frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
+            q_label = ttk.Label(frame, text="You want agree the app to windows context menu")
             q_label.grid(row=0,column=0, padx=2, pady=2, sticky="ew")
             
-            si = ttk.Button(windows_context, text="Yes", command=lambda: agree_context_menu(menu_name, description_menu, ruta_icono, ruta_db))
+            si = ttk.Button(frame, text="Yes", command=lambda: agree_context_menu(menu_name, description_menu, ruta_icono, ruta_db))
             si.grid(row=1, column=0, padx=2, pady=2, sticky="ew")
             
-            no = ttk.Button(windows_context, text="No")
+            no = ttk.Button(frame, text="No")
             no.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
             
-            q_label2 = ttk.Label(windows_context, text="You want delete the app to windows context menu")
+            q_label2 = ttk.Label(frame, text="You want delete the app to windows context menu")
             q_label2.grid(row=2,column=0, padx=2, pady=2, sticky="ew")
             
-            yes = ttk.Button(windows_context, text="Yes", command=lambda: delete_context_menu(menu_name))
+            yes = ttk.Button(frame, text="Yes", command=lambda: delete_context_menu(menu_name))
             yes.grid(row=3, columnspan=2, padx=2, pady=2, sticky="nsew")
             
         for plugin_section, frame_builder in plugin_settings_registry:
             if item == plugin_section:
-                hide_frames()
                 plugin_frame = ttk.Frame(main_frame)
                 plugin_frame.grid(row=0, column=1, padx=2, pady=2, sticky="nsew")
                 frame_builder(plugin_frame)
     
-    list_settings.bind("<Double-1>", select_user_config)
+    list_settings.bind("<<ListboxSelect>>", lambda e: show_frame(list_settings.get(list_settings.curselection()[0])))
     main_frame.grid_rowconfigure(0, weight=1)
     main_frame.grid_rowconfigure(1, weight=8)
     main_frame.grid_rowconfigure(2, weight=1)
