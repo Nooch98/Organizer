@@ -21,6 +21,7 @@ from pygments.util import ClassNotFound
 from collections import Counter
 from PIL import Image, ImageTk
 from ttkbootstrap.tooltip import ToolTip
+from contextlib import suppress
 
 
 main_version = "ver.2.0"
@@ -54,6 +55,24 @@ EXT_TO_LANG_CLI = {
     ".cs": "C#", ".go": "Go", ".rs": "Rust", ".html": "HTML", ".css": "CSS",
     ".json": "JSON", ".sh": "Shell", ".php": "PHP", ".dart": "Dart", ".kt": "Kotlin",
     ".swift": "Swift", ".rb": "Ruby", ".lua": "Lua",
+}
+
+EXT_TO_LANG = {
+    ".py": "Python", ".js": "JavaScript", ".jsx": "JavaScript",
+    ".ts": "TypeScript", ".tsx": "TypeScript", ".java": "Java",
+    ".c": "C", ".cpp": "C++", ".h": "C/C++", ".cs": "C#",
+    ".go": "Go", ".rs": "Rust", ".html": "HTML", ".css": "CSS",
+    ".json": "JSON", ".sh": "Shell", ".php": "PHP", ".dart": "Dart",
+    ".kt": "Kotlin", ".swift": "Swift", ".rb": "Ruby", ".lua": "Lua"
+}
+
+LANG_COLORS = {
+    "Python": "#3572A5", "JavaScript": "#f1e05a", "TypeScript": "#2b7489",
+    "Java": "#b07219", "C": "#555555", "C++": "#f34b7d", "C/C++": "#6e4c13",
+    "C#": "#178600", "Go": "#00ADD8", "Rust": "#dea584", "HTML": "#e34c26",
+    "CSS": "#563d7c", "JSON": "#292929", "Shell": "#89e051", "PHP": "#4F5D95",
+    "Dart": "#00B4AB", "Kotlin": "#F18E33", "Swift": "#ffac45",
+    "Ruby": "#701516", "Lua": "#000080"
 }
 
 PLUGIN_REPO_INDEX = "https://raw.githubusercontent.com/Nooch98/Organizer-Plugins/refs/heads/main/index.json"
@@ -2168,17 +2187,57 @@ def mostrar_proyectos():
     
 def show_projects_thread():
     threading.Thread(target=mostrar_proyectos, daemon=True).start()
+
+def detectar_lenguaje_principal(ruta):
+    EXT_TO_LANG = {
+        ".py": "Python",
+        ".js": "JavaScript",
+        ".jsx": "JavaScript",
+        ".ts": "TypeScript",
+        ".tsx": "TypeScript",
+        ".java": "Java",
+        ".c": "C",
+        ".cpp": "C++",
+        ".h": "C/C++",
+        ".cs": "C#",
+        ".go": "Go",
+        ".rs": "Rust",
+        ".html": "HTML",
+        ".css": "CSS",
+        ".json": "JSON",
+        ".sh": "Shell",
+        ".php": "PHP",
+        ".dart": "Dart",
+        ".kt": "Kotlin",
+        ".swift": "Swift",
+        ".rb": "Ruby",
+        ".lua": "Lua",
+    }
+
+    counter = {}
+    for root, _, files in os.walk(ruta):
+        for f in files:
+            ext = os.path.splitext(f)[1]
+            lang = EXT_TO_LANG.get(ext)
+            if lang:
+                counter[lang] = counter.get(lang, 0) + 1
+
+    if not counter:
+        return "Unknown"
+    return max(counter.items(), key=lambda x: x[1])[0]
     
 def agregar_proyecto_existente():
     descripcion = descripcion_entry.get()
     repo = repo_entry.get()
     ruta = filedialog.askdirectory()
-    
+
     if ruta:
         nombre = os.path.basename(ruta)
-        insertar_proyecto(nombre, descripcion, ruta, repo)
+        lenguaje = detectar_lenguaje_principal(ruta)
+        insertar_proyecto(nombre, descripcion, ruta, repo, lenguaje)
         descripcion_entry.delete(0, tk.END)
         repo_entry.delete(0, tk.END)
+        mostrar_proyectos()
 
 def crear_nuevo_proyecto():
     global new_description_entry, new_name_entry, ventana_lenguaje
@@ -3037,7 +3096,12 @@ def modificar_proyecto():
         ms.showerror("Error", "Please select a project to modify.")
         return
 
-    field_index = {
+    selected_row = selected_row[0]
+    project_name = tree.item(selected_row, "text")
+    current_values = tree.item(selected_row, "values")
+
+    field_order = ['ID', 'Nombre', 'Descripcion', 'Lenguaje', 'Ruta', 'repo']
+    field_labels = {
         'ID': 0,
         'Nombre': 1,
         'Descripcion': 2,
@@ -3046,55 +3110,50 @@ def modificar_proyecto():
         'repo': 5
     }
 
-    selected_row = selected_row[0]
-    current_values = tree.item(selected_row, "values")
+    full_values = list(current_values)
+    full_values.insert(1, project_name)
 
     mod_window = tk.Toplevel(orga)
     mod_window.title("Modify Project")
     mod_window.iconbitmap(path)
-    
+
     main_frame = ttk.Frame(mod_window)
-    main_frame.pack()
+    main_frame.pack(padx=10, pady=10)
 
     entry_widgets = {}
 
-    for field, index in field_index.items():
-        field_label = ttk.Label(main_frame, text=f"{field}:")
-        field_label.grid(row=index, column=0, padx=5, pady=5)
+    for i, field in enumerate(field_order):
+        label = ttk.Label(main_frame, text=f"{field}:")
+        label.grid(row=i, column=0, padx=5, pady=5, sticky="e")
 
-        new_value_entry = ttk.Entry(main_frame, width=50)
-        new_value_entry.insert(0, current_values[index])
-        new_value_entry.grid(row=index, column=1, padx=5, pady=5)
+        entry = ttk.Entry(main_frame, width=50)
+        entry.insert(0, full_values[i])
+        entry.grid(row=i, column=1, padx=5, pady=5, sticky="w")
 
-        entry_widgets[field] = new_value_entry
+        entry_widgets[field] = entry
 
     def apply_modification():
-        new_values = []
-        for field, index in field_index.items():
-            entry = entry_widgets[field]
-            value = entry.get()
-            new_values.append(value if value.strip() else None)
-        project_id = current_values[field_index['ID']]
-        update_project(project_id, field_index, new_values)
+        new_values = [entry_widgets[f].get().strip() or None for f in field_order]
+        project_id = current_values[0]  # ID viene como primer valor en `values`
+
+        update_project(project_id, field_order, new_values)
         mod_window.destroy()
 
     apply_button = ttk.Button(main_frame, text="Apply", command=apply_modification)
-    apply_button.grid(row=9, columnspan=2, padx=5, pady=5)
+    apply_button.grid(row=len(field_order), columnspan=2, pady=10)
 
-def update_project(project_id, field_index, new_values):
+def update_project(project_id, field_order, new_values):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    set_fields = [f"{field.lower()}=?" for field, value in zip(field_index.keys(), new_values) if value is not None]
-    update_query = "UPDATE proyectos SET " + ", ".join(set_fields)
+    set_fields = [f"{field.lower()}=?" for field, value in zip(field_order[1:], new_values[1:]) if value is not None]
 
-    update_query += " WHERE id=?"
+    update_query = "UPDATE proyectos SET " + ", ".join(set_fields) + " WHERE id=?"
 
-    filtered_values = [value for value in new_values if value is not None]
+    filtered_values = [value for field, value in zip(field_order[1:], new_values[1:]) if value is not None]
     filtered_values.append(project_id)
 
     cursor.execute(update_query, filtered_values)
-
     conn.commit()
     conn.close()
     mostrar_proyectos()
@@ -4620,9 +4679,9 @@ def unify_windows():
     if os.path.exists(complemento):
         subprocess.Popen([complemento], shell=True)
     else:
-        if ms.askyesno("File not found", f"{complemento} not found.\nDo you want to download and install it?"):
-            url = "https://github.com/Nooch98/Organizer/releases/latest/download/GithubControl_SilenInstall_x64.exe"
-            file_name = "GithubControl_SilenInstall_x64.exe"
+        if ms.askyesno("File not found", f"{complemento} not found.\nDo you want to download?"):
+            url = "https://github.com/Nooch98/Github_Control/releases/latest/download/Github_Control.exe"
+            file_name = "Github_Control.exe"
             
             # Crear ventana de progreso
             progress_win = tk.Toplevel()
@@ -4651,10 +4710,9 @@ def unify_windows():
                 
                 progress_win.destroy()
 
-                subprocess.Popen([file_name, "/SP-", "/VERYSILENT", "/NORESTART"], shell=True)
-
-                ms.showinfo("SUCCESS", "File has been downloaded and is being installed.")
-                os.remove(file_name)
+                ms.showinfo("SUCCESS", "File has been downloaded.")
+                
+                subprocess.Popen([complemento], shell=True)
 
             except Exception as e:
                 progress_win.destroy()
@@ -5155,15 +5213,15 @@ def load_project_structure_on_expand(event):
         if len(values) < 4:
             return
         project_path = values[3]
-    except Exception as e:
+    except Exception:
         return
 
     if not os.path.isdir(project_path):
         return
 
-    for child in tree.get_children(item_id):
-        if "dummy" in child:
-            tree.delete(child)
+    children = tree.get_children(item_id)
+    for child in children:
+        tree.delete(child)
 
     try:
         for name in sorted(os.listdir(project_path)):
@@ -5173,11 +5231,15 @@ def load_project_structure_on_expand(event):
 
             item_type = "folder" if os.path.isdir(sub_path) else "file"
 
-            tree.insert(item_id, "end", iid=sub_path, text=name,
-                        values=("", "", item_type, sub_path, ""))
+            # Usamos un ID único solo si aún no existe
+            if not tree.exists(sub_path):
+                tree.insert(item_id, "end", iid=sub_path, text=name,
+                            values=("", "", item_type, sub_path, ""))
 
-            if os.path.isdir(sub_path):
-                tree.insert(sub_path, "end", iid=f"{sub_path}_dummy", text="(loading...)")
+                if os.path.isdir(sub_path):
+                    dummy_id = f"{sub_path}_dummy"
+                    if not tree.exists(dummy_id):
+                        tree.insert(sub_path, "end", iid=dummy_id, text="(loading...)")
 
     except Exception as e:
         ms.showerror("ERROR", f"Error loading content: {e}")
@@ -5401,7 +5463,7 @@ def renderizar_sidebar(project_path, resumen, container=None):
 
         lbl_popout = ttk.Label(
             top_controls,
-            text="↗️",
+            text="📌",
             cursor="hand2",
             bootstyle='info'
         )
@@ -5440,62 +5502,13 @@ def renderizar_sidebar(project_path, resumen, container=None):
     if sidebar_config.get("Languages", True):
         lang_frame = create_section("Languages", "🧪")
 
-        EXT_TO_LANG = {
-            ".py": "Python",
-            ".js": "JavaScript",
-            ".jsx": "JavaScript",
-            ".ts": "TypeScript",
-            ".tsx": "TypeScript",
-            ".java": "Java",
-            ".c": "C",
-            ".cpp": "C++",
-            ".h": "C/C++",
-            ".cs": "C#",
-            ".go": "Go",
-            ".rs": "Rust",
-            ".html": "HTML",
-            ".css": "CSS",
-            ".json": "JSON",
-            ".sh": "Shell",
-            ".php": "PHP",
-            ".dart": "Dart",
-            ".kt": "Kotlin",
-            ".swift": "Swift",
-            ".rb": "Ruby",
-            ".lua": "Lua",
-        }
-
-        LANG_COLORS = {
-            "Python": "#3572A5",
-            "JavaScript": "#f1e05a",
-            "TypeScript": "#2b7489",
-            "Java": "#b07219",
-            "C": "#555555",
-            "C++": "#f34b7d",
-            "C/C++": "#6e4c13",
-            "C#": "#178600",
-            "Go": "#00ADD8",
-            "Rust": "#dea584",
-            "HTML": "#e34c26",
-            "CSS": "#563d7c",
-            "JSON": "#292929",
-            "Shell": "#89e051",
-            "PHP": "#4F5D95",
-            "Dart": "#00B4AB",
-            "Kotlin": "#F18E33",
-            "Swift": "#ffac45",
-            "Ruby": "#701516",
-            "Lua": "#000080"
-        }
-
+        # Precontar lenguajes
         lang_counter = {}
-
-        for ext, count in resumen["exts"].items():
-            if count <= 0:
-                continue
-            lang = EXT_TO_LANG.get(ext)
-            if lang:
-                lang_counter[lang] = lang_counter.get(lang, 0) + count
+        for ext, count in resumen.get("exts", {}).items():
+            if count > 0:
+                lang = EXT_TO_LANG.get(ext)
+                if lang:
+                    lang_counter[lang] = lang_counter.get(lang, 0) + count
 
         if not lang_counter:
             ttk.Label(lang_frame, text="No code files detected", foreground="gray").pack(anchor="w", padx=10)
@@ -5511,6 +5524,7 @@ def renderizar_sidebar(project_path, resumen, container=None):
                 row = ttk.Frame(lang_frame)
                 row.pack(anchor="w", padx=10, pady=2, fill="x")
 
+                # Color circular
                 color = LANG_COLORS.get(lang, "#888888")
                 canvas = tk.Canvas(row, width=10, height=10, highlightthickness=0)
                 canvas.create_oval(2, 2, 9, 9, fill=color, outline=color)
@@ -5524,77 +5538,66 @@ def renderizar_sidebar(project_path, resumen, container=None):
     # -- DEPENDENCIES SECTION --
     if sidebar_config.get("Dependencies", True):
         deps_frame = create_section("Dependencies", "📦")
-        
+
         def parse_dependencies():
             deps = []
-            
+            warnings = []
+
+            # --- Python requirements.txt ---
             req_path = os.path.join(project_path, "requirements.txt")
-            if os.path.exists(req_path):
-                try:
-                    with open(req_path, "r", encoding="utf-8") as f:
-                        for line in f:
-                            line = line.strip()
-                            if line and not line.startswith("#"):
-                                deps.append(line)
-                except Exception as e:
-                    deps.append(f"[ERROR reading requirements.txt: {e}]")
-                    
-            # Python - pyproject.toml
+            with suppress(Exception):
+                with open(req_path, "r", encoding="utf-8") as f:
+                    deps.extend([
+                        line.strip() for line in f
+                        if line.strip() and not line.strip().startswith("#")
+                    ])
+
+            # --- pyproject.toml (Python 3.11+) ---
             pyproject_path = os.path.join(project_path, "pyproject.toml")
             if os.path.exists(pyproject_path):
                 try:
                     import tomllib  # Python 3.11+
                     with open(pyproject_path, "rb") as f:
                         data = tomllib.load(f)
-                        requires = data.get("project", {}).get("dependencies", [])
-                        deps.extend(requires)
+                        deps.extend(data.get("project", {}).get("dependencies", []))
                 except Exception:
                     pass
 
-            # JavaScript - package.json
-            package_json = os.path.join(project_path, "package.json")
-            if os.path.exists(package_json):
-                try:
-                    with open(package_json, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        for section in ("dependencies", "devDependencies"):
-                            for name, ver in data.get(section, {}).items():
-                                deps.append(f"{name} {ver}")
-                except Exception:
-                    pass
+            # --- JavaScript package.json ---
+            pkg_json = os.path.join(project_path, "package.json")
+            with suppress(Exception):
+                with open(pkg_json, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    for sec in ("dependencies", "devDependencies"):
+                        deps.extend([f"{k} {v}" for k, v in data.get(sec, {}).items()])
 
-            # Rust - Cargo.toml
+            # --- Rust Cargo.toml ---
             cargo_toml = os.path.join(project_path, "Cargo.toml")
-            if os.path.exists(cargo_toml):
-                try:
-                    with open(cargo_toml, "r", encoding="utf-8") as f:
-                        for line in f:
-                            if "=" in line and "[" not in line and "version" not in line:
-                                deps.append(line.strip())
-                except Exception:
-                    pass
+            with suppress(Exception):
+                with open(cargo_toml, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if "=" in line and "[" not in line and "version" not in line:
+                            deps.append(line.strip())
 
-            # Go - go.mod
+            # --- Go go.mod ---
             go_mod = os.path.join(project_path, "go.mod")
-            if os.path.exists(go_mod):
-                try:
-                    with open(go_mod, "r", encoding="utf-8") as f:
-                        for line in f:
-                            if line.startswith("require"):
-                                deps.append(line.replace("require", "").strip())
-                except Exception:
-                    pass
+            with suppress(Exception):
+                with open(go_mod, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip().startswith("require"):
+                            cleaned = line.replace("require", "").strip()
+                            if cleaned:
+                                deps.append(cleaned)
 
             return deps
 
-
         dependencies = parse_dependencies()
+
         if not dependencies:
             ttk.Label(deps_frame, text="No dependencies found", foreground="gray").pack(anchor="w", padx=10, pady=5)
         else:
             for dep in dependencies[:25]:  # Limit display
-                lbl = ttk.Label(deps_frame, text=f"📄 {dep}", font=("Segoe UI", 9))
-                lbl.pack(anchor="w", padx=10, pady=1)
+                ttk.Label(deps_frame, text=f"📄 {dep}", font=("Segoe UI", 9)).pack(anchor="w", padx=10, pady=1)
     
     # -- GIT SECTION --
     if sidebar_config.get("Git", True):
@@ -5635,9 +5638,10 @@ def renderizar_sidebar(project_path, resumen, container=None):
     if sidebar_config.get("Tasks", True):
         tasks_frame = create_section("Tasks", "✅")
 
+        task_path = os.path.join(project_path, ".organizer_tasks.json")
+
         def guardar_tasks():
             try:
-                task_path = os.path.join(project_path, ".organizer_tasks.json")
                 with open(task_path, "w", encoding="utf-8") as f:
                     json.dump(resumen["tasks_list"], f, indent=4)
                 show_notification("Tasks updated", type_="success")
@@ -5645,26 +5649,28 @@ def renderizar_sidebar(project_path, resumen, container=None):
                 ms.showerror("Error", f"Failed to save tasks:\n{e}")
 
         def toggle_task(idx, var):
-            resumen["tasks_list"][idx]["done"] = var.get()
-            guardar_tasks()
-            update_sidebar_project()
+            if resumen["tasks_list"][idx]["done"] != var.get():
+                resumen["tasks_list"][idx]["done"] = var.get()
+                guardar_tasks()
+                update_sidebar_project()
 
         def delete_task(idx):
-            del resumen["tasks_list"][idx]
+            resumen["tasks_list"].pop(idx)
             guardar_tasks()
             update_sidebar_project()
 
         def auto_import_code_tasks():
-            import re
             config_path = os.path.join(project_path, ".organizer_taskscan.json")
-            if not os.path.exists(config_path):
-                return
+            paths = []
 
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
                     config = json.load(f)
-                paths = config.get("paths", [])
-            except:
+                    paths = config.get("paths", [])
+            except Exception:
+                return
+
+            if not paths:
                 return
 
             patterns = [
@@ -5672,22 +5678,26 @@ def renderizar_sidebar(project_path, resumen, container=None):
                 r"//\s*(TODO|BUG|FIX)\s*[:：]\s*(.+)"
             ]
             existing_texts = {t["text"] for t in resumen["tasks_list"]}
+            added = 0
 
             for rel_path in paths:
                 abs_path = os.path.join(project_path, rel_path)
+                files = []
+
                 if os.path.isfile(abs_path):
                     files = [abs_path]
                 elif os.path.isdir(abs_path):
-                    files = []
                     for root, _, filenames in os.walk(abs_path):
-                        for fname in filenames:
-                            if fname.endswith((".py", ".js", ".ts", ".java", ".c", ".cpp")):
-                                files.append(os.path.join(root, fname))
+                        files.extend([
+                            os.path.join(root, fname)
+                            for fname in filenames
+                            if fname.endswith((".py", ".js", ".ts", ".java", ".c", ".cpp"))
+                        ])
                 else:
                     continue
 
                 for fpath in files:
-                    try:
+                    with suppress(Exception):
                         with open(fpath, "r", encoding="utf-8") as f:
                             for line in f:
                                 for pat in patterns:
@@ -5702,17 +5712,18 @@ def renderizar_sidebar(project_path, resumen, container=None):
                                                 "file": os.path.relpath(fpath, project_path).replace("\\", "/")
                                             })
                                             existing_texts.add(txt)
-                    except:
-                        continue
+                                            added += 1
 
-            guardar_tasks()
+            if added:
+                guardar_tasks()
 
         auto_import_code_tasks()
-        
-        config_btn = ttk.Label(tasks_frame, text="⚙️", cursor="hand2")
-        config_btn.pack(anchor="e", padx=6, pady=(0, 4))
-        config_btn.bind("<Button-1>", lambda e: open_taskscan_config(project_path))
-        ToolTip(config_btn, text="Edit scanned files/folders")
+
+        ttk.Label(tasks_frame, text="⚙️", cursor="hand2").pack(anchor="e", padx=6, pady=(0, 4))
+        tasks_frame.winfo_children()[-1].bind(
+            "<Button-1>", lambda e: open_taskscan_config(project_path)
+        )
+        ToolTip(tasks_frame.winfo_children()[-1], text="Edit scanned files/folders")
 
         for i, task in enumerate(resumen["tasks_list"]):
             row = ttk.Frame(tasks_frame)
