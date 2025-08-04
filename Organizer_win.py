@@ -165,6 +165,57 @@ class CollapsibleSection(ttk.LabelFrame):
             self.toggle_label.config(text="▸")
         self.collapsed = not self.collapsed
 
+class MessageDialog(tk.Toplevel):
+    def __init__(self, parent, title, message, icon_text, bootstyle_type):
+        super().__init__(parent)
+        self.transient(parent)
+        self.title(title)
+        self.grab_set()
+
+        # Posiciona el diálogo cerca de la ventana principal
+        self.geometry(f"+{parent.winfo_rootx()+50}+{parent.winfo_rooty()+50}")
+
+        # Contenedor principal para el contenido
+        main_frame = ttk.Frame(self, padding=20)
+        main_frame.pack(fill=BOTH, expand=True)
+
+        # Marco para el ícono y el mensaje
+        content_frame = ttk.Frame(main_frame)
+        content_frame.pack(fill=X, expand=True, pady=(0, 10))
+
+        # Etiqueta para el ícono
+        ttk.Label(content_frame, text=icon_text, font=("Segoe UI", 30), bootstyle=bootstyle_type).pack(side=LEFT, padx=(0, 15))
+
+        # Etiqueta para el mensaje
+        ttk.Label(content_frame, text=message, font=("Segoe UI", 10), wraplength=400).pack(side=LEFT, fill=X, expand=True)
+        
+        # Botón de "OK"
+        ttk.Button(main_frame, text="OK", command=self.destroy, bootstyle="success").pack(side=BOTTOM, padx=5, pady=(10, 0))
+
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.wait_window(self)
+
+    @classmethod
+    def info(cls, parent, title, message):
+        return cls(parent, title, message, "ℹ️", "info")
+
+    @classmethod
+    def warning(cls, parent, title, message):
+        return cls(parent, title, message, "⚠️", "warning")
+
+    @classmethod
+    def error(cls, parent, title, message):
+        return cls(parent, title, message, "❌", "danger")  
+
+def show_info(title, message):
+    MessageDialog.info(orga, title, message)
+
+def show_warning(title, message):
+    MessageDialog.warning(orga, title, message)
+
+def show_error(title, message):
+    MessageDialog.error(orga, title, message)
+
 def load_plugins(api, config_path="plugin_config.json"):
     plugin_dir = os.path.join(os.getcwd(), "plugins")
     os.makedirs(plugin_dir, exist_ok=True)
@@ -188,9 +239,9 @@ def load_plugins(api, config_path="plugin_config.json"):
                 if hasattr(plugin, "register"):
                     plugin.register(api)
                 else:
-                    ms.showinfo("Plugins", f"[⛔] Plugin {module_name} don't have register function")
+                    show_error("Plugins", f"[⛔] Plugin {module_name} don't have register function")
             except Exception as e:
-                ms.showinfo("Plugins", f"[⛔] Plugin {module_name} error: {e}")
+                show_error("Plugins", f"[⛔] Plugin {module_name} error: {e}")
                 
 def gestor_plugins(api, config_path="plugin_config.json"):
     top = tk.Toplevel(orga)
@@ -228,16 +279,16 @@ def gestor_plugins(api, config_path="plugin_config.json"):
                     plugin.register(api)
                     loaded_plugins[name] = plugin
                 else:
-                    ms.showerror("Plugin", f"[⚠️] {name} has no 'register'")
+                    show_error("Plugin", f"[⚠️] {name} has no 'register'")
             else:
-                ms.showinfo("Plugin", f"[ℹ️] {name} is disabled")
+                show_info("Plugin", f"[ℹ️] {name} is disabled")
         except Exception as e:
-            ms.showerror("Plugin", f"[⛔] Error reloading {name}: {e}")
+            show_error("Plugin", f"[⛔] Error reloading {name}: {e}")
 
     def guardar_config():
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump({n: v.get() for n, v in plugin_vars.items()}, f, indent=4)
-        ms.showinfo("Plugins", "Save Changes.")
+        show_info("Plugins", "Save Changes.")
 
     for filename in os.listdir(plugin_dir):
         if filename.endswith(".py") and not filename.startswith("_"):
@@ -266,11 +317,11 @@ def gestor_plugins(api, config_path="plugin_config.json"):
                             loaded_plugins[name] = plugin
                             print(f"[✓] {name} activado")
                         else:
-                            ms.showerror("Plugin", f"[⚠️] {name} It does not have a register() function")
+                            show_error("Plugin", f"[⚠️] {name} It does not have a register() function")
                     else:
                         print(f"[🛑] {name} desactivado")
                 except Exception as e:
-                    ms.showerror("Plugin", f"[⛔] Error updating {name}:\n{e}")
+                    show_error("Plugin", f"[⛔] Error updating {name}:\n{e}")
 
             cb = ttk.Checkbutton(frame, text=module_name, variable=var, command=toggle_plugin)
             cb.grid(row=0, column=0, sticky="w")
@@ -315,10 +366,10 @@ def descargar_y_instalar_plugin(nombre_plugin, repo_path):
                 with open(plugin_dir, "wb") as f:
                     f.write(response.read())
         except Exception as e:
-            ms.showerror("Marketplace", f"Failed to download {file}: {e}")
+            show_error("Marketplace", f"Failed to download {file}: {e}")
             return
 
-    ms.showinfo("Marketplace", f"✅ {nombre_plugin} installed!")
+    show_info("Marketplace", f"✅ {nombre_plugin} installed!")
 
 def open_marketplace():
     top = tk.Toplevel()
@@ -343,7 +394,7 @@ def open_marketplace():
     try:
         index = descargar_json(PLUGIN_REPO_INDEX)
     except Exception as e:
-        ms.showerror("Marketplace", f"Failed to fetch plugin list:\n{e}")
+        show_error("Marketplace", f"Failed to fetch plugin list:\n{e}")
         return
 
     for plugin in index:
@@ -430,7 +481,7 @@ def search_github_key():
             if is_github_token_valid(valor):
                 return valor
             else:
-                ms.showerror("ERROR", "No github api key found in your environment variables. Please agree github api key to your environment variables with the name: GITHUB, TOKEN, API, KEY or SECRET")
+                show_error("ERROR", "No github api key found in your environment variables. Please agree github api key to your environment variables with the name: GITHUB, TOKEN, API, KEY or SECRET")
                 return None
 
 def is_github_token_valid(token):
@@ -448,7 +499,7 @@ def obtain_github_user():
         user = response.json()
         return user["login"]
     except requests.exceptions.RequestException as e:
-        ms.showerror("ERROR", f"Failed to obtain GitHub user. Check your network connection and GitHub token. Error: {str(e)}")
+        show_error("ERROR", f"Failed to obtain GitHub user. Check your network connection and GitHub token. Error: {str(e)}")
 
 GITHUB_TOKEN = search_github_key()
 GITHUB_USER = obtain_github_user()
@@ -479,7 +530,7 @@ def check_new_version():
                         elif platform_name == "Linux":
                             asset_name = "Organizer_linux.zip"
                         else:
-                            ms.showerror("ERROR", f"Unsupported platform: {platform_name}")
+                            show_error("ERROR", f"Unsupported platform: {platform_name}")
                             return "Unsupported platform"
 
                         for asset in assets:
@@ -488,7 +539,7 @@ def check_new_version():
                                 break
 
                         if not selected_asset:
-                            ms.showerror("ERROR", f"Can't found the file {asset_name} for {platform_name}. Please check the release assets on GitHub.")
+                            show_error("ERROR", f"Can't found the file {asset_name} for {platform_name}. Please check the release assets on GitHub.")
                             return f"Can't found the file {asset_name}"
                         asset_url = selected_asset["browser_download_url"]
                         current_directory = os.getcwd()
@@ -496,7 +547,7 @@ def check_new_version():
                         download_response = requests.get(asset_url)
                         with open(file_path, "wb") as file:
                             file.write(download_response.content)
-                        ms.showinfo("Update", "Closing Organizer to update")
+                        show_info("Update", "Closing Organizer to update")
                         subprocess.Popen("updater_win.exe")
                         orga.after(1000, orga.destroy())
                     else:
@@ -504,11 +555,11 @@ def check_new_version():
                 else:
                     pass
             else:
-                ms.showerror("ERROR", "Can't Obtain the last version")
+                show_error("ERROR", "Can't Obtain the last version")
         else:
-            ms.showerror("ERROR", f"Can't Verify the version: {response.status_code}")
+            show_error("ERROR", f"Can't Verify the version: {response.status_code}")
     except Exception as e:
-        ms.showerror("ERROR", f"Failed to verify the latest version. Check your network connection or GitHub API availability. Error: {str(e)}")
+        show_error("ERROR", f"Failed to verify the latest version. Check your network connection or GitHub API availability. Error: {str(e)}")
 
 def thread_check_update():
     threading.Thread(target=check_new_version, daemon=True).start()
@@ -812,10 +863,10 @@ def cargar_configuracion_editores():
             return configuracion
 
     except FileNotFoundError:
-        ms.showwarning("WARNING", "Config file not found")
+        show_warning("WARNING", "Config file not found")
         return None
     except json.JSONDecodeError:
-        ms.showerror("ERROR", "Config file is corrupted or invalid JSON")
+        show_error("ERROR", "Config file is corrupted or invalid JSON")
         return None
 
 def guardar_configuracion_editores(rutas_editores, editor_por_defecto=None):
@@ -832,7 +883,7 @@ def guardar_configuracion_editores(rutas_editores, editor_por_defecto=None):
         elif isinstance(editor_por_defecto, str):
             configuracion["default"] = editor_por_defecto
         else:
-            ms.showwarning("WARNING", "'default_editor' has an invalid format and will not be saved.")
+            show_warning("WARNING", "'default_editor' has an invalid format and will not be saved.")
 
     with open(archivo_configuracion_editores, "w", encoding="utf-8") as archivo_configuracion:
         json.dump(configuracion, archivo_configuracion, indent=4)
@@ -1018,10 +1069,10 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             return list(libraries)
         
         except ET.ParseError:
-            ms.showerror('ERROR', "Error: Could not parse .csproj file. Make sure it is well formed.")
+            show_error('ERROR', "Error: Could not parse .csproj file. Make sure it is well formed.")
             return []
         except Exception as e:
-            ms.showerror('ERROR', f"Error reading dependencies from .csproj file: {e}")
+            show_error('ERROR', f"Error reading dependencies from .csproj file: {e}")
             return []
     
     def read_cmake_dependencies(file_path):
@@ -1183,7 +1234,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             
             command.append(file_path)  # Añadir el archivo .py principal
         else:
-            ms.showerror("ERROR", "File type not supported for compilation.")
+            show_error("ERROR", "File type not supported for compilation.")
             return
 
         def run_conversion():
@@ -1223,7 +1274,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         if output_dir:
             os.startfile(output_dir)
         else:
-            ms.showwarning("Warning", "The .exe file was not found.")
+            show_warning("Warning", "The .exe file was not found.")
 
     def update_command_label(file_path):
         command = ["pyinstaller"]
@@ -1278,7 +1329,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
     def execute_conversion():
         file_path = file_entry.get()
         if not file_path:
-            ms.showwarning("Warning", "Seleccione un archivo para convertir o compilar.")
+            show_warning("Warning", "Seleccione un archivo para convertir o compilar.")
             return
 
         output_box.delete(1.0, tk.END)
@@ -1621,7 +1672,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
         def save_theme():
             theme_name = theme_name_entry.get()
             if not theme_name:
-                ms.showerror("Error", "Por favor, ingresa un nombre para el tema.")
+                show_error("Error", "Por favor, ingresa un nombre para el tema.")
                 return
 
             # Crear el contenido del archivo TOML con todos los colores seleccionados
@@ -1669,10 +1720,10 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             try:
                 with open(f"{ruta_new_theme}{theme_name}.toml", "w", encoding="utf-8") as file:
                     file.write(theme_content)
-                ms.showinfo("Tema Guardado", f"El tema '{theme_name}' se ha guardado correctamente.")
+                show_info("Tema Guardado", f"El tema '{theme_name}' se ha guardado correctamente.")
                 new_theme.destroy()
             except Exception as e:
-                ms.showerror("Error", f"No se pudo guardar el tema. Error: {e}")
+                show_error("Error", f"No se pudo guardar el tema. Error: {e}")
 
         # Botón para guardar el tema
         save_button = tk.Button(new_theme, text="Guardar Tema", command=save_theme)
@@ -1715,7 +1766,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                 file.write(text_editors[index].get(1.0, tk.END).strip())
             text_editors[index].edit_modified(False)  # Restablecer la marca de modificación
         else:
-            ms.showerror("ERROR", "Error: There is no open file to save changes.")
+            show_error("ERROR", "Error: There is no open file to save changes.")
     
     def show_file_content(file_path):
         with open(file_path, "r") as file:
@@ -1828,9 +1879,9 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                 os.makedirs(folder_path, exist_ok=True)
                 tree.insert(folder, 'end', text=folder_name)
                 editor.update()
-                ms.showinfo("Folder Created", f'Folder created successfully: {folder_path}')
+                show_info("Folder Created", f'Folder created successfully: {folder_path}')
             except OSError as e:
-                ms.showerror('ERROR', f'Error creating folder: {e}')
+                show_error('ERROR', f'Error creating folder: {e}')
         foldername.destroy()
     
     def delete_file():
@@ -1841,18 +1892,18 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
                 try:
                     os.remove(file_path)
                     tree.delete(selected_item)
-                    ms.showinfo("File Deleted", f'{file_path}')
+                    show_info("File Deleted", f'{file_path}')
                 except OSError as e:
-                    ms.showerror('ERROR', f'Error deleting file: {e}')
+                    show_error('ERROR', f'Error deleting file: {e}')
             elif os.path.isdir(file_path):
                 try:
                     shutil.rmtree(file_path)
                     tree.delete(selected_item)
-                    ms.showinfo("Folder Deleted", f'{file_path}')
+                    show_info("Folder Deleted", f'{file_path}')
                 except OSError as e:
-                    ms.showerror('ERROR', f'Error deleting folder: {e}')
+                    show_error('ERROR', f'Error deleting folder: {e}')
             else:
-                ms.showwarning('Warning', f'Selected item is neither a file nor a folder: {file_path}')
+                show_warning('Warning', f'Selected item is neither a file nor a folder: {file_path}')
     
     def cerrar_pestaña(event):
         widget = event.widget
@@ -2068,7 +2119,7 @@ def abrir_editor_integrado(ruta_proyecto, nombre_proyecto):
             file_label.config(text=f"{os.path.basename(file_name)} ({file_size_kb})")
 
         except Exception as e:
-            ms.showerror("POWERLINE ERROR", f"Error in Powerline: {e}")
+            show_error("POWERLINE ERROR", f"Error in Powerline: {e}")
     
     main_frame = ttk.Frame(editor)
     main_frame.pack(fill="both", expand=True)
@@ -2302,9 +2353,9 @@ def crear_repo_github(nombre_repo, descripcion_repo, ruta_local):
         
         origin.push('master')
         
-        ms.showinfo("COMPLETE" ,"Repository created on GitHub and locally.")
+        show_info("COMPLETE" ,"Repository created on GitHub and locally.")
     else:
-        ms.showerror("ERROR", "Could not retrieve the GitHub API key.")
+        show_error("ERROR", "Could not retrieve the GitHub API key.")
         
 def github_url_to_api_url_repo(github_url, branch_name='main'):
     parsed_url = urlparse(github_url)
@@ -2338,7 +2389,7 @@ def git_add(project_path):
         output = run_git_command(["git", "add", "."], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
 
 def git_commit(project_path):
     output_window = tk.Toplevel(orga)
@@ -2354,7 +2405,7 @@ def git_commit(project_path):
         output = run_git_command(["git", "commit", "-m", "'Commit desde GUI'"], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
 
 def git_status(project_path):
     output_window = tk.Toplevel(orga)
@@ -2370,7 +2421,7 @@ def git_status(project_path):
         output = run_git_command(["git", "status"], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
 
 def git_pull(project_path):
     output_window = tk.Toplevel(orga)
@@ -2386,7 +2437,7 @@ def git_pull(project_path):
         output = run_git_command(["git", "pull"], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
 
 def git_init(project_path):
     output_window = tk.Toplevel(orga)
@@ -2402,7 +2453,7 @@ def git_init(project_path):
         output = run_git_command(["git", "init"], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
 
 def git_log(project_path):
     output_window = tk.Toplevel(orga)
@@ -2418,7 +2469,7 @@ def git_log(project_path):
         output = run_git_command(["git", "log"], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
 
 def git_diff(project_path):
     output_window = tk.Toplevel(orga)
@@ -2434,7 +2485,7 @@ def git_diff(project_path):
         output = run_git_command(["git", "diff"], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
 
 def git_push(project_path):
     output_window = tk.Toplevel(orga)
@@ -2450,7 +2501,7 @@ def git_push(project_path):
         output = run_git_command(["git", "push"], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
 
 def git_branch(project_path):
     output_window = tk.Toplevel(orga)
@@ -2466,7 +2517,7 @@ def git_branch(project_path):
         output = run_git_command(["git", "branch"], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
 
 def git_checkout(project_path):
     output_window = tk.Toplevel(orga)
@@ -2482,7 +2533,7 @@ def git_checkout(project_path):
         output = run_git_command(["git", "checkout"], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
 
 def git_merge(project_path):
     output_window = tk.Toplevel(orga)
@@ -2498,7 +2549,7 @@ def git_merge(project_path):
         output = run_git_command(["git", "merge"], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
 
 def git_remote(project_path):
     output_window = tk.Toplevel(orga)
@@ -2514,7 +2565,7 @@ def git_remote(project_path):
         output = run_git_command(["git", "remote", "-v"], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
 
 def git_fetch(project_path):
     output_window = tk.Toplevel(orga)
@@ -2530,7 +2581,7 @@ def git_fetch(project_path):
         output = run_git_command(["git", "fetch"], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
 
 def git_reset(project_path):
     output_window = tk.Toplevel(orga)
@@ -2546,7 +2597,7 @@ def git_reset(project_path):
         output = run_git_command(["git", "reset"], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
 
 def git_revert(project_path):
     output_window = tk.Toplevel(orga)
@@ -2562,14 +2613,14 @@ def git_revert(project_path):
         output = run_git_command(["git", "revert"], cwd=project_path)
         output_text.insert(tk.END, output)
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
 
 def run_git_command(command, cwd=None):
     try:
         output = subprocess.check_output(command, stderr=subprocess.STDOUT, cwd=cwd).decode()
         return output
     except subprocess.CalledProcessError as e:
-        ms.showerror("ERROR", f"Error: {e.output.decode()}")
+        show_error("ERROR", f"Error: {e.output.decode()}")
    
 def iniciar_new_proyect(lenguaje, textbox):
     nombre = new_name_entry.get()
@@ -2721,7 +2772,7 @@ def iniciar_new_proyect(lenguaje, textbox):
             try:
                 resultado = subprocess.run(['flutter', 'doctor'], capture_output=True, text=True)
                 if resultado.returncode != 0:
-                    ms.showerror("ERROR", f"Flutter is not configured correctly.\nDetails:\n{resultado.stderr}")
+                    show_error("ERROR", f"Flutter is not configured correctly.\nDetails:\n{resultado.stderr}")
                     webbrowser.open("https://flutter.dev/docs/get-started/install")
                 else:
                     pass
@@ -2759,7 +2810,7 @@ def eliminar_proyecto(id, ruta):
         conn.close()
         mostrar_proyectos()
     except shutil.Error as e:
-        ms.showerror("ERROR", f"Error deleting project: {e}")
+        show_error("ERROR", f"Error deleting project: {e}")
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
@@ -3086,14 +3137,14 @@ def generar_informe():
 
     generar_informe_html(informacion_proyectos)
 
-    ms.showinfo("Report Generate", "The report has been successfully generated. You can find it in the 'informe.html' file.")
+    show_info("Report Generate", "The report has been successfully generated. You can find it in the 'informe.html' file.")
     
     os.system('informe.html')
            
 def modificar_proyecto():
     selected_row = tree.selection()
     if not selected_row:
-        ms.showerror("Error", "Please select a project to modify.")
+        show_error("Error", "Please select a project to modify.")
         return
 
     selected_row = selected_row[0]
@@ -3166,38 +3217,38 @@ def change_theme(theme_name):
 
 def install_choco():
     subprocess.run("Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))")
-    ms.showinfo("INSTALL COMPLETE", "Choco has install correctly")
+    show_info("INSTALL COMPLETE", "Choco has install correctly")
     
 def install_scoop():
     subprocess.run("Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser; Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression").wait()
-    ms.showinfo("INSTALL COMPLETE", "Scoop has install correctly")
+    show_info("INSTALL COMPLETE", "Scoop has install correctly")
 
 def install_lenguaje(lenguaje_selected):
     if lenguaje_selected == "Python":
         comando_python = 'choco install python3 -y'
         subprocess.Popen(["powershell", "-c", comando_python], shell=True).wait()
-        ms.showinfo("INSTALL COMPLETE", f"{lenguaje_selected} Has been installed")
+        show_info("INSTALL COMPLETE", f"{lenguaje_selected} Has been installed")
     elif lenguaje_selected == "NodeJS" or lenguaje_selected == "React":
         comando_node = 'choco install nodejs -y'
         subprocess.Popen(["powershell", "-c", comando_node], shell=True).wait()
-        ms.showinfo("INSTALL COMPLETE", f"{lenguaje_selected} Has been installed")
+        show_info("INSTALL COMPLETE", f"{lenguaje_selected} Has been installed")
     elif lenguaje_selected == "bun":
         comando_bun = 'irm bun.sh/install.ps1|iex'
         subprocess.Popen(["powershell", "-c", comando_bun], shell=True).wait()
-        ms.showinfo("INSTALL COMPLETE", f"{lenguaje_selected} Has been installed")
+        show_info("INSTALL COMPLETE", f"{lenguaje_selected} Has been installed")
     elif lenguaje_selected == "Rust":
         url = "https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe"
         response = requests.get(url)
         file = url.split('/')[-1]
         with open(file, 'wb') as f:
             f.write(response.content)
-        ms.showinfo(f"{lenguaje_selected} IS DOWNLOAD", f'{lenguaje_selected} has been downloaded and saved in the same folder as this app')
+        show_info(f"{lenguaje_selected} IS DOWNLOAD", f'{lenguaje_selected} has been downloaded and saved in the same folder as this app')
         quest = ms.askyesno("INSTALL", f"Do you want to install {lenguaje_selected} now?")
         if quest:
             subprocess.Popen([file], shell=True).wait()
             os.remove(file)
         else:
-            ms.showinfo("INSTALL LATER", f"You can install {lenguaje_selected} later, the installer is saved in the same folder as this app")
+            show_info("INSTALL LATER", f"You can install {lenguaje_selected} later, the installer is saved in the same folder as this app")
             
     elif lenguaje_selected == "Go":
         url = "https://go.dev/dl/go1.22.1.windows-amd64.msi"
@@ -3210,7 +3261,7 @@ def install_lenguaje(lenguaje_selected):
             subprocess.Popen([file], shell=True).wait()
             os.remove(file)
         else:
-            ms.showinfo("INSTALL LATER", f"You can install {lenguaje_selected} later, the installer is saved in the same folder as this app")
+            show_info("INSTALL LATER", f"You can install {lenguaje_selected} later, the installer is saved in the same folder as this app")
             
     elif lenguaje_selected == "flutter":
         url = "https://docs.flutter.dev/get-started/install"
@@ -3262,7 +3313,7 @@ def get_windows_theme():
         
         return "light" if current_theme == 1 else "dark"
     except Exception as e:
-        ms.showerror("ERROR", f"Can't Obtain theme of your system: {str(e)}")
+        show_error("ERROR", f"Can't Obtain theme of your system: {str(e)}")
         return "light"
     
 def get_mac_theme():
@@ -3274,7 +3325,7 @@ def get_mac_theme():
         else:
             return 'light'
     except Exception as e:
-        ms.showerror("ERROR", f"Can't obtain the theme of your system: {str(e)}")
+        show_error("ERROR", f"Can't obtain the theme of your system: {str(e)}")
         return "light"
 
 def get_linux_theme():
@@ -3316,7 +3367,7 @@ def get_linux_theme():
         return "light"
 
     except Exception as e:
-        ms.showerror("ERROR", f"Can't obtain the theme of your system: {str(e)}")
+        show_error("ERROR", f"Can't obtain the theme of your system: {str(e)}")
         return "light"
     
 def get_system_theme():
@@ -3328,7 +3379,7 @@ def get_system_theme():
     elif system == "Linux":
         return get_linux_theme()
     else:
-        ms.showerror("ERROR", f"Unsupported operating system: {system}")
+        show_error("ERROR", f"Unsupported operating system: {system}")
         return "light"
     
 def set_default_theme():
@@ -3766,7 +3817,7 @@ def previsualizar_proyecto(event=None):
     # Obtener la ruta del proyecto seleccionado desde la pantalla principal
     seleccion = tree.selection()
     if not seleccion:
-        ms.showwarning("Advertencia", "Por favor selecciona un proyecto primero.")
+        show_warning("Advertencia", "Por favor selecciona un proyecto primero.")
         return
 
     ruta_proyecto = tree.item(seleccion, "values")[4]  # Tomar la ruta del proyecto desde los valores
@@ -3782,7 +3833,7 @@ def previsualizar_proyecto(event=None):
                 else:
                     treeview.insert(parent, "end", text=item, values=[item_path])
         except PermissionError:
-            ms.showwarning("Acceso denegado", f"No se pudo acceder a la carpeta: {ruta}")
+            show_warning("Acceso denegado", f"No se pudo acceder a la carpeta: {ruta}")
 
     def expandir_nodo(event):
         """Cargar contenido cuando se expande un nodo con 'Cargando...'."""
@@ -3807,7 +3858,7 @@ def previsualizar_proyecto(event=None):
                     scrolled_text.delete(1.0, tk.END)
                     scrolled_text.insert(tk.END, contenido)
             except Exception as e:
-                ms.showerror("Error", f"No se pudo abrir el archivo: {e}")
+                show_error("Error", f"No se pudo abrir el archivo: {e}")
 
     def buscar_en_treeview(query):
         """Buscar archivos en el árbol y mostrar solo los que coincidan."""
@@ -3961,7 +4012,7 @@ def detectar_dependencias():
     # Obtener la ruta del proyecto seleccionado desde la pantalla principal
     seleccion = tree.selection()
     if not seleccion:
-        ms.showwarning("Warning", "Please select a project first.")
+        show_warning("Warning", "Please select a project first.")
         return
 
     ruta_proyecto = tree.item(seleccion, "values")[4]  # Tomar la ruta del proyecto desde los valores
@@ -4083,20 +4134,20 @@ def detectar_dependencias():
             boton_instalar.pack(anchor="w", padx=5, pady=5)
 
     else:
-        ms.showinfo("Information", "No dependency files were found in the project.")
+        show_info("Information", "No dependency files were found in the project.")
 
 def instalar_dependencias(ruta_proyecto, comando):
     try:
         # Cambiar al directorio del proyecto
         subprocess.run(comando, cwd=ruta_proyecto, shell=True, check=True)
-        ms.showinfo("Success", "Dependencies installed correctly.")
+        show_info("Success", "Dependencies installed correctly.")
     except subprocess.CalledProcessError:
-        ms.showerror("Error", "There was a problem installing the dependencies.")
+        show_error("Error", "There was a problem installing the dependencies.")
     
 def crear_plantilla():
     seleccion = tree.selection()
     if not seleccion:
-        ms.showwarning("Warning", "Please select a project first.")
+        show_warning("Warning", "Please select a project first.")
         return
 
     ruta_proyecto = tree.item(seleccion, "values")[4]  # Tomar la ruta del proyecto desde los valores
@@ -4122,7 +4173,7 @@ def guardar_estructura_plantilla(nombre, estructura):
     # Guardar la plantilla en un archivo JSON
     with open(f"{nombre}_plantilla.json", "w") as file:
         json.dump(estructura, file)
-    ms.showinfo("Success", f"Template '{nombre}' save success.")
+    show_info("Success", f"Template '{nombre}' save success.")
 
 TEMPLATES = {
     "python": "_internal/templates/python/",
@@ -4152,16 +4203,16 @@ def aplicar_plantilla():
 
         crear_proyecto_desde_plantilla(ruta_plantilla, ruta_nueva)
     else:
-        ms.showerror("Error", "Lenguaje no soportado o no válido.")
+        show_error("Error", "Lenguaje no soportado o no válido.")
 
 
 def crear_proyecto_desde_plantilla(ruta_plantilla, ruta_nueva):
     try:
         shutil.copytree(ruta_plantilla, ruta_nueva)
 
-        ms.showinfo("Éxito", "Proyecto creado con éxito desde la plantilla.")
+        show_info("Éxito", "Proyecto creado con éxito desde la plantilla.")
     except Exception as e:
-        ms.showerror("Error", f"Error al crear el proyecto desde la plantilla: {e}")
+        show_error("Error", f"Error al crear el proyecto desde la plantilla: {e}")
     
 def on_key_release(event):
     search_text = search_entry.get().strip()
@@ -4212,9 +4263,9 @@ def agree_context_menu(name, description, ruta_icono=None, ruta_db=None):
             reg.CloseKey(clave_menu)
             reg.CloseKey(clave_comando)
             
-        ms.showinfo("Organizer", f"{description} has been agree to windows context menu")
+        show_info("Organizer", f"{description} has been agree to windows context menu")
     except Exception as e:
-        ms.showerror("ERROR", f"Error to agree on windows context menu: {e}")
+        show_error("ERROR", f"Error to agree on windows context menu: {e}")
         
 def delete_context_menu(name):
     try:
@@ -4228,11 +4279,11 @@ def delete_context_menu(name):
             reg.DeleteKey(reg.HKEY_CURRENT_USER, ruta + r"\command")
             reg.DeleteKey(reg.HKEY_CURRENT_USER, ruta)
         
-        ms.showinfo("Organizer", f"Removed '{name}' from the Windows context menu for the current user.")
+        show_info("Organizer", f"Removed '{name}' from the Windows context menu for the current user.")
     except FileNotFoundError:
-        ms.showerror("ERROR", f"The entry '{name}' was not found in the context menu.")
+        show_error("ERROR", f"The entry '{name}' was not found in the context menu.")
     except Exception as e:
-        ms.showerror("ERROR", f"Error removing context menu: {e}")
+        show_error("ERROR", f"Error removing context menu: {e}")
 
 def save_project_file(id_project, project_path, editor):
     project_data = {
@@ -4251,9 +4302,9 @@ def save_project_file(id_project, project_path, editor):
         try:
             with open(file_path, 'w') as file:
                 json.dump(project_data, file, indent=4)
-            ms.showinfo("Success", f"Project workstation save on: {file_path}")
+            show_info("Success", f"Project workstation save on: {file_path}")
         except Exception as e:
-            ms.showerror("ERROR", f"Can't save file: {e}")
+            show_error("ERROR", f"Can't save file: {e}")
             
 def open_project_file(file_path):
     try:
@@ -4265,7 +4316,7 @@ def open_project_file(file_path):
         editor = project_data.get("editor")
         
         if not id_project or not project_path or not editor:
-            ms.showerror("ERROR", "The workspace file is invalid")
+            show_error("ERROR", "The workspace file is invalid")
             
         configuracion_editores = cargar_configuracion_editores()
         ruta_editor = configuracion_editores.get(editor) if configuracion_editores and editor in configuracion_editores else None
@@ -4317,18 +4368,18 @@ def open_project_file(file_path):
                     process.append(terminal_process)
                     abrir_editor_thread(project_path, tree.item(tree.selection())['values'][1])
                 else:
-                    ms.showerror("ERROR", f"{editor} Not found")
+                    show_error("ERROR", f"{editor} Not found")
 
                 threading.Thread(target=monitor_processes_and_sync, args=(process, id_project, project_path, ruta_copia), daemon=True).start()
             except Exception as e:
-                ms.showerror("ERROR", f"An error occurred while opening the project: {str(e)}")
+                show_error("ERROR", f"An error occurred while opening the project: {str(e)}")
             
         threading.Thread(target=execute_project_on_subprocess1, daemon=True).start()
         time.sleep(2)
         sys.exit(0)
             
     except Exception as e:
-        ms.showerror("ERROR", f"Error to open workstation file: {e}")
+        show_error("ERROR", f"Error to open workstation file: {e}")
         
 def asociate_files_extension():
     exe_path = os.path.abspath(sys.argv[0])
@@ -4358,9 +4409,9 @@ def asociate_files_extension():
         reg.SetValue(reg_key, "", reg.REG_SZ, command)
         reg.CloseKey(reg_key)
         
-        ms.showinfo("ASOCIATE", "Extension workstations asociate succes")
+        show_info("ASOCIATE", "Extension workstations asociate succes")
     except Exception as e:
-        ms.showerror("ERROR", f"Error to asociate extension file: {e}")
+        show_error("ERROR", f"Error to asociate extension file: {e}")
        
 def show_docu():
     docu = tk.Toplevel(orga)
@@ -4372,7 +4423,7 @@ def show_docu():
         topic = m_var.get().strip()
         
         if not language:
-            ms.showerror("ERROR", "Please select a language.")
+            show_error("ERROR", "Please select a language.")
             return
         
         # Mapeo de lenguajes a sus URLs de documentación
@@ -4407,7 +4458,7 @@ def show_docu():
         
         base_url = doc_urls.get(language)
         if not base_url:
-            ms.showerror("ERROR", f"Documentation for language '{language}' is not supported.")
+            show_error("ERROR", f"Documentation for language '{language}' is not supported.")
             return
         
         url = f"{base_url}{topic}.html" if topic else base_url
@@ -4418,9 +4469,9 @@ def show_docu():
                 webview.create_window(f"{language.capitalize()} Documentation", url)
                 webview.start(icon=path2)
             else:
-                ms.showerror("ERROR", f"Documentation for '{topic}' in {language.capitalize()} not found.")
+                show_error("ERROR", f"Documentation for '{topic}' in {language.capitalize()} not found.")
         except requests.exceptions.RequestException as e:
-            ms.showerror("ERROR", f"Error loading documentation: {e}")
+            show_error("ERROR", f"Error loading documentation: {e}")
     
     # Etiqueta para seleccionar el lenguaje
     lang_label = ttk.Label(docu, text="Select Language:")
@@ -4461,7 +4512,7 @@ def obtain_github_repos():
         repos = response.json()
         return repos
     except requests.exceptions.RequestException as e:
-        ms.showerror("ERROR", f"Error loading GitHub repositories: {e}")
+        show_error("ERROR", f"Error loading GitHub repositories: {e}")
         return []
     
 def list_repo_contents(repo_name):
@@ -4475,7 +4526,7 @@ def list_repo_contents(repo_name):
         contents = response.json()
         return contents
     except requests.exceptions.RequestException as e:
-        ms.showerror("Error", f"Error al obtener los contenidos del repositorio: {e}")
+        show_error("Error", f"Error al obtener los contenidos del repositorio: {e}")
         return []
     
 def view_file_contents(repo_name, file_path):
@@ -4490,7 +4541,7 @@ def view_file_contents(repo_name, file_path):
         file_content = base64.b64decode(file_data["content"]).decode("utf-8")
         return file_content
     except requests.exceptions.RequestException as e:
-        ms.showerror("Error", f"Error al obtener el contenido del archivo: {e}")
+        show_error("Error", f"Error al obtener el contenido del archivo: {e}")
         return ""
 
 def update_file_content(repo_name, file_path, new_content, commit_message):
@@ -4518,7 +4569,7 @@ def update_file_content(repo_name, file_path, new_content, commit_message):
                                 json=data)
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
-        ms.showerror("Error", f"Error al actualizar el archivo: {e}")
+        show_error("Error", f"Error al actualizar el archivo: {e}")
 
 def create_repository_github(description="", private=False):
     name = simpledialog.askstring("Repo Name", "Name of you new repo")
@@ -4534,9 +4585,9 @@ def create_repository_github(description="", private=False):
                                                "Accept": "application/vnd.github.v3+json"},
                                  json=data)
         response.raise_for_status()
-        ms.showinfo("SUCCESS", f"Repository '{name}' created successfully.")
+        show_info("SUCCESS", f"Repository '{name}' created successfully.")
     except requests.exceptions.RequestException as e:
-        ms.showerror("ERROR", f"Error creating repository: {e}")
+        show_error("ERROR", f"Error creating repository: {e}")
         
 def delete_repository_github(name):
     user = GITHUB_USER
@@ -4546,9 +4597,9 @@ def delete_repository_github(name):
         response = requests.delete(url, headers={"Authorization": f"token {GITHUB_TOKEN}",
                                                  "Accept": "application/vnd.github.v3+json"})
         response.raise_for_status()
-        ms.showinfo("SUCCESS", f"Repository '{name}' deleted successfully.")
+        show_info("SUCCESS", f"Repository '{name}' deleted successfully.")
     except requests.exceptions.RequestException as e:
-        ms.showerror("ERROR", f"Error deleting repository: {e}")
+        show_error("ERROR", f"Error deleting repository: {e}")
     
 def sync_repo_files(repo_url, local_path):
     def list_files_in_repo(repo_owner, repo_name):
@@ -4563,7 +4614,7 @@ def sync_repo_files(repo_url, local_path):
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            ms.showerror("Error", f"Failed to fetch files from the repository: {e}")
+            show_error("Error", f"Failed to fetch files from the repository: {e}")
             return []
 
     def get_last_modified(repo_owner, repo_name, file_path):
@@ -4606,7 +4657,7 @@ def sync_repo_files(repo_url, local_path):
             new_hash = hashlib.md5(new_content).hexdigest()
 
             if existing_hash == new_hash:
-                ms.showinfo("SYNC FILE",f"✅ {local_file_path} it is already updated.")
+                show_info("SYNC FILE",f"✅ {local_file_path} it is already updated.")
                 return
 
             os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
@@ -4615,11 +4666,11 @@ def sync_repo_files(repo_url, local_path):
                 file.write(new_content)
 
         except requests.exceptions.RequestException as e:
-            ms.showerror("Error", f"Failed to download {file_path}: {e}")
+            show_error("Error", f"Failed to download {file_path}: {e}")
 
     repo_parts = repo_url.replace("https://github.com/", "").strip().split("/")
     if len(repo_parts) < 2:
-        ms.showerror("Error", "Invalid repository URL.")
+        show_error("Error", "Invalid repository URL.")
         return
     repo_owner, repo_name = repo_parts[:2]
 
@@ -4657,7 +4708,7 @@ def sync_repo_files(repo_url, local_path):
     def sync_selected_files():
         selected_files = [file for file, var in files_var.items() if var.get()]
         if not selected_files:
-            ms.showerror("Error", "No files selected for synchronization.")
+            show_error("Error", "No files selected for synchronization.")
             return
 
         for file in selected_files:
@@ -4666,9 +4717,9 @@ def sync_repo_files(repo_url, local_path):
             if local_file_path:
                 download_file(repo_owner, repo_name, file, local_file_path)
             else:
-                ms.showerror("SYNC FILE ERROR", f"⚠ '{file}' was not found in {local_path}, it will be skipped.")
+                show_error("SYNC FILE ERROR", f"⚠ '{file}' was not found in {local_path}, it will be skipped.")
 
-        ms.showinfo("Success", "Selected files have been synchronized.")
+        show_info("Success", "Selected files have been synchronized.")
 
     ttk.Button(window, text="Sync Selected Files", bootstyle="primary", command=sync_selected_files).pack(pady=10, padx=10)
     ttk.Button(window, text="Cancel", bootstyle="secondary", command=window.destroy).pack(pady=10, padx=10)
@@ -4710,13 +4761,13 @@ def unify_windows():
                 
                 progress_win.destroy()
 
-                ms.showinfo("SUCCESS", "File has been downloaded.")
+                show_info("SUCCESS", "File has been downloaded.")
                 
                 subprocess.Popen([complemento], shell=True)
 
             except Exception as e:
                 progress_win.destroy()
-                ms.showerror("Download Failed", str(e))
+                show_error("Download Failed", str(e))
 
 def open_project_notes(project_path):
     notes_path = os.path.join(project_path, ".organizer_notes.txt")
@@ -4771,7 +4822,7 @@ def promp_coment_and_save_version(project_path):
         coment = entry.get("1.0", "end-1c").strip()
         save_project_version(project_path, coment)
         win.destroy()
-        ms.showinfo("Save Version", f"Version successfully created for: {os.path.basename(project_path)}.")
+        show_info("Save Version", f"Version successfully created for: {os.path.basename(project_path)}.")
         
     ttk.Button(win, text="Confirm", command=confirm).pack(padx=5)     
         
@@ -4802,7 +4853,7 @@ def show_versions_historial(project_path):
     project_name = os.path.basename(project_path)
     metadata_path = os.path.join("projects_versions", project_name, "versions.json")
     if not os.path.exists(metadata_path):
-        ms.showinfo("No versions", "This project has no saved versions")
+        show_info("No versions", "This project has no saved versions")
         return
     
     with open(metadata_path, "r", encoding="utf-8") as f:
@@ -4823,19 +4874,19 @@ def show_versions_historial(project_path):
     def restore():
         selection = tree.selection()
         if not selection:
-            ms.showwarning("Warning", "No version selected.")
+            show_warning("Warning", "No version selected.")
             return
 
         version_name = selection[0]
         if not version_name.startswith("v_"):
-            ms.showerror("Error", "Invalid version selected.")
+            show_error("Error", "Invalid version selected.")
             return
 
         project_base = os.path.dirname(os.path.abspath(__file__))
         origin_path = os.path.join(project_base, "projects_versions", project_name, version_name)
 
         if not os.path.exists(origin_path):
-            ms.showerror("Error", f"Version folder not found:\n{origin_path}")
+            show_error("Error", f"Version folder not found:\n{origin_path}")
             return
 
         confirm = ms.askyesno(
@@ -4867,7 +4918,7 @@ def show_versions_historial(project_path):
             mostrar_proyectos()
 
         except Exception as e:
-            ms.showerror("Restore Error", f"Failed to restore version:\n{e}")
+            show_error("Restore Error", f"Failed to restore version:\n{e}")
                 
     btn_restore = ttk.Button(window, text="Restore version", command=restore)
     btn_restore.pack(padx=5, pady=5)
@@ -4935,7 +4986,7 @@ def open_tasks_projects(project_path):
 
     def import_tasks_from_code():
         if not os.path.exists(scan_config_path):
-            ms.showwarning("Missing Config", "No .organizer_taskscan.json found.")
+            show_warning("Missing Config", "No .organizer_taskscan.json found.")
             return
 
         try:
@@ -4943,7 +4994,7 @@ def open_tasks_projects(project_path):
                 config = json.load(f)
             paths = config.get("paths", [])
         except Exception as e:
-            ms.showerror("Error", f"Failed to read .organizer_taskscan.json:\n{e}")
+            show_error("Error", f"Failed to read .organizer_taskscan.json:\n{e}")
             return
 
         patterns = [
@@ -4997,9 +5048,9 @@ def open_tasks_projects(project_path):
 
         if count:
             save_task()
-            ms.showinfo("Tasks Imported", f"{count} tasks added from code.")
+            show_info("Tasks Imported", f"{count} tasks added from code.")
         else:
-            ms.showinfo("No New Tasks", "No new TODO/BUG/FIX comments found.")
+            show_info("No New Tasks", "No new TODO/BUG/FIX comments found.")
 
     load_task()
 
@@ -5242,7 +5293,7 @@ def load_project_structure_on_expand(event):
                         tree.insert(sub_path, "end", iid=dummy_id, text="(loading...)")
 
     except Exception as e:
-        ms.showerror("ERROR", f"Error loading content: {e}")
+        show_error("ERROR", f"Error loading content: {e}")
 
 def open_link_panel(project_path):
     links_path = os.path.join(project_path, ".organizer_links.json")
@@ -5315,7 +5366,7 @@ def restore_version_from_sidebar(project_path, version_name):
     origin_path = os.path.join("projects_versions", project_name, version_name)
 
     if not os.path.exists(origin_path):
-        ms.showerror("Restore Error", f"Version not found:\n{origin_path}")
+        show_error("Restore Error", f"Version not found:\n{origin_path}")
         return
 
     confirm = ms.askyesno(
@@ -5346,7 +5397,7 @@ def restore_version_from_sidebar(project_path, version_name):
         show_notification(f"Restored version: {version_name}", type_="success")
         orga.after(500, mostrar_proyectos)
     except Exception as e:
-        ms.showerror("Restore Error", f"Failed to restore:\n{e}")
+        show_error("Restore Error", f"Failed to restore:\n{e}")
 
 def calcular_resumen_proyecto(project_path):
     resumen = {
@@ -5448,7 +5499,7 @@ def open_sidebar_section_config_ui(project_path, current_config, refresh_callbac
 
     ttk.Button(win, text="💾 Save", command=save_and_close).pack(pady=10)
 
-def renderizar_sidebar(project_path, resumen, container=None):
+def renderizar_sidebar(project_path, resumen, container=None, repo_url=None):
     if container is None:
         container = sidebar
     
@@ -5646,7 +5697,7 @@ def renderizar_sidebar(project_path, resumen, container=None):
                     json.dump(resumen["tasks_list"], f, indent=4)
                 show_notification("Tasks updated", type_="success")
             except Exception as e:
-                ms.showerror("Error", f"Failed to save tasks:\n{e}")
+                show_error("Error", f"Failed to save tasks:\n{e}")
 
         def toggle_task(idx, var):
             if resumen["tasks_list"][idx]["done"] != var.get():
@@ -5858,7 +5909,87 @@ def renderizar_sidebar(project_path, resumen, container=None):
             command=lambda: open_trello_board(project_path),
             bootstyle="outline-info"
         ).pack(fill="x", padx=6, pady=6)
-    
+        
+    if sidebar_config.get("GitHub", True) and repo_url:
+        github_frame = create_section("GitHub Info", "🚀")
+        
+        # Usamos threading para no bloquear la UI al hacer la petición web
+        def fetch_and_update():
+            # Obtener los datos del repositorio de GitHub
+            data = fetch_github_data(repo_url)
+            
+            if data:
+                # Mostrar los datos si la petición fue exitosa
+                repo_label = ttk.Label(github_frame, text=f"Repo: {data['owner']}/{data['repo_name']}", font=("Segoe UI", 9, "bold"))
+                repo_label.pack(anchor="w", padx=10, pady=2)
+                
+                release_label = ttk.Label(github_frame, text=f"🏷️ Release: {data.get('latest_release', 'N/A')}", font=("Segoe UI", 9))
+                release_label.pack(anchor="w", padx=10)
+                
+                commits_label = ttk.Label(github_frame, text=f"📜 Commits: {data.get('total_commits', 'N/A')}", font=("Segoe UI", 9))
+                commits_label.pack(anchor="w", padx=10)
+                
+                issues_label = ttk.Label(github_frame, text=f"🐞 Issues: {data.get('open_issues', 'N/A')}", font=("Segoe UI", 9))
+                issues_label.pack(anchor="w", padx=10)
+            else:
+                # Mostrar un mensaje de error si no se pudo obtener la información
+                error_label = ttk.Label(github_frame, text="Could not fetch GitHub data.", foreground="gray")
+                error_label.pack(anchor="w", padx=10, pady=5)
+        
+        # Ejecutar la función en un hilo para mantener la intefaz fluida
+        threading.Thread(target=fetch_and_update).start()
+
+
+def fetch_github_data(repo_url):
+    try:
+        # 1. Analizar la URL para obtener 'owner' y 'repo_name'
+        parsed_url = urlparse(repo_url)
+        path_parts = parsed_url.path.strip('/').split('/')
+        owner = path_parts[0]
+        repo_name = path_parts[1].replace('.git', '')
+
+        # Petición a la API de GitHub para obtener la última release
+        release_url = f"https://api.github.com/repos/{owner}/{repo_name}/releases/latest"
+        release_response = requests.get(release_url, timeout=5)
+        release_response.raise_for_status()
+        release_data = release_response.json()
+
+        # Petición para obtener el número de issues abiertos
+        repo_info_url = f"https://api.github.com/repos/{owner}/{repo_name}"
+        repo_info_response = requests.get(repo_info_url, timeout=5)
+        repo_info_response.raise_for_status()
+        repo_info_data = repo_info_response.json()
+        
+        # Petición para obtener el número total de commits.
+        # Se usa un endpoint para obtener el último commit y se intenta
+        # obtener el total desde el header 'Link' para evitar paginación.
+        commits_url = f"https://api.github.com/repos/{owner}/{repo_name}/commits?per_page=1"
+        commits_response = requests.get(commits_url, timeout=5)
+        commits_response.raise_for_status()
+        
+        # Analizar el header 'Link' para obtener el total de commits
+        link_header = commits_response.headers.get('Link', '')
+        total_commits = 'N/A'
+        if link_header:
+            # El último enlace en el header 'Link' contiene el número total de páginas
+            last_page_url = link_header.split('; rel="last"')[0].split('<')[-1].split('?')[1]
+            total_commits_count = last_page_url.split('&')[0].split('=')[-1]
+            total_commits = int(total_commits_count) if total_commits_count.isdigit() else total_commits
+
+        return {
+            'owner': owner,
+            'repo_name': repo_name,
+            'latest_release': release_data.get('tag_name', 'N/A'),
+            'total_commits': total_commits,
+            'open_issues': repo_info_data.get('open_issues_count', 'N/A')
+        }
+    except requests.exceptions.RequestException as e:
+        print(f"Error al conectar con la API de GitHub: {e}")
+        return None
+    except Exception as e:
+        print(f"Error al procesar datos de GitHub: {e}")
+        return None
+  
 def open_sidebar_floating(project_path, resumen):
     global float_win
     
@@ -5892,18 +6023,22 @@ def update_sidebar_project(event=None):
 
     selection = tree.selection()
     if not selection:
+        # Si no hay selección, llama a renderizar_sidebar sin datos
+        renderizar_sidebar(None, None, repo_url=None)
         return
 
     item_id = selection[0]
     values = tree.item(item_id, "values")
-    if len(values) < 4:
+    if len(values) < 5:  # Asegúrate de que la columna 'Repository' exista
         return
 
     project_path = values[3]
+    repo_url = values[4]  # Obtiene la URL de la columna 'Repository'
 
     def cargar_sidebar_en_hilo():
         resumen = calcular_resumen_proyecto(project_path)
-        orga.after(0, lambda: renderizar_sidebar(project_path, resumen))
+        # Pasa la URL del repositorio a renderizar_sidebar
+        orga.after(0, lambda: renderizar_sidebar(project_path, resumen, repo_url=repo_url))
 
     threading.Thread(target=cargar_sidebar_en_hilo, daemon=True).start()
 
@@ -5982,7 +6117,7 @@ def open_trello_board(project_path):
         def submit():
             text = entry.get().strip()
             if not text:
-                ms.showwarning("Empty", "Card text cannot be empty")
+                show_warning("Empty", "Card text cannot be empty")
                 return
             result["text"] = text
             result["priority"] = priority_var.get()
@@ -6382,7 +6517,7 @@ def show_splash(duration=3000):
         img_label.image = logo_photo
         img_label.pack(pady=(30, 10))
     except Exception as e:
-        ms.showerror("ERROR", f"Error logo loading: {e}")
+        show_error("ERROR", f"Error logo loading: {e}")
 
     ttk.Label(splash, text="Organizer", font=("Segoe UI", 16, "bold")).pack()
     
@@ -6637,7 +6772,7 @@ def open_command_palette(plugin_api=None):
             try:
                 plugin_api.run_command(command)
             except Exception as e:
-                ms.showerror("Command Error", f"Error running command '{command}':\n{e}")
+                show_error("Command Error", f"Error running command '{command}':\n{e}")
         palette.destroy()
 
     entry.bind("<Return>", lambda e: execute_selected())
@@ -6905,7 +7040,7 @@ def install_editor(name=""):
             subprocess.Popen([file_name], shell=True).wait()
             os.remove(file_name)
         else:
-            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+            show_info("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
     elif name == "Sublime Text":
         url = "https://download.sublimetext.com/Sublime%20Text%20Build%203211%20x64%20Setup.exe"
         file_name = "SubText_win64.exe"
@@ -6917,7 +7052,7 @@ def install_editor(name=""):
             subprocess.Popen([file_name], shell=True).wait()
             os.remove(file_name)
         else:
-            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+            show_info("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
     elif name == "Vim":
         hvim = ms.askyesno("VIM", "You have choco install on your pc")
         if hvim:
@@ -6928,7 +7063,7 @@ def install_editor(name=""):
             command = "scoop install vim"
             subprocess.Popen([scoop_install], shell=True).wait()
             subprocess.Popen([command], shell=True).wait()
-            ms.showinfo("Vim", F"{name} has been installed")
+            show_info("Vim", F"{name} has been installed")
     elif name == "Neovim":
         hvim = ms.askyesno(f"{name}", "You have scoop install on your pc")
         if hvim:
@@ -6939,7 +7074,7 @@ def install_editor(name=""):
             command = "scoop install neovim"
             subprocess.Popen([scoop_install], shell=True).wait()
             subprocess.Popen([command], shell=True).wait()
-            ms.showinfo(f"{name}", f"{name} has been installed")
+            show_info(f"{name}", f"{name} has been installed")
     elif name == "Emacs":
         url = "http://ftp.rediris.es/mirror/GNU/emacs/windows/emacs-29/emacs-29.1-installer.exe"
         file_name = "Emacs_win64.exe"
@@ -6951,7 +7086,7 @@ def install_editor(name=""):
             subprocess.Popen([file_name], shell=True).wait()
             os.remove(file_name)
         else:
-            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+            show_info("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
     elif name == "Notepad++":
         url = "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.6.4/npp.8.6.4.Installer.x64.exe"
         file_name = "Notepad++_win64.exe"
@@ -6963,7 +7098,7 @@ def install_editor(name=""):
             subprocess.Popen([file_name], shell=True).wait()
             os.remove(file_name)
         else:
-            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+            show_info("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
     elif name == "Brackets":
         url = "https://github.com/brackets-cont/brackets/releases/download/v2.1.3/Brackets-2.1.3.exe"
         file_name = "Brackets_Win64.exe"
@@ -6975,7 +7110,7 @@ def install_editor(name=""):
             subprocess.Popen([file_name], shell=True).wait()
             os.remove(file_name)
         else:
-            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+            show_info("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
     elif name == "Geany":
         url = "https://download.geany.org/geany-2.0_setup.exe"
         file_name = "Geany2.0_Win64.exe"
@@ -6998,22 +7133,22 @@ def install_editor(name=""):
                     subprocess.Popen([file_name], shell=True).wait()
                     os.remove(file_name)
                 else:
-                    ms.showinfo("INSTALL LATER", f"You can install Geany-Plugins later, the installer is saved in the same folder as this app")
+                    show_info("INSTALL LATER", f"You can install Geany-Plugins later, the installer is saved in the same folder as this app")
         else:
-            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+            show_info("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
     elif name == "Nano":
         hnano = ms.askyesno(f"{name}", f"you have scoop installed")
         if hnano:
             command = "scoop install nano"
             subprocess.Popen([command], shell=True).wait()
-            ms.showinfo(f"{name}", f"{name} has been installed")
+            show_info(f"{name}", f"{name} has been installed")
         else:
             scoop_install = "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser; Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression"
             command = "scoop install nano"
             subprocess.Popen([scoop_install], shell=True).wait()
-            ms.showinfo("Scoop", "Scoop has ben installed")
+            show_info("Scoop", "Scoop has ben installed")
             subprocess.Popen([command], shell=True).wait()
-            ms.showinfo(f"{name}", f"{name} has been installed")
+            show_info(f"{name}", f"{name} has been installed")
     elif name ==  "Kate":
         url = "https://cdn.kde.org/ci-builds/utilities/kate/master/windows/kate-master-7254-windows-cl-msvc2022-x86_64.exe"
         file_name = "Kate_Win64.exe"
@@ -7025,7 +7160,7 @@ def install_editor(name=""):
             subprocess.Popen([file_name], shell=True).wait()
             os.remove(file_name)
         else:
-            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+            show_info("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
     elif name == "Eclipse":
         url = "https://www.eclipse.org/downloads/download.php?file=/oomph/epp/2024-03/R/eclipse-inst-jre-win64.exe&mirror_id=1285"
         file_name = "Eclipse_X86_64.exe"
@@ -7037,7 +7172,7 @@ def install_editor(name=""):
             subprocess.Popen([file_name], shell=True).wait()
             os.remove(file_name)
         else:
-            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+            show_info("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
     elif name == "Intellij IDEA":
         url = "https://www.jetbrains.com/idea/download/download-thanks.html?platform=windows"
         file_name = "Intellij_Win64.exe"
@@ -7052,12 +7187,12 @@ def install_editor(name=""):
             if buy:
                 webbrowser.open("https://www.jetbrains.com/idea/buy/?section=personal&billing=monthly")
         else:
-            ms.showinfo("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
+            show_info("INSTALL LATER", f"You can install {name} later, the installer is saved in the same folder as this app")
             buy = ms.askyesno("Intellij IDEA", "Free 30-day trial.you want buy a license?")
             if buy:
                 webbrowser.open("https://www.jetbrains.com/idea/buy/?section=personal&billing=monthly")
     elif name == "Android Studio":
-        ms.showinfo("ANDROID STUDIO", "Android Studio can't be installed automatically. You go to the web for download")
+        show_info("ANDROID STUDIO", "Android Studio can't be installed automatically. You go to the web for download")
         webbrowser.open("https://developer.android.com/studio")
         
 
@@ -7150,7 +7285,7 @@ editor_menu.grid(row=7, column=1, padx=5, pady=5, sticky="ew")
 def obtener_datos_seleccionado(tree):
     seleccionados = tree.selection()
     if not seleccionados:
-        ms.showinfo("Error", "No project selected.")
+        show_error("Error", "No project selected.")
         return None, None
     item_seleccionado = seleccionados[0]
     item_data = tree.item(item_seleccionado)['values']
