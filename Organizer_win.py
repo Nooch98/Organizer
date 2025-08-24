@@ -1,4 +1,4 @@
-import json, os, io, shutil, sqlite3, subprocess, sys, threading, git, time, webbrowser, jedi, markdown, datetime, requests, pygments.lexers, platform, markdown2, glob, re, webview, base64, hashlib, ctypes, contextlib, argparse, difflib, urllib.request
+import json, os, io, shutil, sqlite3, subprocess, sys, threading, git, time, webbrowser, jedi, markdown, datetime, requests, pygments.lexers, platform, markdown2, glob, re, webview, base64, hashlib, ctypes, contextlib, argparse, difflib, urllib.request, psutil, logging, pstats, cProfile
 import tkinter as tk
 import ttkbootstrap as ttk
 import xml.etree.ElementTree as ET
@@ -19,7 +19,7 @@ from datetime import datetime
 from pygments.lexers import get_lexer_for_filename
 from pygments.util import ClassNotFound
 from collections import Counter
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageGrab
 from ttkbootstrap.tooltip import ToolTip
 from contextlib import suppress
 
@@ -38,6 +38,10 @@ text_editor = None
 app_name = "Organizer_win.exe"
 exe_path = os.path.abspath(sys.argv[0])
 current_version = "v2.0"
+logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
+event_logger = logging.getLogger('events')
+event_logger.setLevel(logging.INFO)
+event_log_handler = None
 
 # Integration with local control version app
 VCS_DIR = ".myvcs"
@@ -6999,6 +7003,584 @@ def search_on_files(project_path):
     results_list.bind("<<ListboxSelect>>", show_preview)
     search_win.bind("<Escape>", lambda e: search_win.destroy())
 
+def create_debug_panel(parent_window, db_name, app_data_accessor, tree, config_file_paths):
+    debug_window = tk.Toplevel(parent_window)
+    debug_window.title("Debug Panel")
+    debug_window.geometry("800x800")
+    debug_window.iconbitmap(path)
+    debug_window.withdraw()
+    debug_window.attributes('-topmost', True)
+    
+    def on_closing():
+        debug_window.withdraw()
+    debug_window.protocol("WM_DELETE_WINDOW", on_closing)
+
+    notebook = ttk.Notebook(debug_window)
+    notebook.pack(fill=BOTH, expand=True, padx=10, pady=10)
+    
+    sys_info_frame = ttk.Frame(notebook)
+    notebook.add(sys_info_frame, text="System")
+    
+    sys_frame = ttk.LabelFrame(sys_info_frame, text="System Metrics")
+    sys_frame.pack(fill=X, padx=10, pady=5)
+    cpu_label = ttk.Label(sys_frame, text="CPU: 0%", font=("Helvetica", 11))
+    cpu_label.pack(anchor=W, pady=2, padx=10)
+    mem_label = ttk.Label(sys_frame, text="Memory: 0 MB", font=("Helvetica", 11))
+    mem_label.pack(anchor=W, pady=2, padx=10)
+    disk_label = ttk.Label(sys_frame, text="Disk: 0 GB", font=("Helvetica", 11))
+    disk_label.pack(anchor=W, pady=2, padx=10)
+    net_label = ttk.Label(sys_frame, text="Net: ↓0 KB/s ↑0 KB/s", font=("Helvetica", 11))
+    net_label.pack(anchor=W, pady=2, padx=10)
+
+    threads_frame = ttk.LabelFrame(sys_info_frame, text="Active Threads")
+    threads_frame.pack(fill=BOTH, expand=True, padx=10, pady=5)
+    threads_listbox = tk.Listbox(threads_frame, font=("Courier", 10))
+    threads_listbox.pack(fill=BOTH, expand=True, padx=5, pady=5)
+
+    env_frame = ttk.LabelFrame(sys_info_frame, text="Environment Variables")
+    env_frame.pack(fill=X, padx=10, pady=5)
+    env_text = scrolledtext.ScrolledText(env_frame, height=5, state='disabled', font=("Courier", 10))
+    env_text.pack(fill=X, padx=5, pady=5)
+
+    log_frame = ttk.Frame(notebook)
+    notebook.add(log_frame, text="Logs")
+    log_text = scrolledtext.ScrolledText(log_frame, state='disabled', wrap=tk.WORD, font=("Courier", 10), height=10)
+    log_text.pack(fill=BOTH, expand=True, padx=5, pady=5)
+    class TextHandler(logging.Handler):
+        def __init__(self, text_widget):
+            super().__init__()
+            self.text_widget = text_widget
+            self.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        def emit(self, record):
+            msg = self.format(record)
+            self.text_widget.config(state='normal')
+            self.text_widget.insert(tk.END, msg + '\n')
+            self.text_widget.see(tk.END)
+            self.text_widget.config(state='disabled')
+    logging.getLogger().addHandler(TextHandler(log_text))
+    
+    event_log_frame = ttk.Frame(notebook)
+    notebook.add(event_log_frame, text="Events")
+    event_log_text = scrolledtext.ScrolledText(event_log_frame, state='disabled', wrap=tk.WORD, font=("Courier", 10), height=10)
+    event_log_text.pack(fill=BOTH, expand=True, padx=5, pady=5)
+    class EventLogHandler(logging.Handler):
+        def __init__(self, text_widget):
+            super().__init__()
+            self.text_widget = text_widget
+            self.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+        def emit(self, record):
+            msg = self.format(record)
+            self.text_widget.config(state='normal')
+            self.text_widget.insert(tk.END, msg + '\n')
+            self.text_widget.see(tk.END)
+            self.text_widget.config(state='disabled')
+    event_logger.addHandler(EventLogHandler(event_log_text))
+
+    app_state_frame = ttk.Frame(notebook)
+    notebook.add(app_state_frame, text="App State")
+    app_tree = ttk.Treeview(app_state_frame, columns=("key", "value"), show="headings", bootstyle="primary")
+    app_tree.heading("key", text="Key")
+    app_tree.heading("value", text="Value")
+    app_tree.column("key", width=150)
+    app_tree.pack(fill=BOTH, expand=True, padx=5, pady=5)
+    def update_app_state_info():
+        for item in app_tree.get_children():
+            app_tree.delete(item)
+        data = app_data_accessor(parent_window, tree, db_name, config_file_paths)
+        for key, value in data.items():
+            app_tree.insert("", "end", values=(key, str(value)))
+
+    db_frame = ttk.Frame(notebook)
+    notebook.add(db_frame, text="Database")
+    db_notebook = ttk.Notebook(db_frame)
+    db_notebook.pack(fill=BOTH, expand=True, padx=5, pady=5)
+    table_viewer_frame = ttk.Frame(db_notebook)
+    db_notebook.add(table_viewer_frame, text="Table Viewer")
+    table_selector_frame = ttk.Frame(table_viewer_frame)
+    table_selector_frame.pack(fill=X, pady=5)
+    table_selector_label = ttk.Label(table_selector_frame, text="Select Table:")
+    table_selector_label.pack(side=LEFT, padx=5)
+    table_combobox = ttk.Combobox(table_selector_frame, state="readonly")
+    table_combobox.pack(side=LEFT, fill=X, expand=True, padx=5)
+    db_table_tree = ttk.Treeview(table_viewer_frame, show="headings", bootstyle="info")
+    db_table_tree.pack(fill=BOTH, expand=True, padx=5, pady=5)
+    def view_table_content(event=None):
+        table_name = table_combobox.get()
+        if not table_name:
+            return
+        for item in db_table_tree.get_children():
+            db_table_tree.delete(item)
+        try:
+            conn = sqlite3.connect(db_name)
+            cursor = conn.cursor()
+            cursor.execute(f"PRAGMA table_info({table_name});")
+            columns_info = cursor.fetchall()
+            columns = [col[1] for col in columns_info]
+            db_table_tree.config(columns=columns)
+            for col in columns:
+                db_table_tree.heading(col, text=col)
+            cursor.execute(f"SELECT * FROM {table_name} LIMIT 100;")
+            rows = cursor.fetchall()
+            for row in rows:
+                db_table_tree.insert("", "end", values=row)
+            conn.close()
+        except sqlite3.Error as e:
+            logging.error(f"DB Error viewing table: {e}")
+    table_combobox.bind("<<ComboboxSelected>>", view_table_content)
+    sql_console_frame = ttk.Frame(db_notebook)
+    db_notebook.add(sql_console_frame, text="SQL Console")
+    sql_input = scrolledtext.ScrolledText(sql_console_frame, height=5, font=("Courier", 10))
+    sql_input.pack(fill=X, pady=5)
+    execute_button = ttk.Button(sql_console_frame, text="Execute SQL", command=lambda: execute_sql(sql_input.get("1.0", tk.END).strip()))
+    execute_button.pack(pady=5)
+    sql_result_tree = ttk.Treeview(sql_console_frame, show="headings")
+    sql_result_tree.pack(fill=BOTH, expand=True)
+    def execute_sql(query):
+        for item in sql_result_tree.get_children():
+            sql_result_tree.delete(item)
+        try:
+            conn = sqlite3.connect(db_name)
+            cursor = conn.cursor()
+            cursor.execute(query)
+            if query.strip().upper().startswith("SELECT"):
+                columns = [desc[0] for desc in cursor.description]
+                sql_result_tree.config(columns=columns)
+                for col in columns:
+                    sql_result_tree.heading(col, text=col)
+                rows = cursor.fetchall()
+                for row in rows:
+                    sql_result_tree.insert("", "end", values=row)
+            else:
+                conn.commit()
+                sql_result_tree.config(columns=("Result",))
+                sql_result_tree.heading("Result", text="Result")
+                sql_result_tree.insert("", "end", values=(f"Query successful. Rows affected: {cursor.rowcount}",))
+            conn.close()
+        except sqlite3.Error as e:
+            sql_result_tree.config(columns=("Error",))
+            sql_result_tree.heading("Error", text="Error")
+            sql_result_tree.insert("", "end", values=(str(e),))
+
+    config_frame = ttk.Frame(notebook)
+    notebook.add(config_frame, text="Config")
+    config_text = scrolledtext.ScrolledText(config_frame, wrap=tk.WORD, font=("Courier", 10))
+    config_text.pack(fill=BOTH, expand=True, padx=5, pady=5)
+    config_buttons_frame = ttk.Frame(config_frame)
+    config_buttons_frame.pack(fill=X, pady=5)
+    
+    def load_config():
+        try:
+            with open(config_file_paths[0], 'r') as f:
+                config_data = json.load(f)
+                config_text.delete("1.0", tk.END)
+                config_text.insert(tk.END, json.dumps(config_data, indent=4))
+                logging.info("Config loaded successfully.")
+        except FileNotFoundError:
+            logging.error(f"Config file not found at {config_file_paths[0]}")
+        except json.JSONDecodeError:
+            logging.error("Invalid JSON format in config file.")
+
+    def save_config():
+        try:
+            config_data = json.loads(config_text.get("1.0", tk.END))
+            with open(config_file_paths[0], 'w') as f:
+                json.dump(config_data, f, indent=4)
+                logging.info("Config saved successfully.")
+        except json.JSONDecodeError:
+            logging.error("Cannot save: Invalid JSON format.")
+
+    ttk.Button(config_buttons_frame, text="Load Config", command=load_config).pack(side=LEFT, padx=5)
+    ttk.Button(config_buttons_frame, text="Save Config", command=save_config).pack(side=LEFT, padx=5)
+
+    ui_frame = ttk.Frame(notebook)
+    notebook.add(ui_frame, text="UI Inspector")
+
+    main_pane = ttk.Panedwindow(ui_frame, orient=tk.HORIZONTAL)
+    main_pane.pack(fill=BOTH, expand=True, padx=5, pady=5)
+
+    ui_tree_frame = ttk.Frame(main_pane)
+    main_pane.add(ui_tree_frame, weight=1)
+    
+    style = ttk.Style()
+    style.configure("Custom.Treeview", font=("Helvetica", 10))
+    style.configure("Custom.Treeview.Heading", font=("Helvetica", 11, "bold"))
+    style.layout("Custom.Treeview", [('Treeview.treearea', {'sticky': 'nswe'})])
+    
+    class_icons = {}
+    def create_icon(size, color):
+        img = tk.PhotoImage(width=size, height=size)
+        img.put(color, to=(0, 0, size, size))
+        return img
+    
+    class_icons['Toplevel'] = create_icon(16, "#5D8AA8") # Azul aciano
+    class_icons['TFrame'] = create_icon(16, "#698695")  # Gris pizarra
+    class_icons['TLabel'] = create_icon(16, "#34495E")  # Azul oscuro
+    class_icons['TButton'] = create_icon(16, "#8FBC8F") # Verde medio
+    class_icons['TEntry'] = create_icon(16, "#C0C0C0")  # Plata
+    class_icons['TPanedwindow'] = create_icon(16, "#663399") # Morado oscuro
+    class_icons['ScrolledText'] = create_icon(16, "#228B22") # Verde bosque
+    class_icons['Notebook'] = create_icon(16, "#FFD700") # Oro
+    class_icons['TCombobox'] = create_icon(16, "#4682B4") # Azul acero
+    class_icons['TCheckbutton'] = create_icon(16, "#DC143C") # Carmesí
+    class_icons['default'] = create_icon(16, "#A9A9A9") # Gris oscuro
+
+    ui_tree = ttk.Treeview(ui_tree_frame, columns=("class",), show="tree", bootstyle="info", style="Custom.Treeview")
+    ui_tree.heading("#0", text="Widget")
+    ui_tree.pack(fill=BOTH, expand=True)
+
+    inspector_frame = ttk.Frame(main_pane)
+    main_pane.add(inspector_frame, weight=1)
+    inspector_info_tree = ttk.Treeview(inspector_frame, columns=("property", "value"), show="headings")
+    inspector_info_tree.heading("property", text="Property")
+    inspector_info_tree.heading("value", text="Value")
+    inspector_info_tree.column("property", width=150)
+    inspector_info_tree.pack(fill=BOTH, expand=True, padx=5, pady=5)
+    ttk.Button(inspector_frame, text="Refresh UI Tree", command=lambda: populate_ui_tree(False)).pack(pady=5)
+
+    widget_map = {}
+    def populate_ui_tree(reset_tree=True):
+        if reset_tree:
+            for item in ui_tree.get_children():
+                ui_tree.delete(item)
+            widget_map.clear()
+
+        def add_widget(parent_item, widget):
+            widget_path = str(widget)
+            if widget_path in widget_map:
+                return 
+            
+            widget_class = widget.winfo_class()
+            icon = class_icons.get(widget_class, class_icons['default'])
+                
+            item = ui_tree.insert(parent_item, "end", text=f"{widget_class} ({widget.winfo_name()})", values=(widget_path,), image=icon)
+            widget_map[widget_path] = item
+            
+            for child in widget.winfo_children():
+                add_widget(item, child)
+
+        add_widget("", parent_window)
+    
+    def display_widget_info(widget):
+        for item in inspector_info_tree.get_children():
+            inspector_info_tree.delete(item)
+        
+        inspector_info_tree.insert("", "end", values=("Type", widget.winfo_class()))
+        inspector_info_tree.insert("", "end", values=("Name", widget.winfo_name()))
+        inspector_info_tree.insert("", "end", values=("Path", str(widget)))
+        
+        try:
+            inspector_info_tree.insert("", "end", values=("Geometry", widget.winfo_geometry()))
+            inspector_info_tree.insert("", "end", values=("Is Mapped", widget.winfo_ismapped()))
+        except tk.TclError:
+            pass
+        
+        try:
+            for key, value in widget.configure().items():
+                inspector_info_tree.insert("", "end", values=(f"config({key})", value[4]))
+        except Exception as e:
+            pass
+
+    def on_ui_tree_select(event):
+        selected_items = ui_tree.selection()
+        if not selected_items:
+            return
+            
+        selected_item = selected_items[0]
+        widget_path = ui_tree.item(selected_item, "values")[0]
+        widget = parent_window.nametowidget(widget_path)
+        display_widget_info(widget)
+    
+    def on_main_app_click(event):
+        widget = event.widget
+        if not isinstance(widget, tk.Widget) or not widget.winfo_exists():
+            return
+        
+        widget_path = str(widget)
+        if widget_path in widget_map:
+            item_id = widget_map[widget_path]
+            ui_tree.selection_set(item_id)
+            ui_tree.focus(item_id)
+            ui_tree.see(item_id)
+            
+            parent_id = ui_tree.parent(item_id)
+            while parent_id:
+                ui_tree.item(parent_id, open=True)
+                parent_id = ui_tree.parent(parent_id)
+        
+        display_widget_info(widget)
+
+    ui_tree.bind("<<TreeviewSelect>>", on_ui_tree_select)
+    parent_window.bind("<Button-1>", on_main_app_click, add=True)
+    
+    populate_ui_tree()
+    notebook.bind("<<NotebookTabChanged>>", lambda e: populate_ui_tree(False) if notebook.tab(notebook.select(), "text") == "UI Inspector" else None)
+
+    tools_frame = ttk.Frame(notebook)
+    notebook.add(tools_frame, text="Tools")
+    
+    tools_notebook = ttk.Notebook(tools_frame)
+    tools_notebook.pack(fill=BOTH, expand=True, padx=5, pady=5)
+
+    general_tools_frame = ttk.Frame(tools_notebook)
+    tools_notebook.add(general_tools_frame, text="General")
+    
+    def run_profiler():
+        pr = cProfile.Profile()
+        pr.enable()
+        logging.info("Running profiler...")
+        pr.disable()
+        s = io.StringIO()
+        ps = pstats.Stats(pr, stream=s).sort_stats('tottime')
+        ps.print_stats()
+        profiler_window = tk.Toplevel(debug_window)
+        profiler_window.title("Profiler Results")
+        profiler_window.geometry("800x600")
+        profiler_text = scrolledtext.ScrolledText(profiler_window, font=("Courier", 10))
+        profiler_text.insert(tk.END, s.getvalue())
+        profiler_text.pack(fill=BOTH, expand=True)
+        logging.info("Profiler finished. Results in new window.")
+    ttk.Button(general_tools_frame, text="Run Profiler", command=run_profiler).pack(pady=10)
+    
+    def take_screenshot():
+        x = parent_window.winfo_rootx()
+        y = parent_window.winfo_rooty()
+        w = parent_window.winfo_width()
+        h = parent_window.winfo_height()
+        
+        debug_window.withdraw()
+        parent_window.update_idletasks()
+        
+        try:
+            screenshot = ImageGrab.grab(bbox=(x, y, x+w, y+h))
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            filename = f"screenshot_{timestamp}.png"
+            screenshot.save(filename)
+            logging.info(f"Screenshot saved to {filename}")
+        except Exception as e:
+            logging.error(f"Failed to take screenshot: {e}")
+        finally:
+            debug_window.deiconify()
+    
+    ttk.Button(general_tools_frame, text="Take Screenshot", command=take_screenshot).pack(pady=10)
+    
+    code_runner_frame = ttk.Frame(tools_notebook)
+    tools_notebook.add(code_runner_frame, text="Code Runner")
+    code_input_label = ttk.Label(code_runner_frame, text="Escribe tu código Python aquí:")
+    code_input_label.pack(fill=X, padx=5, pady=(5, 0))
+    code_input = scrolledtext.ScrolledText(code_runner_frame, height=10, font=("Courier", 10))
+    code_input.pack(fill=BOTH, expand=True, padx=5, pady=5)
+    
+    def run_code():
+        code = code_input.get("1.0", tk.END)
+        code_output.config(state='normal')
+        code_output.delete("1.0", tk.END)
+        old_stdout = sys.stdout
+        redirected_stdout = io.StringIO()
+        sys.stdout = redirected_stdout
+        
+        try:
+            exec(code)
+            output = redirected_stdout.getvalue()
+            code_output.insert(tk.END, f"--- Salida ---\n{output}")
+        except Exception as e:
+            code_output.insert(tk.END, f"--- Error ---\n{e}")
+        finally:
+            sys.stdout = old_stdout
+            code_output.config(state='disabled')
+            
+    ttk.Button(code_runner_frame, text="Run Code", command=run_code).pack(pady=5)
+    code_output_label = ttk.Label(code_runner_frame, text="Salida:")
+    code_output_label.pack(fill=X, padx=5, pady=(5, 0))
+    code_output = scrolledtext.ScrolledText(code_runner_frame, height=10, font=("Courier", 10), state='disabled')
+    code_output.pack(fill=BOTH, expand=True, padx=5, pady=5)
+    
+    file_browser_frame = ttk.Frame(tools_notebook)
+    tools_notebook.add(file_browser_frame, text="File Browser")
+    file_tree = ttk.Treeview(file_browser_frame, bootstyle="info")
+    file_tree.pack(fill=BOTH, expand=True, padx=5, pady=5)
+    
+    def populate_file_tree(path):
+        file_tree.delete(*file_tree.get_children())
+        parent_map = {}
+        
+        def insert_path(path, parent_id=""):
+            for item in os.listdir(path):
+                full_path = os.path.join(path, item)
+                is_dir = os.path.isdir(full_path)
+                item_type = "folder" if is_dir else "file"
+                
+                new_id = file_tree.insert(parent_id, "end", text=item, tags=(item_type,), open=False)
+                parent_map[full_path] = new_id
+                
+                if is_dir:
+                    # Para evitar cargar todo el sistema de archivos, solo agregamos un marcador
+                    file_tree.insert(new_id, "end", text="Cargando...", tags=("placeholder",))
+        
+        def on_open_folder(event):
+            item_id = file_tree.focus()
+            if not item_id:
+                return
+            
+            full_path = ""
+            for p, i in parent_map.items():
+                if i == item_id:
+                    full_path = p
+                    break
+            
+            if not full_path or not os.path.isdir(full_path):
+                return
+            
+            children = file_tree.get_children(item_id)
+            if children and file_tree.item(children[0], 'tags') == ('placeholder',):
+                file_tree.delete(children[0])
+                try:
+                    for item in os.listdir(full_path):
+                        insert_path(os.path.join(full_path, item), parent_id=item_id)
+                except Exception as e:
+                    logging.error(f"Failed to open directory: {e}")
+        
+        file_tree.bind("<<TreeviewOpen>>", on_open_folder)
+        insert_path(os.getcwd())
+        
+    populate_file_tree(os.getcwd())
+
+    last_net_stats = psutil.net_io_counters()
+    def update_metrics():
+        nonlocal last_net_stats
+        try:
+            process = psutil.Process(os.getpid())
+            cpu_percent = psutil.cpu_percent(interval=None)
+            mem_info = process.memory_info()
+            cpu_label.config(text=f"CPU: {cpu_percent}% | App Mem: {mem_info.rss / (1024 * 1024):.2f} MB")
+            total_mem = psutil.virtual_memory().total
+            mem_label.config(text=f"Total Mem: {total_mem / (1024 * 1024):.2f} MB")
+            disk_info = psutil.disk_usage('/')
+            disk_label.config(text=f"Disk Used: {disk_info.used / (1024 * 1024 * 1024):.2f} GB / {disk_info.total / (1024 * 1024 * 1024):.2f} GB")
+            current_net_stats = psutil.net_io_counters()
+            bytes_sent = current_net_stats.bytes_sent - last_net_stats.bytes_sent
+            bytes_recv = current_net_stats.bytes_recv - last_net_stats.bytes_recv
+            last_net_stats = current_net_stats
+            net_label.config(text=f"Net: ↓{bytes_recv / 1024:.2f} KB/s ↑{bytes_sent / 1024:.2f} KB/s")
+            threads_listbox.delete(0, tk.END)
+            for t in threading.enumerate():
+                threads_listbox.insert(tk.END, f"{t.name} (Daemon: {t.daemon})")
+            env_text.config(state='normal')
+            env_text.delete("1.0", tk.END)
+            for key, value in os.environ.items():
+                env_text.insert(tk.END, f"{key}={value}\n")
+            env_text.config(state='disabled')
+        except Exception as e:
+            logging.error(f"Failed to update metrics: {e}")
+        
+    def update_db_info():
+        try:
+            conn = sqlite3.connect(db_name)
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = [table[0] for table in cursor.fetchall()]
+            table_combobox['values'] = tables
+            conn.close()
+        except sqlite3.Error as e:
+            logging.error(f"DB Error: {e}")
+
+    def refresh_all_data():
+        update_metrics()
+        update_app_state_info()
+        update_db_info()
+
+    refresh_button = ttk.Button(debug_window, text="Refresh Data", command=refresh_all_data)
+    refresh_button.pack(pady=5)
+    
+    def auto_update_thread():
+        while True:
+            parent_window.after(0, refresh_all_data)
+            time.sleep(2)
+    update_thread = threading.Thread(target=auto_update_thread, daemon=True)
+    update_thread.start()
+
+    def toggle_debug_panel(event=None):
+        if debug_window.winfo_viewable():
+            debug_window.withdraw()
+        else:
+            debug_window.deiconify()
+    parent_window.bind("<F12>", toggle_debug_panel)
+    
+    def log_keyboard_event(event):
+        event_logger.info(f"Keyboard Event: {event.keysym} on widget {event.widget.winfo_class()}")
+    
+    parent_window.bind("<Key>", log_keyboard_event, add=True)
+    
+    # Pasa el primer archivo de la lista a la función load_config
+    if config_file_paths:
+        try:
+            with open(config_file_paths[0], 'r') as f:
+                config_data = json.load(f)
+                config_text.delete("1.0", tk.END)
+                config_text.insert(tk.END, json.dumps(config_data, indent=4))
+                logging.info(f"Loaded config from {config_file_paths[0]}.")
+        except FileNotFoundError:
+            logging.error(f"Config file not found at {config_file_paths[0]}")
+        except json.JSONDecodeError:
+            logging.error(f"Invalid JSON format in {config_file_paths[0]}.")
+    
+    logging.info("Debug panel initialized successfully.")
+    event_logger.info("Debug panel initialized.")
+    return debug_window
+
+def get_app_data(orga, tree, db_path, config_files):
+    app_info = {}
+
+    try:
+        process = psutil.Process(os.getpid())
+        app_info["Uso de Memoria (App)"] = f"{process.memory_info().rss / (1024 * 1024):.2f} MB"
+        app_info["Uso de CPU (App)"] = f"{process.cpu_percent(interval=0.1)}%"
+        app_info["Hilos Activos"] = threading.active_count()
+        app_info["Tiempo de Actividad"] = str(datetime.now() - datetime.fromtimestamp(process.create_time()))
+    except Exception:
+        app_info["Uso de Recursos"] = "Error al obtener datos del proceso"
+        
+    app_info["Python Versión"] = sys.version.split(" ")[0]
+    app_info["Plataforma (OS)"] = sys.platform
+    app_info["Directorio de Trabajo"] = os.getcwd()
+
+    try:
+        selected_item = tree.focus()
+        if selected_item:
+            selected_project_data = tree.item(selected_item, 'values')
+            project_name = selected_project_data[0] if len(selected_project_data) > 0 else "N/A"
+            project_id = selected_project_data[1] if len(selected_project_data) > 1 else "N/A"
+            project_path = selected_project_data[3] if len(selected_project_data) > 3 else "N/A"
+            
+            app_info["Proyecto Seleccionado"] = project_name
+            app_info["ID del Proyecto"] = project_id
+            app_info["Ruta del Proyecto"] = project_path
+            app_info["Estado Git"] = "Repositorio Válido" if os.path.isdir(os.path.join(project_path, '.git')) else "No es un repositorio Git"
+            
+            if os.path.exists(project_path):
+                dir_size = sum(os.path.getsize(os.path.join(dirpath, f)) for dirpath, _, filenames in os.walk(project_path) for f in filenames if not os.path.islink(os.path.join(dirpath, f)))
+                last_modified = datetime.fromtimestamp(os.path.getmtime(project_path)).strftime('%Y-%m-%d %H:%M:%S')
+                app_info["Tamaño del Directorio"] = f"{dir_size / (1024 * 1024):.2f} MB"
+                app_info["Última Modificación"] = last_modified
+        else:
+            app_info["Proyecto Seleccionado"] = "Ninguno"
+    except (IndexError, AttributeError, FileNotFoundError):
+        app_info["Proyecto Seleccionado"] = "Error al obtener datos"
+        
+    app_info["Estado de la Ventana"] = orga.state()
+    app_info["Tamaño de la Ventana"] = f"{orga.winfo_width()}x{orga.winfo_height()}"
+    app_info["Posición de la Ventana"] = f"X: {orga.winfo_x()}, Y: {orga.winfo_y()}"
+    
+    app_info["Estado de la DB"] = "Conectada" if os.path.exists(db_path) else "No Encontrada"
+    
+    # 5. Mapeo y estado de los archivos de configuración
+    config_status = {}
+    for file_path in config_files:
+        file_name = os.path.basename(file_path)
+        status = "Cargado" if os.path.exists(file_path) else "No Encontrado"
+        config_status[file_name] = status
+    app_info["Estado de Configuración"] = json.dumps(config_status)
+    
+    return app_info
 
 menu_name = "Organizer"
 description_menu = "Open Organizer"
